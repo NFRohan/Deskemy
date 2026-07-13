@@ -29,6 +29,7 @@
     Bookmark as BookmarkIcon,
     BookmarkPlus,
     Trash2,
+    Keyboard,
   } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs, setImmersive, ui } from "$lib/stores/app.svelte";
@@ -46,6 +47,40 @@
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const panelItem =
     "w-full flex items-center gap-3 px-6 py-2 text-body-md text-on-surface hover:bg-surface-container text-left";
+
+  const SHORTCUTS: { group: string; items: [string, string][] }[] = [
+    {
+      group: "Playback",
+      items: [
+        ["Space / K", "Play / pause"],
+        ["J / L", "Back / forward 10s"],
+        ["← / →", "Back / forward 5s"],
+        ["↑ / ↓", "Volume up / down"],
+        ["M", "Mute"],
+        ["C", "Toggle subtitles"],
+        ["< / >", "Speed down / up"],
+        ["0 – 9", "Jump to 0–90%"],
+        ["Home / End", "Start / end"],
+      ],
+    },
+    {
+      group: "Navigation",
+      items: [
+        ["N / ⇧N", "Next / previous lecture"],
+        ["F", "Fullscreen"],
+        ["Esc", "Exit / back"],
+      ],
+    },
+    {
+      group: "Panels",
+      items: [
+        ["P", "Course content"],
+        ["R", "Resources"],
+        ["B", "Bookmark here"],
+        ["?", "This cheat sheet"],
+      ],
+    },
+  ];
 
   let paneEl = $state<HTMLDivElement | null>(null);
   let state = $state<PlayerState>({
@@ -74,6 +109,7 @@
   let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | null>(null);
   let course = $state<CourseDetail | null>(null);
   let showPlaylist = $state(false);
+  let showShortcuts = $state(false);
   let expandedSections = $state<Set<string>>(new Set());
   let bookmarks = $state<Bookmark[]>([]);
   let bookmarksFor = $state<string | null>(null);
@@ -362,6 +398,32 @@
     goto(cid ? `/course/${cid}` : "/");
   }
 
+  function cycleSpeed(dir: number) {
+    let i = SPEEDS.indexOf(state.speed);
+    if (i < 0) {
+      i = SPEEDS.reduce(
+        (best, s, idx) =>
+          Math.abs(s - state.speed) < Math.abs(SPEEDS[best] - state.speed) ? idx : best,
+        0,
+      );
+    }
+    const next = Math.min(SPEEDS.length - 1, Math.max(0, i + dir));
+    api.playerSetSpeed(SPEEDS[next]).catch(() => {});
+  }
+  function toggleSubtitles() {
+    if (state.sid != null) pickSub(null);
+    else if (tracks.subtitle.length) pickSub(tracks.subtitle[0].id);
+  }
+  function seekFraction(f: number) {
+    if (state.duration > 0) api.playerSeek(state.duration * f).catch(() => {});
+  }
+  async function quickBookmark() {
+    const lid = state.lecture_id;
+    if (!lid) return;
+    await api.addBookmark(lid, state.position, null).catch(() => {});
+    refetchBookmarks(lid);
+  }
+
   function onKey(e: KeyboardEvent) {
     const el = e.target as HTMLElement | null;
     const tag = el?.tagName;
@@ -377,7 +439,14 @@
     let handled = true;
     switch (e.key) {
       case " ":
+      case "k":
         api.playerTogglePause().catch(() => {});
+        break;
+      case "j":
+        relativeSeek(-10);
+        break;
+      case "l":
+        relativeSeek(10);
         break;
       case "ArrowRight":
         relativeSeek(5);
@@ -398,14 +467,48 @@
       case "f":
         toggleImmersive();
         break;
-      case "Escape":
-        goBack();
+      case "c":
+        toggleSubtitles();
+        break;
+      case ",":
+      case "<":
+        cycleSpeed(-1);
+        break;
+      case ".":
+      case ">":
+        cycleSpeed(1);
+        break;
+      case "Home":
+        seekFraction(0);
+        break;
+      case "End":
+        seekFraction(0.999);
+        break;
+      case "p":
+        togglePlaylist();
+        break;
+      case "r":
+        togglePlaylist(); // dedicated resources tab lands with the resources panel
+        break;
+      case "b":
+        quickBookmark();
         break;
       case "n":
         api.playerNext().catch(() => {});
         break;
+      case "N":
+        api.playerPrev().catch(() => {});
+        break;
+      case "?":
+        showShortcuts = !showShortcuts;
+        break;
+      case "Escape":
+        if (showShortcuts) showShortcuts = false;
+        else goBack();
+        break;
       default:
-        handled = false;
+        if (e.key >= "0" && e.key <= "9") seekFraction(Number(e.key) / 10);
+        else handled = false;
     }
     if (handled) {
       e.preventDefault();
@@ -682,10 +785,18 @@
             {/each}
           </select>
           <button
+            onclick={() => (showShortcuts = true)}
+            class="p-2 rounded text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface transition-colors"
+            title="Keyboard shortcuts (?)"
+            aria-label="Keyboard shortcuts"
+          >
+            <Keyboard size={18} />
+          </button>
+          <button
             onclick={togglePlaylist}
             class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
               {showPlaylist ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
-            title="Course content"
+            title="Course content (P)"
             aria-label="Course content"
           >
             <PanelRight size={18} />
@@ -791,5 +902,56 @@
           </div>
         </aside>
     </div>
+
+    <!-- Keyboard shortcut cheat sheet -->
+    {#if showShortcuts}
+      <div
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        role="presentation"
+        onclick={() => (showShortcuts = false)}
+      >
+        <div
+          class="w-full max-w-2xl bg-surface-container rounded-xl border border-outline-variant p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Keyboard shortcuts"
+          onclick={(e) => e.stopPropagation()}
+        >
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="flex items-center gap-2 text-headline-sm text-on-surface">
+              <Keyboard size={18} /> Keyboard shortcuts
+            </h3>
+            <button
+              onclick={() => (showShortcuts = false)}
+              class="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
+            {#each SHORTCUTS as col (col.group)}
+              <div>
+                <p class="text-label-md text-on-surface-variant uppercase tracking-wide mb-2">
+                  {col.group}
+                </p>
+                <ul class="space-y-1.5">
+                  {#each col.items as [key, desc] (key)}
+                    <li class="flex items-center justify-between gap-3">
+                      <span class="text-body-sm text-on-surface-variant">{desc}</span>
+                      <kbd
+                        class="shrink-0 text-label-sm text-on-surface bg-surface-container-highest border border-outline-variant rounded px-1.5 py-0.5 tabular-nums"
+                      >
+                        {key}
+                      </kbd>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/each}
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 {/if}
