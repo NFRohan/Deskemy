@@ -128,6 +128,15 @@ export interface Bookmark {
   created_at: number;
 }
 
+export interface Attachment {
+  id: string;
+  name: string;
+  file_path: string;
+  kind: string | null;
+  section_id: string | null;
+  lecture_id: string | null;
+}
+
 export interface SearchHit {
   kind: string; // course | section | lecture | attachment
   entity_id: string;

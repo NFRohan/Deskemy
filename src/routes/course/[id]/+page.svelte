@@ -17,18 +17,32 @@
     X,
     Pencil,
     Trash2,
+    Paperclip,
+    FileText,
+    FileArchive,
+    FileCode,
+    File,
   } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { api, pickImage } from "$lib/api";
   import { setCrumbs, loadLibrary } from "$lib/stores/app.svelte";
   import { formatDuration, formatClock, pct } from "$lib/format";
-  import type { CourseDetail, Lecture, Section } from "$lib/types";
+  import type { Attachment, CourseDetail, Lecture, Section } from "$lib/types";
   import ProgressBar from "$lib/components/ProgressBar.svelte";
 
   let course = $state<CourseDetail | null>(null);
+  let attachments = $state<Attachment[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let expanded = $state<Set<string>>(new Set());
+
+  const KIND_ICON: Record<string, any> = {
+    pdf: FileText,
+    archive: FileArchive,
+    code: FileCode,
+    html: FileCode,
+    text: FileText,
+  };
   let thumbBusy = $state(false);
   let thumbError = $state<string | null>(null);
   let showThumbModal = $state(false);
@@ -64,6 +78,7 @@
     try {
       const c = await api.getCourse(courseId);
       course = c;
+      attachments = await api.getCourseAttachments(courseId).catch(() => []);
       if (c) {
         setCrumbs([{ label: "Library", href: "/" }, { label: c.title }]);
         api.touchOpened(courseId).catch(() => {});
@@ -172,6 +187,10 @@
   function openLecture(l: Lecture) {
     if (!l.playable) return;
     goto(`/watch/${l.id}`);
+  }
+
+  function openResource(a: Attachment) {
+    api.openResource(a.file_path).catch(() => {});
   }
 
   async function toggleComplete(l: Lecture) {
@@ -395,6 +414,35 @@
         {/each}
       </div>
     </div>
+
+    <!-- Resources (pdfs, archives, code that shipped with the course) -->
+    {#if attachments.length > 0}
+      <div>
+        <h2 class="flex items-center gap-2 text-headline-sm text-on-surface mb-4">
+          <Paperclip size={18} /> Resources
+        </h2>
+        <ul
+          class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant overflow-hidden"
+        >
+          {#each attachments as a (a.id)}
+            {@const Icon = KIND_ICON[a.kind ?? ""] ?? File}
+            <li>
+              <button
+                onclick={() => openResource(a)}
+                class="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-container transition-colors"
+                title="Open with default app"
+              >
+                <Icon size={18} class="text-on-surface-variant shrink-0" />
+                <span class="flex-1 min-w-0 truncate text-body-md text-on-surface">{a.name}</span>
+                {#if a.kind}
+                  <span class="text-label-sm text-on-surface-variant shrink-0 uppercase">{a.kind}</span>
+                {/if}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
   </div>
 
   <!-- Thumbnail editor modal -->

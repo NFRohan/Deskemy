@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AppConfig,
+  Attachment,
   Bookmark,
   BookmarkDetail,
   CourseDetail,
@@ -35,6 +36,9 @@ export const api = {
     invoke<void>("course_set_favorite", { id, favorite }),
   touchOpened: (id: string) => invoke<void>("course_touch_opened", { id }),
   deleteCourse: (id: string) => invoke<void>("library_delete_course", { id }),
+  getCourseAttachments: (courseId: string) =>
+    invoke<Attachment[]>("course_attachments", { courseId }),
+  openResource: (path: string) => invoke<void>("open_resource", { path }),
   setCourseThumbnailFile: (id: string, srcPath: string) =>
     invoke<string>("course_set_thumbnail_file", { id, srcPath }),
   setCourseThumbnailBytes: (id: string, dataBase64: string, ext: string | null) =>

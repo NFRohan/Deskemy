@@ -3,7 +3,7 @@
 
 use crate::db::{new_id, now};
 use crate::domain::{
-    Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, Section, SearchHit,
+    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, Section, SearchHit,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -252,6 +252,30 @@ pub fn insert_subtitle(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// A course's resources (pdfs, archives, code, …), ordered by section then name.
+pub fn list_course_attachments(conn: &Connection, course_id: &str) -> Result<Vec<Attachment>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.name, a.file_path, a.kind, a.section_id, a.lecture_id
+           FROM attachments a
+           LEFT JOIN sections s ON s.id = a.section_id
+          WHERE a.course_id = ?1
+          ORDER BY COALESCE(s.position, -1), a.name",
+    )?;
+    let rows = stmt
+        .query_map(params![course_id], |r| {
+            Ok(Attachment {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                file_path: r.get(2)?,
+                kind: r.get(3)?,
+                section_id: r.get(4)?,
+                lecture_id: r.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn insert_attachment(
     conn: &Connection,
     id: &str,

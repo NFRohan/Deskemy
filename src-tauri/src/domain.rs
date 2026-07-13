@@ -92,6 +92,17 @@ pub struct Bookmark {
     pub created_at: i64,
 }
 
+/// A non-media resource that shipped with a course (pdf, zip, code, …).
+#[derive(Debug, Clone, Serialize)]
+pub struct Attachment {
+    pub id: String,
+    pub name: String,
+    pub file_path: String,
+    pub kind: Option<String>,
+    pub section_id: Option<String>,
+    pub lecture_id: Option<String>,
+}
+
 /// One full-text search result across courses/sections/lectures/attachments.
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {

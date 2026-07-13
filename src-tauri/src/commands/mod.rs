@@ -3,13 +3,13 @@
 pub mod player;
 
 use crate::db::queries;
-use crate::domain::{Bookmark, BookmarkDetail, CourseDetail, CourseSummary, SearchHit};
+use crate::domain::{Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, SearchHit};
 use crate::error::{DeskemyError, Result};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::MutexGuard;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::config::AppConfig;
 use crate::state::AppState;
@@ -191,6 +191,22 @@ pub fn course_set_thumbnail_bytes(
 pub fn course_clear_thumbnail(state: State<AppState>, id: String) -> Result<()> {
     let conn = db(&state)?;
     queries::set_thumbnail(&conn, &id, None)
+}
+
+/// A course's non-media resources (pdfs, archives, code files, …).
+#[tauri::command]
+pub fn course_attachments(state: State<AppState>, course_id: String) -> Result<Vec<Attachment>> {
+    let conn = db(&state)?;
+    queries::list_course_attachments(&conn, &course_id)
+}
+
+/// Open a resource file with the OS default application.
+#[tauri::command]
+pub fn open_resource(app: AppHandle, path: String) -> Result<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| DeskemyError::Other(e.to_string()))
 }
 
 /// Remove a course from the library (DB only — does not touch files on disk).
