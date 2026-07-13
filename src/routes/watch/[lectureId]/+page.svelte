@@ -275,6 +275,17 @@
     api.playerSeek(Math.max(0, state.position + delta)).catch(() => {});
   }
 
+  function goBack() {
+    // Esc / back button: leave immersive first if active, else return to the
+    // course view.
+    if (ui.immersive) {
+      toggleImmersive();
+      return;
+    }
+    const cid = lecture?.course_id;
+    goto(cid ? `/course/${cid}` : "/");
+  }
+
   function onKey(e: KeyboardEvent) {
     const el = e.target as HTMLElement | null;
     const tag = el?.tagName;
@@ -287,26 +298,22 @@
       (tag === "INPUT" && !["range", "checkbox", "radio", "button"].includes(type ?? ""));
     if (typing) return;
 
+    let handled = true;
     switch (e.key) {
       case " ":
-        e.preventDefault();
         api.playerTogglePause().catch(() => {});
         break;
       case "ArrowRight":
-        e.preventDefault();
         relativeSeek(5);
         break;
       case "ArrowLeft":
-        e.preventDefault();
         relativeSeek(-5);
         break;
       case "ArrowUp":
-        e.preventDefault();
         api.playerSetVolume(Math.min(100, (state.muted ? 0 : state.volume) + 5)).catch(() => {});
         if (state.muted) api.playerSetMuted(false).catch(() => {});
         break;
       case "ArrowDown":
-        e.preventDefault();
         api.playerSetVolume(Math.max(0, state.volume - 5)).catch(() => {});
         break;
       case "m":
@@ -316,11 +323,19 @@
         toggleImmersive();
         break;
       case "Escape":
-        if (ui.immersive) toggleImmersive();
+        goBack();
         break;
       case "n":
         api.playerNext().catch(() => {});
         break;
+      default:
+        handled = false;
+    }
+    if (handled) {
+      e.preventDefault();
+      // A control keeps focus after a mouse click; without this, pressing a
+      // shortcut key would flash that control's active/highlight state.
+      if (tag === "BUTTON" || tag === "SELECT" || type === "range") el?.blur();
     }
   }
 
@@ -427,6 +442,15 @@
 
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-1">
+          <button
+            onclick={goBack}
+            class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+            aria-label="Back to course"
+            title="Back to course (Esc)"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div class="w-px h-5 bg-outline-variant mx-1"></div>
           <button
             onclick={() => api.playerPrev()}
             class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
