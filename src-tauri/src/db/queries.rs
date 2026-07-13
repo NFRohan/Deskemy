@@ -282,6 +282,54 @@ pub fn insert_subtitle(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Per-lecture media metadata for a course: (file_path, size, mtime, duration,
+/// container, video_codec, playable). Used to reuse metadata for unchanged
+/// files on rescan instead of re-probing them.
+#[allow(clippy::type_complexity)]
+pub fn course_lecture_media(
+    conn: &Connection,
+    course_id: &str,
+) -> Result<Vec<(String, Option<i64>, Option<i64>, Option<f64>, Option<String>, Option<String>, bool)>>
+{
+    let mut stmt = conn.prepare(
+        "SELECT file_path, file_size, mtime, duration, container, video_codec, playable
+           FROM lectures WHERE course_id = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![course_id], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get::<_, i64>(6)? != 0,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// (file_path, chapter idx, title, start_time) for a course's chapters.
+pub fn course_chapters(
+    conn: &Connection,
+    course_id: &str,
+) -> Result<Vec<(String, i64, Option<String>, f64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.file_path, ch.idx, ch.title, ch.start_time
+           FROM chapters ch JOIN lectures l ON l.id = ch.lecture_id
+          WHERE l.course_id = ?1
+          ORDER BY ch.idx",
+    )?;
+    let rows = stmt
+        .query_map(params![course_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 /// A course's resources (pdfs, archives, code, …), ordered by section then name.
 pub fn list_course_attachments(conn: &Connection, course_id: &str) -> Result<Vec<Attachment>> {
     let mut stmt = conn.prepare(

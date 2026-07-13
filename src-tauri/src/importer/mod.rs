@@ -24,6 +24,18 @@ pub struct Importer {
     prober: Box<dyn MediaProber>,
 }
 
+/// Metadata carried over from a previous import so an unchanged file's video
+/// doesn't have to be re-probed on rescan.
+struct PriorMeta {
+    size: Option<i64>,
+    mtime: Option<i64>,
+    duration: Option<f64>,
+    container: Option<String>,
+    video_codec: Option<String>,
+    playable: bool,
+    chapters: Vec<crate::media::Chapter>,
+}
+
 struct PlannedLecture {
     id: String,
     title: String,
@@ -70,7 +82,14 @@ impl Importer {
 
         let scan = FilesystemScanner.scan(course_dir)?;
 
-        let sections = self.plan_sections(&scan)?;
+        // Snapshot the prior import's media so unchanged files skip re-probing.
+        let existing = queries::find_course_by_path(conn, &folder_path)?;
+        let prior = match &existing {
+            Some(id) => Self::snapshot_prior(conn, id)?,
+            None => HashMap::new(),
+        };
+
+        let sections = self.plan_sections(&scan, &prior)?;
         if sections.iter().all(|s| s.lectures.is_empty()) {
             return Err(DeskemyError::Import(format!(
                 "no playable video files found in {folder_path}"
@@ -78,8 +97,8 @@ impl Importer {
         }
 
         // Replace any previous import of the same folder.
-        if let Some(existing) = queries::find_course_by_path(conn, &folder_path)? {
-            queries::delete_course(conn, &existing)?;
+        if let Some(existing) = &existing {
+            queries::delete_course(conn, existing)?;
         }
 
         let course_id = new_id();
@@ -167,8 +186,48 @@ impl Importer {
         Ok(course_id)
     }
 
+    /// Load a previous import's media keyed by file path, for reuse on rescan.
+    fn snapshot_prior(conn: &Connection, course_id: &str) -> Result<HashMap<String, PriorMeta>> {
+        let mut chapters_by_file: HashMap<String, Vec<crate::media::Chapter>> = HashMap::new();
+        for (file_path, idx, title, start_time) in queries::course_chapters(conn, course_id)? {
+            chapters_by_file
+                .entry(file_path)
+                .or_default()
+                .push(crate::media::Chapter {
+                    index: idx as usize,
+                    title,
+                    start: std::time::Duration::from_secs_f64(start_time.max(0.0)),
+                });
+        }
+
+        let mut map = HashMap::new();
+        for (file_path, size, mtime, duration, container, video_codec, playable) in
+            queries::course_lecture_media(conn, course_id)?
+        {
+            let chapters = chapters_by_file.remove(&file_path).unwrap_or_default();
+            map.insert(
+                file_path,
+                PriorMeta {
+                    size,
+                    mtime,
+                    duration,
+                    container,
+                    video_codec,
+                    playable,
+                    chapters,
+                },
+            );
+        }
+        Ok(map)
+    }
+
     /// Build the in-memory section/lecture plan (ordered, cleaned, probed).
-    fn plan_sections(&self, scan: &ScannedTree) -> Result<Vec<PlannedSection>> {
+    /// Files whose path + size + mtime match `prior` reuse its metadata.
+    fn plan_sections(
+        &self,
+        scan: &ScannedTree,
+        prior: &HashMap<String, PriorMeta>,
+    ) -> Result<Vec<PlannedSection>> {
         // Group video files by their top-level section key ("" = course root).
         let mut videos_by_key: HashMap<String, Vec<&ScannedFile>> = HashMap::new();
         for f in &scan.files {
@@ -193,7 +252,33 @@ impl Importer {
 
             let mut lectures = Vec::new();
             for (l_pos, v) in vids.into_iter().enumerate() {
-                let meta = self.prober.probe(&v.path)?;
+                let path = v.path.to_string_lossy().to_string();
+                let size = v.size as i64;
+
+                // Reuse metadata when the same file is unchanged (size + mtime).
+                let reuse = prior
+                    .get(&path)
+                    .filter(|p| p.size == Some(size) && p.mtime == Some(v.mtime));
+                let (container, video_codec, playable, duration, chapters) = match reuse {
+                    Some(p) => (
+                        p.container.clone(),
+                        p.video_codec.clone(),
+                        p.playable,
+                        p.duration,
+                        p.chapters.clone(),
+                    ),
+                    None => {
+                        let meta = self.prober.probe(&v.path)?;
+                        (
+                            (!meta.container.is_empty()).then(|| meta.container.clone()),
+                            meta.video_codec.clone(),
+                            meta.playable,
+                            meta.duration.map(|d| d.as_secs_f64()),
+                            meta.chapters,
+                        )
+                    }
+                };
+
                 let stem = Path::new(&v.name)
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
@@ -205,14 +290,14 @@ impl Importer {
                     number: leading_number(&v.name),
                     stem,
                     rel_dir: v.rel_dir.to_string_lossy().to_string(),
-                    path: v.path.to_string_lossy().to_string(),
-                    size: v.size as i64,
+                    path,
+                    size,
                     mtime: v.mtime,
-                    container: (!meta.container.is_empty()).then(|| meta.container.clone()),
-                    video_codec: meta.video_codec.clone(),
-                    playable: meta.playable,
-                    duration: meta.duration.map(|d| d.as_secs_f64()),
-                    chapters: meta.chapters,
+                    container,
+                    video_codec,
+                    playable,
+                    duration,
+                    chapters,
                 });
             }
 
