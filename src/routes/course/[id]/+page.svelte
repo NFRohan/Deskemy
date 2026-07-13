@@ -74,6 +74,28 @@
   const overall = $derived(pct(done, total));
   const resume = $derived(course ? nextLecture(course) : undefined);
 
+  // Resources grouped by section (same order as the curriculum), with any
+  // course-level (unassigned) resources last.
+  const resourceGroups = $derived.by(() => {
+    if (!course || attachments.length === 0) return [];
+    const bySection = new Map<string, Attachment[]>();
+    const loose: Attachment[] = [];
+    for (const a of attachments) {
+      if (a.section_id) {
+        (bySection.get(a.section_id) ?? bySection.set(a.section_id, []).get(a.section_id)!).push(a);
+      } else {
+        loose.push(a);
+      }
+    }
+    const groups: { title: string; items: Attachment[] }[] = [];
+    for (const s of course.sections) {
+      const items = bySection.get(s.id);
+      if (items?.length) groups.push({ title: s.title, items });
+    }
+    if (loose.length) groups.push({ title: "Course-wide", items: loose });
+    return groups;
+  });
+
   async function load(courseId: string) {
     loading = true;
     error = null;
@@ -456,32 +478,41 @@
       </div>
     </div>
 
-    <!-- Resources (pdfs, archives, code that shipped with the course) -->
-    {#if attachments.length > 0}
+    <!-- Resources (pdfs, archives, code), grouped by section like the curriculum -->
+    {#if resourceGroups.length > 0}
       <div>
         <h2 class="flex items-center gap-2 text-headline-sm text-on-surface mb-4">
           <Paperclip size={18} /> Resources
         </h2>
-        <ul
-          class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant overflow-hidden"
-        >
-          {#each attachments as a (a.id)}
-            {@const Icon = KIND_ICON[a.kind ?? ""] ?? File}
-            <li>
-              <button
-                onclick={() => openResource(a)}
-                class="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-container transition-colors"
-                title="Open with default app"
+        <div class="space-y-4">
+          {#each resourceGroups as group (group.title)}
+            <div>
+              <h3 class="text-label-md text-on-surface-variant mb-1.5 px-1">{group.title}</h3>
+              <ul
+                class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant overflow-hidden"
               >
-                <Icon size={18} class="text-on-surface-variant shrink-0" />
-                <span class="flex-1 min-w-0 truncate text-body-md text-on-surface">{a.name}</span>
-                {#if a.kind}
-                  <span class="text-label-sm text-on-surface-variant shrink-0 uppercase">{a.kind}</span>
-                {/if}
-              </button>
-            </li>
+                {#each group.items as a (a.id)}
+                  {@const Icon = KIND_ICON[a.kind ?? ""] ?? File}
+                  <li>
+                    <button
+                      onclick={() => openResource(a)}
+                      class="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-container transition-colors"
+                      title="Open with default app"
+                    >
+                      <Icon size={18} class="text-on-surface-variant shrink-0" />
+                      <span class="flex-1 min-w-0 truncate text-body-md text-on-surface">{a.name}</span>
+                      {#if a.kind}
+                        <span class="text-label-sm text-on-surface-variant shrink-0 uppercase">
+                          {a.kind}
+                        </span>
+                      {/if}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </div>
           {/each}
-        </ul>
+        </div>
       </div>
     {/if}
   </div>
