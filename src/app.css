@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* Design tokens from the Stitch "Modern Utility" system (dark-first). */
+@theme {
+  /* Surfaces / tonal layers */
+  --color-background: #0f1115;
+  --color-surface: #111317;
+  --color-surface-container-lowest: #0c0e12;
+  --color-surface-container-low: #1a1c20;
+  --color-surface-container: #1e2024;
+  --color-surface-container-high: #282a2e;
+  --color-surface-container-highest: #333539;
+
+  /* Text / lines */
+  --color-on-surface: #e2e2e8;
+  --color-on-surface-variant: #d1c1d7;
+  --color-outline: #9a8ca0;
+  --color-outline-variant: #4e4354;
+  --color-border: #2d3139;
+
+  /* Brand + accents */
+  --color-primary: #e2b6ff;
+  --color-primary-container: #a435f0;
+  --color-on-primary-container: #fff5fe;
+  --color-inverse-primary: #8e10db;
+  --color-secondary-container: #3b93f1;
+  --color-accent-blue: #0078d4;
+  --color-error: #ffb4ab;
+
+  /* Type scale — Inter everywhere */
+  --text-display-sm: 24px;
+  --text-display-sm--line-height: 32px;
+  --text-display-sm--font-weight: 700;
+  --text-display-sm--letter-spacing: -0.02em;
+
+  --text-headline-md: 18px;
+  --text-headline-md--line-height: 24px;
+  --text-headline-md--font-weight: 600;
+  --text-headline-md--letter-spacing: -0.01em;
+
+  --text-headline-sm: 16px;
+  --text-headline-sm--line-height: 20px;
+  --text-headline-sm--font-weight: 600;
+
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+
+  --text-label-md: 12px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--font-weight: 600;
+  --text-label-md--letter-spacing: 0.02em;
+
+  --text-label-sm: 11px;
+  --text-label-sm--line-height: 14px;
+  --text-label-sm--font-weight: 500;
+
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Custom scrollbar for the native-utility feel. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-container-highest);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-outline-variant);
+}
