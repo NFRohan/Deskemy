@@ -74,6 +74,8 @@ export interface PlayerState {
   sid: number | null;
   aid: number | null;
   chapter: number;
+  volume: number;
+  muted: boolean;
 }
 
 export interface TrackInfo {

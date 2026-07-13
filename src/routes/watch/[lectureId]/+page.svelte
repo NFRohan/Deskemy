@@ -17,6 +17,9 @@
     Languages,
     List,
     Check,
+    Volume2,
+    Volume1,
+    VolumeX,
   } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs, setImmersive, ui } from "$lib/stores/app.svelte";
@@ -38,6 +41,8 @@
     sid: null,
     aid: null,
     chapter: -1,
+    volume: 100,
+    muted: false,
   });
   let lecture = $state<LectureView | null>(null);
   let available = $state<boolean | null>(null);
@@ -129,14 +134,31 @@
     }
   });
 
-  // Load track/chapter lists once the file is open (duration known).
+  // Load track/chapter lists once the file is open (duration known). External
+  // subtitles can attach slightly after load, so re-poll a couple of times.
   $effect(() => {
     const lid = state.lecture_id;
     if (lid && state.duration > 0 && tracksFor !== lid) {
       tracksFor = lid;
-      api.playerTracks().then((t) => (tracks = t)).catch(() => {});
+      refetchTracks();
+      setTimeout(refetchTracks, 400);
+      setTimeout(refetchTracks, 1200);
     }
   });
+  function refetchTracks() {
+    api.playerTracks().then((t) => (tracks = t)).catch(() => {});
+  }
+
+  const volValue = $derived(state.muted ? 0 : state.volume);
+  function toggleMute() {
+    api.playerSetMuted(!state.muted).catch(() => {});
+  }
+  function onVolume(e: Event) {
+    const v = +(e.target as HTMLInputElement).value;
+    api.playerSetVolume(v).catch(() => {});
+    if (v > 0 && state.muted) api.playerSetMuted(false).catch(() => {});
+    if (v === 0 && !state.muted) api.playerSetMuted(true).catch(() => {});
+  }
 
   function trackLabel(t: TrackInfo): string {
     const parts: string[] = [];
@@ -204,6 +226,18 @@
         break;
       case "ArrowLeft":
         relativeSeek(-5);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        api.playerSetVolume(Math.min(100, (state.muted ? 0 : state.volume) + 5)).catch(() => {});
+        if (state.muted) api.playerSetMuted(false).catch(() => {});
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        api.playerSetVolume(Math.max(0, state.volume - 5)).catch(() => {});
+        break;
+      case "m":
+        toggleMute();
         break;
       case "f":
         toggleImmersive();
@@ -356,6 +390,34 @@
           >
             <SkipForward size={18} />
           </button>
+
+          <!-- Volume (YouTube-style: click icon to mute, drag slider to set) -->
+          <div class="flex items-center gap-1 pl-1">
+            <button
+              onclick={toggleMute}
+              class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+              aria-label={state.muted ? "Unmute" : "Mute"}
+              title={state.muted ? "Unmute" : "Mute"}
+            >
+              {#if state.muted || state.volume === 0}
+                <VolumeX size={18} />
+              {:else if state.volume < 50}
+                <Volume1 size={18} />
+              {:else}
+                <Volume2 size={18} />
+              {/if}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={volValue}
+              oninput={onVolume}
+              class="w-20 accent-accent-blue cursor-pointer"
+              aria-label="Volume"
+            />
+          </div>
         </div>
 
         <div class="flex items-center gap-2">

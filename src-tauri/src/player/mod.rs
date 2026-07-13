@@ -29,6 +29,9 @@ pub struct PlayerState {
     pub aid: Option<i64>,
     /// Current chapter index (-1 if none).
     pub chapter: i64,
+    /// Volume 0..100.
+    pub volume: f64,
+    pub muted: bool,
 }
 
 impl Default for PlayerState {
@@ -43,6 +46,8 @@ impl Default for PlayerState {
             sid: None,
             aid: None,
             chapter: -1,
+            volume: 100.0,
+            muted: false,
         }
     }
 }
@@ -102,6 +107,8 @@ pub trait PlayerService: Send + Sync {
     fn set_subtitle(&self, sid: Option<i64>) -> Result<()>;
     fn set_audio(&self, aid: Option<i64>) -> Result<()>;
     fn set_chapter(&self, index: i64) -> Result<()>;
+    fn set_volume(&self, volume: f64) -> Result<()>;
+    fn set_muted(&self, muted: bool) -> Result<()>;
 }
 
 pub struct MpvPlayer {
@@ -136,6 +143,8 @@ impl MpvPlayer {
         mpv.set_option("input-default-bindings", "no")?;
         mpv.set_option("input-vo-keyboard", "no")?;
         mpv.set_option("force-window", "no")?;
+        // Auto-load sidecar subtitle files (e.g. Udemy .srt) matching the video.
+        mpv.set_option("sub-auto", "fuzzy")?;
         mpv.initialize()?;
 
         mpv.observe_property(1, "time-pos", MPV_FORMAT_DOUBLE)?;
@@ -212,6 +221,16 @@ impl PlayerService for MpvPlayer {
     }
     fn set_chapter(&self, index: i64) -> Result<()> {
         self.inner.mpv.set_property("chapter", &index.to_string())
+    }
+    fn set_volume(&self, volume: f64) -> Result<()> {
+        self.inner
+            .mpv
+            .set_property("volume", &volume.clamp(0.0, 100.0).to_string())
+    }
+    fn set_muted(&self, muted: bool) -> Result<()> {
+        self.inner
+            .mpv
+            .set_property("mute", if muted { "yes" } else { "no" })
     }
 }
 
@@ -342,6 +361,14 @@ impl PlayerInner {
             s.sid = self.mpv.get_i64("sid");
             s.aid = self.mpv.get_i64("aid");
             s.chapter = self.mpv.get_i64("chapter").unwrap_or(-1);
+            if let Some(v) = self.mpv.get_f64("volume") {
+                s.volume = v;
+            }
+            s.muted = self
+                .mpv
+                .get_property_string("mute")
+                .map(|v| v == "yes")
+                .unwrap_or(s.muted);
         }
 
         let should_emit = force || {
@@ -451,7 +478,7 @@ impl PlayerInner {
         }
 
         let count = self.mpv.get_i64("chapters").unwrap_or(0).max(0);
-        let chapters = (0..count)
+        let chapters: Vec<ChapterInfo> = (0..count)
             .map(|i| ChapterInfo {
                 index: i,
                 title: self.mpv.get_property_string(&format!("chapter-list/{i}/title")),
@@ -462,6 +489,12 @@ impl PlayerInner {
             })
             .collect();
 
+        tracing::debug!(
+            audio = audio.len(),
+            subtitle = subtitle.len(),
+            chapters = chapters.len(),
+            "read_tracks"
+        );
         MediaTracks {
             audio,
             subtitle,

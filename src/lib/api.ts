@@ -53,6 +53,8 @@ export const api = {
   playerSetSubtitle: (sid: number | null) => invoke<void>("player_set_subtitle", { sid }),
   playerSetAudio: (aid: number | null) => invoke<void>("player_set_audio", { aid }),
   playerSetChapter: (index: number) => invoke<void>("player_set_chapter", { index }),
+  playerSetVolume: (volume: number) => invoke<void>("player_set_volume", { volume }),
+  playerSetMuted: (muted: boolean) => invoke<void>("player_set_muted", { muted }),
   lectureGet: (id: string) => invoke<LectureView | null>("lecture_get", { id }),
 };
 

@@ -79,6 +79,8 @@ pub fn run() {
             commands::player::player_set_subtitle,
             commands::player::player_set_audio,
             commands::player::player_set_chapter,
+            commands::player::player_set_volume,
+            commands::player::player_set_muted,
             commands::player::player_set_rect,
             commands::player::player_stop,
             commands::player::player_state,

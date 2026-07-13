@@ -101,6 +101,16 @@ pub fn player_set_chapter(state: State<AppState>, index: i64) -> Result<()> {
 }
 
 #[tauri::command]
+pub fn player_set_volume(state: State<AppState>, volume: f64) -> Result<()> {
+    existing(&state, |p| p.set_volume(volume))
+}
+
+#[tauri::command]
+pub fn player_set_muted(state: State<AppState>, muted: bool) -> Result<()> {
+    existing(&state, |p| p.set_muted(muted))
+}
+
+#[tauri::command]
 pub fn player_set_rect(
     state: State<AppState>,
     x: f64,
