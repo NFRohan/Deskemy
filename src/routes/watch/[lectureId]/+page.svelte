@@ -563,10 +563,11 @@
       </div>
       </div>
       </div>
-      <!-- Course content sidebar (Udemy-style: jump around the course here) -->
-      {#if showPlaylist}
-        <aside
-          class="w-80 shrink-0 bg-surface-container-low border-l border-outline-variant flex flex-col"
+      <!-- Course content sidebar (Udemy-style: jump around the course here).
+           Always rendered; width toggles so the flex row reliably reflows. -->
+      <aside
+          class="shrink-0 bg-surface-container-low flex flex-col overflow-hidden transition-[width] duration-150
+            {showPlaylist ? 'w-80 border-l border-outline-variant' : 'w-0'}"
         >
           <div
             class="h-12 shrink-0 flex items-center justify-between px-4 border-b border-outline-variant"
@@ -647,7 +648,6 @@
             {/if}
           </div>
         </aside>
-      {/if}
     </div>
   </div>
 {/if}
