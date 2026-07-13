@@ -64,6 +64,7 @@ pub fn run() {
             commands::course_get,
             commands::course_set_favorite,
             commands::course_touch_opened,
+            commands::lecture_set_completed,
             commands::config_get,
             commands::config_set,
             commands::player::player_available,

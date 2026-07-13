@@ -297,11 +297,13 @@ pub fn get_lecture_playback(
 }
 
 /// Ordered (id, file_path) of playable lectures in a course — the playlist.
+/// `lectures.position` is per-section, so order by section then lecture.
 pub fn list_course_playlist(conn: &Connection, course_id: &str) -> Result<Vec<(String, String)>> {
     let mut stmt = conn.prepare(
-        "SELECT id, file_path FROM lectures
-          WHERE course_id = ?1 AND playable = 1
-          ORDER BY position",
+        "SELECT l.id, l.file_path
+           FROM lectures l JOIN sections s ON s.id = l.section_id
+          WHERE l.course_id = ?1 AND l.playable = 1
+          ORDER BY s.position, l.position",
     )?;
     let rows = stmt
         .query_map(params![course_id], |r| {
@@ -354,6 +356,19 @@ pub fn save_progress(
            completed = MAX(progress.completed, excluded.completed),
            last_watched_at = excluded.last_watched_at",
         params![lecture_id, position_seconds, completed as i64, now()],
+    )?;
+    Ok(())
+}
+
+/// Manually set a lecture's completed flag (allows un-marking, unlike save_progress).
+pub fn set_completed(conn: &Connection, lecture_id: &str, completed: bool) -> Result<()> {
+    conn.execute(
+        "INSERT INTO progress (lecture_id, position_seconds, completed, last_watched_at)
+         VALUES (?1, 0, ?2, ?3)
+         ON CONFLICT(lecture_id) DO UPDATE SET
+           completed = excluded.completed,
+           last_watched_at = excluded.last_watched_at",
+        params![lecture_id, completed as i64, now()],
     )?;
     Ok(())
 }

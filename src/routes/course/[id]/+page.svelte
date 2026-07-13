@@ -88,6 +88,13 @@
     if (!l.playable) return;
     goto(`/watch/${l.id}`);
   }
+
+  async function toggleComplete(l: Lecture) {
+    const val = !l.completed;
+    l.completed = val; // optimistic (deeply reactive $state)
+    await api.setLectureCompleted(l.id, val).catch(() => {});
+    loadLibrary(true); // keep the library progress count in sync
+  }
 </script>
 
 {#if loading}
@@ -179,27 +186,41 @@
               <ul class="border-t border-outline-variant">
                 {#each section.lectures as lecture (lecture.id)}
                   {@const isNext = resume?.id === lecture.id}
-                  <li>
+                  <li
+                    class="group flex items-center gap-3 px-4 py-2 transition-colors
+                      {isNext ? 'bg-primary-container/15' : 'hover:bg-surface-container'}"
+                  >
+                    <!-- completion toggle -->
+                    <button
+                      onclick={() => toggleComplete(lecture)}
+                      class="shrink-0"
+                      title={lecture.completed ? "Mark as not done" : "Mark as done"}
+                      aria-label={lecture.completed ? "Mark as not done" : "Mark as done"}
+                    >
+                      {#if lecture.completed}
+                        <CircleCheck size={18} class="text-secondary-container" />
+                      {:else}
+                        <Circle
+                          size={18}
+                          class="text-outline hover:text-secondary-container transition-colors"
+                        />
+                      {/if}
+                    </button>
+
+                    <!-- open lecture -->
                     <button
                       onclick={() => openLecture(lecture)}
                       disabled={!lecture.playable}
-                      class="group w-full flex items-center gap-3 px-4 py-2 text-left transition-colors
-                        {isNext ? 'bg-primary-container/15' : 'hover:bg-surface-container'}
+                      class="flex-1 min-w-0 flex items-center gap-2 text-left
                         {lecture.playable ? '' : 'opacity-60 cursor-not-allowed'}"
                     >
-                      {#if lecture.completed}
-                        <CircleCheck size={18} class="text-secondary-container shrink-0" />
-                      {:else}
-                        <span class="relative shrink-0">
-                          <Circle size={18} class="text-outline group-hover:opacity-0 transition-opacity" />
-                          <Play
-                            size={18}
-                            class="text-primary absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                            fill="currentColor"
-                          />
-                        </span>
+                      {#if lecture.playable}
+                        <Play
+                          size={14}
+                          class="text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          fill="currentColor"
+                        />
                       {/if}
-
                       <span
                         class="flex-1 min-w-0 truncate text-body-md
                           {lecture.completed ? 'text-on-surface-variant line-through' : 'text-on-surface'}"

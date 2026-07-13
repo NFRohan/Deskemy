@@ -28,6 +28,8 @@ export const api = {
   setFavorite: (id: string, favorite: boolean) =>
     invoke<void>("course_set_favorite", { id, favorite }),
   touchOpened: (id: string) => invoke<void>("course_touch_opened", { id }),
+  setLectureCompleted: (lectureId: string, completed: boolean) =>
+    invoke<void>("lecture_set_completed", { lectureId, completed }),
 
   // config_*
   getConfig: () => invoke<AppConfig>("config_get"),

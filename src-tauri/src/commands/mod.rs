@@ -131,6 +131,17 @@ pub fn course_touch_opened(state: State<AppState>, id: String) -> Result<()> {
     queries::touch_opened(&conn, &id)
 }
 
+/// Manually mark a lecture complete/incomplete.
+#[tauri::command]
+pub fn lecture_set_completed(
+    state: State<AppState>,
+    lecture_id: String,
+    completed: bool,
+) -> Result<()> {
+    let conn = db(&state)?;
+    queries::set_completed(&conn, &lecture_id, completed)
+}
+
 // ---------------------------------------------------------------------------
 // config_*
 // ---------------------------------------------------------------------------
