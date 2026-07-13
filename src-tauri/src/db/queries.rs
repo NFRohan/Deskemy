@@ -136,6 +136,35 @@ pub fn set_resume_thumbnail(conn: &Connection, id: &str, path: Option<&str>) -> 
     Ok(())
 }
 
+pub fn tags_for_course(conn: &Connection, course_id: &str) -> Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT tag FROM course_tags WHERE course_id = ?1 ORDER BY tag")?;
+    let rows = stmt
+        .query_map(params![course_id], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Add a tag to a course (no-op if already present); returns the course's tags.
+pub fn add_tag(conn: &Connection, course_id: &str, tag: &str) -> Result<Vec<String>> {
+    let tag = tag.trim();
+    if !tag.is_empty() {
+        conn.execute(
+            "INSERT OR IGNORE INTO course_tags (course_id, tag) VALUES (?1, ?2)",
+            params![course_id, tag],
+        )?;
+    }
+    tags_for_course(conn, course_id)
+}
+
+pub fn remove_tag(conn: &Connection, course_id: &str, tag: &str) -> Result<Vec<String>> {
+    conn.execute(
+        "DELETE FROM course_tags WHERE course_id = ?1 AND tag = ?2",
+        params![course_id, tag],
+    )?;
+    tags_for_course(conn, course_id)
+}
+
 pub fn touch_opened(conn: &Connection, id: &str) -> Result<()> {
     conn.execute(
         "UPDATE courses SET last_opened_at = ?2 WHERE id = ?1",
@@ -503,9 +532,26 @@ pub fn list_course_summaries(conn: &Connection) -> Result<Vec<CourseSummary>> {
                 last_opened_at: r.get(8)?,
                 completed_count: r.get(9)?,
                 resume_thumbnail_path: r.get(10)?,
+                tags: Vec::new(),
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    // Attach tags in one pass.
+    let mut tstmt = conn.prepare("SELECT course_id, tag FROM course_tags ORDER BY tag")?;
+    let mut by_course: HashMap<String, Vec<String>> = HashMap::new();
+    let pairs = tstmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (cid, tag) in pairs {
+        by_course.entry(cid).or_default().push(tag);
+    }
+    let mut rows = rows;
+    for c in &mut rows {
+        if let Some(tags) = by_course.remove(&c.id) {
+            c.tags = tags;
+        }
+    }
     Ok(rows)
 }
 

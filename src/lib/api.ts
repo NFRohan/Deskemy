@@ -40,6 +40,11 @@ export const api = {
   getCourseAttachments: (courseId: string) =>
     invoke<Attachment[]>("course_attachments", { courseId }),
   openResource: (path: string) => invoke<void>("open_resource", { path }),
+  getCourseTags: (courseId: string) => invoke<string[]>("course_tags", { courseId }),
+  addCourseTag: (courseId: string, tag: string) =>
+    invoke<string[]>("course_add_tag", { courseId, tag }),
+  removeCourseTag: (courseId: string, tag: string) =>
+    invoke<string[]>("course_remove_tag", { courseId, tag }),
   setCourseThumbnailFile: (id: string, srcPath: string) =>
     invoke<string>("course_set_thumbnail_file", { id, srcPath }),
   setCourseThumbnailBytes: (id: string, dataBase64: string, ext: string | null) =>

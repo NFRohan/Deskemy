@@ -9,6 +9,7 @@
 
   let filter = $state("");
   let sort = $state<"recent" | "alpha" | "progress">("recent");
+  let tagFilter = $state<string | null>(null);
 
   onMount(() => {
     setCrumbs([{ label: "Library" }]);
@@ -21,10 +22,13 @@
     library.courses.find((c) => c.last_opened_at != null && c.completed_count < c.lecture_count),
   );
 
+  const allTags = $derived([...new Set(library.courses.flatMap((c) => c.tags))].sort());
+
   const filtered = $derived.by(() => {
     let list = library.courses.filter((c) =>
       c.title.toLowerCase().includes(filter.toLowerCase()),
     );
+    if (tagFilter) list = list.filter((c) => c.tags.includes(tagFilter));
     if (sort === "alpha") {
       list = [...list].sort((a, b) => a.title.localeCompare(b.title));
     } else if (sort === "progress") {
@@ -129,6 +133,30 @@
           </select>
         </div>
       </div>
+
+      {#if allTags.length > 0}
+        <div class="flex flex-wrap items-center gap-2 mb-5">
+          {#each allTags as tag (tag)}
+            <button
+              onclick={() => (tagFilter = tagFilter === tag ? null : tag)}
+              class="px-2.5 py-1 rounded-full text-label-md transition-colors
+                {tagFilter === tag
+                ? 'bg-primary-container text-on-primary-container'
+                : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'}"
+            >
+              {tag}
+            </button>
+          {/each}
+          {#if tagFilter}
+            <button
+              onclick={() => (tagFilter = null)}
+              class="px-2 py-1 rounded-full text-label-md text-on-surface-variant hover:text-on-surface transition-colors"
+            >
+              Clear
+            </button>
+          {/if}
+        </div>
+      {/if}
 
       {#if filtered.length === 0}
         <p class="text-body-sm text-on-surface-variant py-8 text-center">No courses match “{filter}”.</p>

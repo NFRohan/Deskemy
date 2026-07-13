@@ -42,6 +42,8 @@ pub struct CourseSummary {
     pub completed_count: i64,
     /// Frame grabbed at the resume point, for the Continue Watching entry.
     pub resume_thumbnail_path: Option<String>,
+    /// User-defined tags (sorted).
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

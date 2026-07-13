@@ -32,6 +32,8 @@
 
   let course = $state<CourseDetail | null>(null);
   let attachments = $state<Attachment[]>([]);
+  let tags = $state<string[]>([]);
+  let newTag = $state("");
   let loading = $state(true);
   let error = $state<string | null>(null);
   let expanded = $state<Set<string>>(new Set());
@@ -79,6 +81,7 @@
       const c = await api.getCourse(courseId);
       course = c;
       attachments = await api.getCourseAttachments(courseId).catch(() => []);
+      tags = await api.getCourseTags(courseId).catch(() => []);
       if (c) {
         setCrumbs([{ label: "Library", href: "/" }, { label: c.title }]);
         api.touchOpened(courseId).catch(() => {});
@@ -193,6 +196,20 @@
     api.openResource(a.file_path).catch(() => {});
   }
 
+  async function addTag() {
+    if (!course) return;
+    const t = newTag.trim();
+    if (!t) return;
+    newTag = "";
+    tags = await api.addCourseTag(course.id, t).catch(() => tags);
+    loadLibrary(true); // keep the library's tag chips/filter in sync
+  }
+  async function removeTag(tag: string) {
+    if (!course) return;
+    tags = await api.removeCourseTag(course.id, tag).catch(() => tags);
+    loadLibrary(true);
+  }
+
   async function toggleComplete(l: Lecture) {
     const val = !l.completed;
     l.completed = val; // optimistic (deeply reactive $state)
@@ -288,6 +305,30 @@
               <Trash2 size={20} />
             </button>
           </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="flex flex-wrap items-center gap-1.5 mt-3">
+          {#each tags as tag (tag)}
+            <span
+              class="inline-flex items-center gap-1 pl-2.5 pr-1 py-0.5 rounded-full bg-surface-container-high text-label-sm text-on-surface"
+            >
+              {tag}
+              <button
+                onclick={() => removeTag(tag)}
+                class="p-0.5 rounded-full text-on-surface-variant hover:text-error hover:bg-surface-container-highest transition-colors"
+                aria-label={`Remove tag ${tag}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          {/each}
+          <input
+            bind:value={newTag}
+            onkeydown={(e) => e.key === "Enter" && addTag()}
+            placeholder="+ tag"
+            class="w-24 bg-transparent border-b border-outline-variant text-label-sm text-on-surface px-1 py-0.5 outline-none focus:border-accent-blue placeholder:text-on-surface-variant"
+          />
         </div>
 
         <div class="mt-auto pt-4">

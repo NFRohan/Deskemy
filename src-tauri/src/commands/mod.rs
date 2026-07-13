@@ -202,6 +202,29 @@ pub fn course_attachments(state: State<AppState>, course_id: String) -> Result<V
     queries::list_course_attachments(&conn, &course_id)
 }
 
+#[tauri::command]
+pub fn course_tags(state: State<AppState>, course_id: String) -> Result<Vec<String>> {
+    let conn = db(&state)?;
+    queries::tags_for_course(&conn, &course_id)
+}
+
+/// Add a tag to a course; returns the course's updated tag list.
+#[tauri::command]
+pub fn course_add_tag(state: State<AppState>, course_id: String, tag: String) -> Result<Vec<String>> {
+    let conn = db(&state)?;
+    queries::add_tag(&conn, &course_id, &tag)
+}
+
+#[tauri::command]
+pub fn course_remove_tag(
+    state: State<AppState>,
+    course_id: String,
+    tag: String,
+) -> Result<Vec<String>> {
+    let conn = db(&state)?;
+    queries::remove_tag(&conn, &course_id, &tag)
+}
+
 /// Open a resource file with the OS default application.
 #[tauri::command]
 pub fn open_resource(app: AppHandle, path: String) -> Result<()> {
