@@ -352,26 +352,6 @@
   </div>
 {:else}
   <div class="flex flex-col h-full bg-black">
-    {#if !ui.immersive}
-      <header class="h-14 shrink-0 flex items-center gap-3 px-4 bg-surface border-b border-outline-variant">
-        <button
-          onclick={() => lecture && goto(`/course/${lecture.course_id}`)}
-          class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
-          aria-label="Back to course"
-        >
-          <ArrowLeft size={18} />
-        </button>
-        <div class="min-w-0">
-          <h1 class="text-headline-sm text-on-surface truncate">{lecture?.title ?? "…"}</h1>
-          {#if lecture}
-            <p class="text-label-sm text-on-surface-variant truncate">
-              {lecture.course_title} · {lecture.section_title}
-            </p>
-          {/if}
-        </div>
-      </header>
-    {/if}
-
     {#if error}
       <div class="bg-error/10 border-b border-error/30 text-error text-body-sm px-4 py-2">{error}</div>
     {/if}
