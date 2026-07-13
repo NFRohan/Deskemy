@@ -40,6 +40,8 @@ pub struct CourseSummary {
     pub last_opened_at: Option<i64>,
     /// Number of completed lectures (for progress %).
     pub completed_count: i64,
+    /// Frame grabbed at the resume point, for the Continue Watching entry.
+    pub resume_thumbnail_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

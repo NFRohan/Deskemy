@@ -62,6 +62,8 @@ export const api = {
   playerSetRect: (x: number, y: number, w: number, h: number) =>
     invoke<void>("player_set_rect", { x, y, w, h }),
   playerStop: () => invoke<void>("player_stop"),
+  playerGrabResumeFrame: (courseId: string) =>
+    invoke<string | null>("player_grab_resume_frame", { courseId }),
   playerState: () => invoke<PlayerState | null>("player_state"),
   playerTracks: () => invoke<MediaTracks>("player_tracks"),
   playerSetSubtitle: (sid: number | null) => invoke<void>("player_set_subtitle", { sid }),

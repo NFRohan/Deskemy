@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import { Filter, Play, LoaderCircle, FolderOpen } from "@lucide/svelte";
   import CourseCard from "$lib/components/CourseCard.svelte";
   import ProgressBar from "$lib/components/ProgressBar.svelte";
@@ -61,6 +62,7 @@
     <!-- Continue Watching -->
     {#if hero}
       {@const heroPct = pct(hero.completed_count, hero.lecture_count)}
+      {@const heroImg = hero.resume_thumbnail_path ?? hero.thumbnail_path}
       <section>
         <h2 class="text-headline-sm text-on-surface mb-4">Continue Watching</h2>
         <a
@@ -68,9 +70,22 @@
           class="group relative flex bg-surface-container-low border border-outline-variant rounded-xl overflow-hidden hover:border-primary-container transition-colors"
         >
           <div
-            class="w-1/3 relative bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex-shrink-0 flex items-center justify-center min-h-[180px]"
+            class="w-1/3 relative bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex-shrink-0 flex items-center justify-center min-h-[180px] overflow-hidden"
           >
-            <Play size={44} class="text-outline-variant group-hover:text-primary transition-colors" />
+            {#if heroImg}
+              <img
+                src={convertFileSrc(heroImg)}
+                alt={hero.title}
+                class="absolute inset-0 w-full h-full object-cover"
+              />
+              <div
+                class="absolute inset-0 bg-black/25 group-hover:bg-black/10 transition-colors flex items-center justify-center"
+              >
+                <Play size={44} class="text-white/90 drop-shadow-lg" fill="currentColor" />
+              </div>
+            {:else}
+              <Play size={44} class="text-outline-variant group-hover:text-primary transition-colors" />
+            {/if}
           </div>
           <div class="w-2/3 p-6 flex flex-col justify-between">
             <div>

@@ -302,7 +302,14 @@
     observer?.disconnect();
     setImmersive(false);
     getCurrentWindow().setFullscreen(false).catch(() => {});
-    api.playerStop().catch(() => {});
+    // Grab a resume frame for the Continue Watching entry, then stop. The
+    // backend player persists past this component, so the awaited grab still
+    // captures the current frame before playback is torn down.
+    const cid = lecture?.course_id;
+    const grab = cid
+      ? api.playerGrabResumeFrame(cid).catch(() => {})
+      : Promise.resolve();
+    grab.finally(() => api.playerStop().catch(() => {}));
   });
 
   function onSeekInput(e: Event) {

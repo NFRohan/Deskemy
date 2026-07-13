@@ -111,6 +111,8 @@ pub trait PlayerService: Send + Sync {
     fn set_chapter(&self, index: i64) -> Result<()>;
     fn set_volume(&self, volume: f64) -> Result<()>;
     fn set_muted(&self, muted: bool) -> Result<()>;
+    /// Write the current video frame (no OSD/subs) to `path`.
+    fn screenshot(&self, path: &str) -> Result<()>;
 }
 
 pub struct MpvPlayer {
@@ -233,6 +235,12 @@ impl PlayerService for MpvPlayer {
         self.inner
             .mpv
             .set_property("mute", if muted { "yes" } else { "no" })
+    }
+    fn screenshot(&self, path: &str) -> Result<()> {
+        // "video" = the decoded frame at source resolution, without OSD/subs.
+        self.inner
+            .mpv
+            .command(&["screenshot-to-file", path, "video"])
     }
 }
 

@@ -126,6 +126,44 @@ pub fn player_stop(state: State<AppState>) -> Result<()> {
     existing(&state, |p| p.stop())
 }
 
+/// Grab the current video frame from the active player and store it as the
+/// course's Continue-Watching resume thumbnail. No-op (returns None) if no
+/// player is running. Returns the stored path on success.
+#[tauri::command]
+pub fn player_grab_resume_frame(
+    state: State<AppState>,
+    course_id: String,
+) -> Result<Option<String>> {
+    let thumbs = state.thumbnails_dir();
+    std::fs::create_dir_all(&thumbs)?;
+    let tmp = thumbs.join(format!(".resume-tmp-{course_id}.jpg"));
+    let tmp_str = tmp.to_string_lossy().into_owned();
+
+    // Screenshot from the active player (nothing to do if none exists).
+    {
+        let guard = state
+            .player
+            .lock()
+            .map_err(|_| DeskemyError::Other("player lock poisoned".into()))?;
+        match guard.as_ref() {
+            Some(p) => p.screenshot(&tmp_str)?,
+            None => return Ok(None),
+        }
+    }
+
+    let bytes = std::fs::read(&tmp)?;
+    let _ = std::fs::remove_file(&tmp);
+    let stored = crate::thumbnails::store(&thumbs, &bytes, Some("jpg"))?;
+    let path_str = stored.to_string_lossy().into_owned();
+
+    let conn = state
+        .db
+        .lock()
+        .map_err(|_| DeskemyError::Other("db lock poisoned".into()))?;
+    queries::set_resume_thumbnail(&conn, &course_id, Some(&path_str))?;
+    Ok(Some(path_str))
+}
+
 #[tauri::command]
 pub fn player_state(state: State<AppState>) -> Result<Option<PlayerState>> {
     let guard = state

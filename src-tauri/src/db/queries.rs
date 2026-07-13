@@ -124,6 +124,15 @@ pub fn set_thumbnail(conn: &Connection, id: &str, path: Option<&str>) -> Result<
     Ok(())
 }
 
+/// Set (or clear) a course's Continue-Watching resume frame.
+pub fn set_resume_thumbnail(conn: &Connection, id: &str, path: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE courses SET resume_thumbnail_path = ?2 WHERE id = ?1",
+        params![id, path],
+    )?;
+    Ok(())
+}
+
 pub fn touch_opened(conn: &Connection, id: &str) -> Result<()> {
     conn.execute(
         "UPDATE courses SET last_opened_at = ?2 WHERE id = ?1",
@@ -264,7 +273,8 @@ pub fn list_course_summaries(conn: &Connection) -> Result<Vec<CourseSummary>> {
                 c.total_duration, c.is_favorite, c.scan_status, c.last_opened_at,
                 (SELECT COUNT(*) FROM lectures l
                    JOIN progress p ON p.lecture_id = l.id
-                  WHERE l.course_id = c.id AND p.completed = 1) AS completed_count
+                  WHERE l.course_id = c.id AND p.completed = 1) AS completed_count,
+                c.resume_thumbnail_path
            FROM courses c
           ORDER BY COALESCE(c.last_opened_at, 0) DESC, c.imported_at DESC",
     )?;
@@ -281,6 +291,7 @@ pub fn list_course_summaries(conn: &Connection) -> Result<Vec<CourseSummary>> {
                 scan_status: r.get(7)?,
                 last_opened_at: r.get(8)?,
                 completed_count: r.get(9)?,
+                resume_thumbnail_path: r.get(10)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;

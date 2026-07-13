@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -162,7 +162,11 @@ fn migrate(conn: &Connection) -> Result<()> {
     if version < 1 {
         conn.execute_batch(SCHEMA_V1)?;
     }
-    // future: if version < 2 { ... }
+    if version < 2 {
+        // A frame grabbed from the player at the resume point, shown on the
+        // library's Continue Watching entry.
+        conn.execute_batch("ALTER TABLE courses ADD COLUMN resume_thumbnail_path TEXT;")?;
+    }
     if version != SCHEMA_VERSION {
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     }

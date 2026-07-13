@@ -11,6 +11,7 @@ export interface CourseSummary {
   scan_status: string;
   last_opened_at: number | null;
   completed_count: number;
+  resume_thumbnail_path: string | null;
 }
 
 export interface Lecture {
