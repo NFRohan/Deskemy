@@ -6,7 +6,7 @@ use crate::db::queries;
 use crate::error::{DeskemyError, Result};
 use crate::mpv::{
     Mpv, MpvEventEndFile, MPV_END_FILE_REASON_EOF, MPV_EVENT_END_FILE, MPV_EVENT_FILE_LOADED,
-    MPV_EVENT_PROPERTY_CHANGE, MPV_EVENT_SHUTDOWN, MPV_FORMAT_DOUBLE, MPV_FORMAT_FLAG,
+    MPV_EVENT_SHUTDOWN, MPV_FORMAT_DOUBLE, MPV_FORMAT_FLAG,
 };
 use crate::state::AppState;
 use serde::Serialize;
@@ -60,7 +60,8 @@ pub trait PlayerService: Send + Sync {
     fn set_speed(&self, speed: f64) -> Result<()>;
     fn next(&self) -> Result<()>;
     fn prev(&self) -> Result<()>;
-    fn set_rect(&self, x: i32, y: i32, w: i32, h: i32) -> Result<()>;
+    /// Position the video pane in CSS pixels (converted to device pixels here).
+    fn set_rect(&self, x: f64, y: f64, w: f64, h: f64) -> Result<()>;
     fn stop(&self) -> Result<()>;
     fn state(&self) -> PlayerState;
 }
@@ -88,7 +89,7 @@ impl MpvPlayer {
 
         let mpv = Mpv::new()?;
         mpv.set_option("wid", &child.to_string())?;
-        mpv.set_option("hwdec", "auto-safe")?;
+        mpv.set_option("hwdec", "no")?; // rule out hw decode issues in embedded window
         mpv.set_option("keep-open", "no")?;
         mpv.set_option("osc", "no")?;
         mpv.set_option("osd-level", "0")?;
@@ -147,7 +148,7 @@ impl PlayerService for MpvPlayer {
     fn prev(&self) -> Result<()> {
         self.inner.step(-1)
     }
-    fn set_rect(&self, x: i32, y: i32, w: i32, h: i32) -> Result<()> {
+    fn set_rect(&self, x: f64, y: f64, w: f64, h: f64) -> Result<()> {
         self.inner.set_rect(x, y, w, h);
         Ok(())
     }
@@ -232,11 +233,18 @@ impl PlayerInner {
             cfg.default_speed
         };
 
+        tracing::debug!(path = path.as_str(), start, "loadfile");
+        // loadfile <url> [<flags> [<index> [<options>]]] — options is the 4th arg.
         if start > 1.0 {
-            self.mpv
-                .command(&["loadfile", &path, "replace", &format!("start={start}")])?;
+            self.mpv.command(&[
+                "loadfile",
+                &path,
+                "replace",
+                "0",
+                &format!("start={start}"),
+            ])?;
         } else {
-            self.mpv.command(&["loadfile", &path, "replace"])?;
+            self.mpv.command(&["loadfile", &path])?;
         }
         self.mpv.set_property("pause", "no").ok();
         self.mpv.set_property("speed", &speed.to_string()).ok();
@@ -358,11 +366,22 @@ impl PlayerInner {
         let _ = self.app.emit("player:state", snapshot);
     }
 
-    fn set_rect(&self, x: i32, y: i32, w: i32, h: i32) {
+    fn set_rect(&self, x: f64, y: f64, w: f64, h: f64) {
+        // CSS px → device px using the window's authoritative scale factor.
+        let scale = self
+            .app
+            .get_webview_window("main")
+            .and_then(|w| w.scale_factor().ok())
+            .unwrap_or(1.0);
+        let px = (x * scale).round() as i32;
+        let py = (y * scale).round() as i32;
+        let pw = ((w * scale).round() as i32).max(1);
+        let ph = ((h * scale).round() as i32).max(1);
+        tracing::trace!(?x, ?y, ?w, ?h, scale, px, py, pw, ph, "player set_rect");
         let child = self.child;
         let _ = self
             .app
-            .run_on_main_thread(move || move_child(child, x, y, w.max(1), h.max(1)));
+            .run_on_main_thread(move || move_child(child, px, py, pw, ph));
     }
 
     fn show(&self, visible: bool) {
@@ -374,28 +393,41 @@ impl PlayerInner {
 }
 
 fn spawn_pump(inner: Arc<PlayerInner>) {
-    std::thread::spawn(move || loop {
-        let ev = inner.mpv.wait_event(1.0);
-        if ev.is_null() {
-            continue;
-        }
-        let id = unsafe { (*ev).event_id };
-        match id {
-            MPV_EVENT_SHUTDOWN => break,
-            MPV_EVENT_FILE_LOADED => inner.tick(true),
-            MPV_EVENT_PROPERTY_CHANGE => inner.tick(false),
-            MPV_EVENT_END_FILE => {
-                let data = unsafe { (*ev).data } as *const MpvEventEndFile;
-                let reason = if data.is_null() {
-                    -1
-                } else {
-                    unsafe { (*data).reason }
-                };
-                if reason == MPV_END_FILE_REASON_EOF {
-                    inner.on_ended();
+    std::thread::spawn(move || {
+        let mut last_poll = Instant::now();
+        loop {
+            let ev = inner.mpv.wait_event(0.1);
+            if !ev.is_null() {
+                let id = unsafe { (*ev).event_id };
+                match id {
+                    MPV_EVENT_SHUTDOWN => return,
+                    MPV_EVENT_FILE_LOADED => {
+                        // Ensure playback starts (pause set before load can be reset).
+                        inner.mpv.set_property("pause", "no").ok();
+                        let duration = inner.mpv.get_f64("duration").unwrap_or(0.0);
+                        tracing::debug!(duration, "mpv file loaded");
+                    }
+                    MPV_EVENT_END_FILE => {
+                        let data = unsafe { (*ev).data } as *const MpvEventEndFile;
+                        let reason = if data.is_null() {
+                            -1
+                        } else {
+                            unsafe { (*data).reason }
+                        };
+                        tracing::debug!(reason, "mpv end-file");
+                        if reason == MPV_END_FILE_REASON_EOF {
+                            inner.on_ended();
+                        }
+                    }
+                    _ => {}
                 }
             }
-            _ => {}
+            // Poll mpv ~5x/sec and push state to the UI. Robust to missed
+            // property-change events (which were unreliable when embedded).
+            if last_poll.elapsed() >= Duration::from_millis(200) {
+                last_poll = Instant::now();
+                inner.tick(true);
+            }
         }
     });
 }
@@ -460,11 +492,11 @@ fn create_child(parent: isize) -> isize {
 
 #[cfg(windows)]
 fn move_child(hwnd: isize, x: i32, y: i32, w: i32, h: i32) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE};
+    // HWND_TOP (null) + no SWP_NOZORDER → raise above the WebView2 sibling so
+    // the video is visible (otherwise it renders behind the webview → black).
     unsafe {
-        SetWindowPos(hwnd as _, std::ptr::null_mut(), x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(hwnd as _, std::ptr::null_mut(), x, y, w, h, SWP_NOACTIVATE);
     }
 }
 

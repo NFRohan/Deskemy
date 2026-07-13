@@ -30,7 +30,7 @@ pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("deskemy=debug,info")),
+                .unwrap_or_else(|_| EnvFilter::new("deskemy_lib=debug,info")),
         )
         .init();
 

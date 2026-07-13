@@ -83,10 +83,10 @@ pub fn player_prev(state: State<AppState>) -> Result<()> {
 #[tauri::command]
 pub fn player_set_rect(
     state: State<AppState>,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
 ) -> Result<()> {
     existing(&state, |p| p.set_rect(x, y, w, h))
 }
