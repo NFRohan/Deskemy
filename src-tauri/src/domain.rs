@@ -92,6 +92,23 @@ pub struct Bookmark {
     pub created_at: i64,
 }
 
+/// Aggregate library/watch statistics for the stats page.
+#[derive(Debug, Clone, Serialize)]
+pub struct LibraryStats {
+    pub courses_total: i64,
+    pub courses_completed: i64,
+    pub courses_in_progress: i64,
+    pub lectures_total: i64,
+    pub lectures_completed: i64,
+    /// Approx seconds watched (full duration for completed, else resume pos).
+    pub watched_seconds: f64,
+    /// Total duration of every lecture in the library.
+    pub library_seconds: f64,
+    pub days_active: i64,
+    pub current_streak: i64,
+    pub bookmarks_total: i64,
+}
+
 /// A non-media resource that shipped with a course (pdf, zip, code, …).
 #[derive(Debug, Clone, Serialize)]
 pub struct Attachment {

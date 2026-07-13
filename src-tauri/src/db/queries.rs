@@ -3,7 +3,8 @@
 
 use crate::db::{new_id, now};
 use crate::domain::{
-    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, Section, SearchHit,
+    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, LibraryStats,
+    Section, SearchHit,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -368,6 +369,74 @@ pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<SearchHi
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// Aggregate library + watch statistics.
+pub fn stats(conn: &Connection) -> Result<LibraryStats> {
+    let one = |sql: &str| -> Result<i64> { Ok(conn.query_row(sql, [], |r| r.get(0))?) };
+    let one_f = |sql: &str| -> Result<f64> { Ok(conn.query_row(sql, [], |r| r.get(0))?) };
+
+    let courses_total = one("SELECT COUNT(*) FROM courses")?;
+    let lectures_total = one("SELECT COUNT(*) FROM lectures")?;
+    let lectures_completed = one("SELECT COUNT(*) FROM progress WHERE completed=1")?;
+    let bookmarks_total = one("SELECT COUNT(*) FROM bookmarks")?;
+    let library_seconds = one_f("SELECT COALESCE(SUM(duration),0) FROM lectures")?;
+    let watched_seconds = one_f(
+        "SELECT COALESCE(SUM(CASE WHEN p.completed=1 THEN COALESCE(l.duration,0)
+                                  ELSE p.position_seconds END),0)
+           FROM progress p JOIN lectures l ON l.id=p.lecture_id",
+    )?;
+    let courses_completed = one(
+        "SELECT COUNT(*) FROM courses c
+          WHERE c.lecture_count>0 AND c.lecture_count=(
+            SELECT COUNT(*) FROM lectures l JOIN progress p ON p.lecture_id=l.id
+             WHERE l.course_id=c.id AND p.completed=1)",
+    )?;
+    let started = one(
+        "SELECT COUNT(DISTINCT l.course_id) FROM lectures l JOIN progress p ON p.lecture_id=l.id
+          WHERE p.completed=1 OR p.position_seconds>0",
+    )?;
+    let courses_in_progress = (started - courses_completed).max(0);
+
+    // Distinct active days (as integer julian days) for streak computation.
+    let today =
+        one("SELECT CAST(julianday(date('now','localtime')) AS INTEGER)")?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT CAST(julianday(date(last_watched_at,'unixepoch','localtime')) AS INTEGER) AS d
+           FROM progress WHERE last_watched_at IS NOT NULL ORDER BY d DESC",
+    )?;
+    let days: Vec<i64> = stmt
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let days_active = days.len() as i64;
+    let mut current_streak = 0i64;
+    if let Some(&first) = days.first() {
+        if first == today || first == today - 1 {
+            current_streak = 1;
+            let mut prev = first;
+            for &d in days.iter().skip(1) {
+                if d == prev - 1 {
+                    current_streak += 1;
+                    prev = d;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(LibraryStats {
+        courses_total,
+        courses_completed,
+        courses_in_progress,
+        lectures_total,
+        lectures_completed,
+        watched_seconds,
+        library_seconds,
+        days_active,
+        current_streak,
+        bookmarks_total,
+    })
 }
 
 pub fn search_index_count(conn: &Connection) -> Result<i64> {

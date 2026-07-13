@@ -83,6 +83,7 @@ pub fn run() {
             commands::bookmark_list_all,
             commands::search_query,
             commands::search_reindex,
+            commands::stats_get,
             commands::library_reconcile,
             commands::thumbnails_gc,
             commands::config_get,

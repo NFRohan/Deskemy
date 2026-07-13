@@ -1,6 +1,15 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { Library, Bookmark, Star, Search, Settings, FolderPlus, LoaderCircle } from "@lucide/svelte";
+  import {
+    Library,
+    Bookmark,
+    Star,
+    Search,
+    ChartColumn,
+    Settings,
+    FolderPlus,
+    LoaderCircle,
+  } from "@lucide/svelte";
   import { api, pickFolder } from "$lib/api";
   import { loadLibrary, ui } from "$lib/stores/app.svelte";
 
@@ -12,6 +21,7 @@
     { href: "/bookmarks", label: "Bookmarks", icon: Bookmark },
     { href: "/favorites", label: "Favorites", icon: Star },
     { href: "/search", label: "Search", icon: Search },
+    { href: "/stats", label: "Stats", icon: ChartColumn },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 

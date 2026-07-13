@@ -128,6 +128,19 @@ export interface Bookmark {
   created_at: number;
 }
 
+export interface LibraryStats {
+  courses_total: number;
+  courses_completed: number;
+  courses_in_progress: number;
+  lectures_total: number;
+  lectures_completed: number;
+  watched_seconds: number;
+  library_seconds: number;
+  days_active: number;
+  current_streak: number;
+  bookmarks_total: number;
+}
+
 export interface Attachment {
   id: string;
   name: string;

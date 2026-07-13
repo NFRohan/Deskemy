@@ -3,7 +3,9 @@
 pub mod player;
 
 use crate::db::queries;
-use crate::domain::{Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, SearchHit};
+use crate::domain::{
+    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, LibraryStats, SearchHit,
+};
 use crate::error::{DeskemyError, Result};
 use rusqlite::Connection;
 use serde::Serialize;
@@ -278,6 +280,13 @@ pub fn search_reindex(state: State<AppState>) -> Result<i64> {
     let conn = db(&state)?;
     queries::rebuild_search_index(&conn)?;
     queries::search_index_count(&conn)
+}
+
+/// Aggregate library + watch statistics for the stats page.
+#[tauri::command]
+pub fn stats_get(state: State<AppState>) -> Result<LibraryStats> {
+    let conn = db(&state)?;
+    queries::stats(&conn)
 }
 
 // ---------------------------------------------------------------------------

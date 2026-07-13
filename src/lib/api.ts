@@ -11,6 +11,7 @@ import type {
   CourseSummary,
   GcReport,
   LectureView,
+  LibraryStats,
   MediaTracks,
   PlayerState,
   ReconcileReport,
@@ -57,6 +58,9 @@ export const api = {
   // search_*
   search: (query: string) => invoke<SearchHit[]>("search_query", { query }),
   reindexSearch: () => invoke<number>("search_reindex"),
+
+  // stats
+  getStats: () => invoke<LibraryStats>("stats_get"),
 
   // maintenance
   reconcileLibrary: () => invoke<ReconcileReport>("library_reconcile"),
