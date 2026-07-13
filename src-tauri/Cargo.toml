@@ -1,0 +1,52 @@
+[package]
+name = "deskemy"
+version = "0.1.0"
+description = "Deskemy — offline course player"
+authors = ["Deskemy"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "deskemy_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Persistence: bundled SQLite (compiles from C via MSVC; includes FTS5)
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Identity + hashing
+uuid = { version = "1", features = ["v7"] }
+blake3 = "1"
+
+# Errors + logging
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Filesystem scanning
+walkdir = "2"
+
+# Runtime FFI to libmpv (no build-time link dependency)
+libloading = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile = "3"
