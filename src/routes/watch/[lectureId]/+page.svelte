@@ -26,11 +26,15 @@
     CircleCheck,
     Circle,
     X,
+    Bookmark as BookmarkIcon,
+    BookmarkPlus,
+    Trash2,
   } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs, setImmersive, ui } from "$lib/stores/app.svelte";
   import { formatClock } from "$lib/format";
   import type {
+    Bookmark,
     CourseDetail,
     Lecture,
     LectureView,
@@ -65,10 +69,13 @@
   let speedSel = $state(1);
   let tracks = $state<MediaTracks>({ audio: [], subtitle: [], chapters: [] });
   let tracksFor = $state<string | null>(null);
-  let openMenu = $state<"sub" | "audio" | "chapters" | null>(null);
+  let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | null>(null);
   let course = $state<CourseDetail | null>(null);
   let showPlaylist = $state(false);
   let expandedSections = $state<Set<string>>(new Set());
+  let bookmarks = $state<Bookmark[]>([]);
+  let bookmarksFor = $state<string | null>(null);
+  let newBookmarkLabel = $state("");
 
   let unlisten: UnlistenFn[] = [];
   let observer: ResizeObserver | null = null;
@@ -163,6 +170,38 @@
   });
   function refetchTracks() {
     api.playerTracks().then((t) => (tracks = t)).catch(() => {});
+  }
+
+  // Bookmarks: reload whenever the active lecture changes.
+  $effect(() => {
+    const lid = state.lecture_id;
+    if (lid && bookmarksFor !== lid) {
+      bookmarksFor = lid;
+      refetchBookmarks(lid);
+    }
+  });
+  function refetchBookmarks(lid: string | null = state.lecture_id) {
+    if (!lid) return;
+    api.listBookmarks(lid).then((b) => (bookmarks = b)).catch(() => {});
+  }
+  async function addBookmark() {
+    const lid = state.lecture_id;
+    if (!lid) return;
+    const label = newBookmarkLabel.trim() || null;
+    try {
+      await api.addBookmark(lid, state.position, label);
+      newBookmarkLabel = "";
+      refetchBookmarks(lid);
+    } catch {
+      /* ignore — list stays as-is */
+    }
+  }
+  async function removeBookmark(id: string) {
+    await api.deleteBookmark(id).catch(() => {});
+    refetchBookmarks();
+  }
+  function jumpToBookmark(b: Bookmark) {
+    api.playerSeek(b.position_seconds).catch(() => {});
   }
 
   const volValue = $derived(state.muted ? 0 : state.volume);
@@ -413,6 +452,49 @@
                 {#if state.chapter === c.index}<Check size={16} class="text-primary shrink-0" />{/if}
               </button>
             {/each}
+          {:else if openMenu === "bookmarks"}
+            <div class="flex items-center gap-2 px-4 py-2 border-b border-outline-variant">
+              <input
+                type="text"
+                bind:value={newBookmarkLabel}
+                onkeydown={(e) => e.key === "Enter" && addBookmark()}
+                placeholder="Label (optional)"
+                class="flex-1 min-w-0 bg-background border border-outline-variant rounded px-2 py-1 text-body-sm text-on-surface outline-none focus:border-accent-blue"
+              />
+              <button
+                onclick={addBookmark}
+                class="flex items-center gap-1.5 px-3 py-1 rounded bg-primary-container text-on-primary-container text-label-md hover:bg-inverse-primary transition-colors shrink-0"
+              >
+                <BookmarkPlus size={15} /> Add at {formatClock(state.position)}
+              </button>
+            </div>
+            {#if bookmarks.length === 0}
+              <div class="px-6 py-3 text-body-sm text-on-surface-variant">No bookmarks yet.</div>
+            {:else}
+              {#each bookmarks as b (b.id)}
+                <div class="flex items-center gap-3 px-6 py-1.5 hover:bg-surface-container">
+                  <button
+                    onclick={() => jumpToBookmark(b)}
+                    class="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  >
+                    <span class="text-label-sm text-on-surface-variant tabular-nums w-14 shrink-0">
+                      {formatClock(b.position_seconds)}
+                    </span>
+                    <span class="flex-1 truncate text-body-md text-on-surface">
+                      {b.label ?? "Bookmark"}
+                    </span>
+                  </button>
+                  <button
+                    onclick={() => removeBookmark(b.id)}
+                    class="p-1 rounded text-on-surface-variant hover:text-error hover:bg-surface-container-highest transition-colors shrink-0"
+                    aria-label="Delete bookmark"
+                    title="Delete bookmark"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              {/each}
+            {/if}
           {/if}
         </div>
       </div>
@@ -508,6 +590,15 @@
         </div>
 
         <div class="flex items-center gap-2">
+          <button
+            onclick={() => toggleMenu("bookmarks")}
+            class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
+              {openMenu === 'bookmarks' ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
+            title="Bookmarks"
+            aria-label="Bookmarks"
+          >
+            <BookmarkIcon size={18} />
+          </button>
           {#if tracks.chapters.length > 0}
             <button
               onclick={() => toggleMenu("chapters")}

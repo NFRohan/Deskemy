@@ -107,3 +107,11 @@ export interface LectureView {
   course_title: string;
   section_title: string;
 }
+
+export interface Bookmark {
+  id: string;
+  lecture_id: string;
+  position_seconds: number;
+  label: string | null;
+  created_at: number;
+}

@@ -79,3 +79,13 @@ pub struct CourseDetail {
     pub last_lecture_id: Option<String>,
     pub sections: Vec<Section>,
 }
+
+/// A user-placed marker at a time position within a lecture.
+#[derive(Debug, Clone, Serialize)]
+pub struct Bookmark {
+    pub id: String,
+    pub lecture_id: String,
+    pub position_seconds: f64,
+    pub label: Option<String>,
+    pub created_at: i64,
+}

@@ -2,8 +2,8 @@
 //! derefs to it, so these compose inside import transactions).
 
 use crate::db::{new_id, now};
-use crate::domain::{CourseDetail, CourseSummary, Lecture, Section};
-use crate::error::Result;
+use crate::domain::{Bookmark, CourseDetail, CourseSummary, Lecture, Section};
+use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 
@@ -378,6 +378,62 @@ pub fn set_last_lecture(conn: &Connection, course_id: &str, lecture_id: &str) ->
         "UPDATE courses SET last_lecture_id = ?2, last_opened_at = ?3 WHERE id = ?1",
         params![course_id, lecture_id, now()],
     )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+/// Insert a bookmark at `position_seconds` in a lecture. `course_id` is derived
+/// from the lecture row so the caller only needs the lecture id.
+pub fn add_bookmark(
+    conn: &Connection,
+    lecture_id: &str,
+    position_seconds: f64,
+    label: Option<&str>,
+) -> Result<Bookmark> {
+    let id = new_id();
+    let created_at = now();
+    let n = conn.execute(
+        "INSERT INTO bookmarks (id, lecture_id, course_id, position_seconds, label, created_at)
+         SELECT ?1, ?2, l.course_id, ?3, ?4, ?5 FROM lectures l WHERE l.id = ?2",
+        params![id, lecture_id, position_seconds, label, created_at],
+    )?;
+    if n == 0 {
+        return Err(DeskemyError::NotFound(format!("lecture {lecture_id}")));
+    }
+    Ok(Bookmark {
+        id,
+        lecture_id: lecture_id.to_string(),
+        position_seconds,
+        label: label.map(str::to_string),
+        created_at,
+    })
+}
+
+pub fn list_bookmarks(conn: &Connection, lecture_id: &str) -> Result<Vec<Bookmark>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, lecture_id, position_seconds, label, created_at
+           FROM bookmarks WHERE lecture_id = ?1
+          ORDER BY position_seconds",
+    )?;
+    let rows = stmt
+        .query_map(params![lecture_id], |r| {
+            Ok(Bookmark {
+                id: r.get(0)?,
+                lecture_id: r.get(1)?,
+                position_seconds: r.get(2)?,
+                label: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn delete_bookmark(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
     Ok(())
 }
 

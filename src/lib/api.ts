@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AppConfig,
+  Bookmark,
   CourseDetail,
   CourseSummary,
   LectureView,
@@ -31,6 +32,12 @@ export const api = {
   touchOpened: (id: string) => invoke<void>("course_touch_opened", { id }),
   setLectureCompleted: (lectureId: string, completed: boolean) =>
     invoke<void>("lecture_set_completed", { lectureId, completed }),
+
+  // bookmark_*
+  addBookmark: (lectureId: string, positionSeconds: number, label: string | null) =>
+    invoke<Bookmark>("bookmark_add", { lectureId, positionSeconds, label }),
+  listBookmarks: (lectureId: string) => invoke<Bookmark[]>("bookmark_list", { lectureId }),
+  deleteBookmark: (id: string) => invoke<void>("bookmark_delete", { id }),
 
   // config_*
   getConfig: () => invoke<AppConfig>("config_get"),
