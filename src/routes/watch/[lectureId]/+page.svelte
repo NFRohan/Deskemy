@@ -110,6 +110,8 @@
   let course = $state<CourseDetail | null>(null);
   let showPlaylist = $state(false);
   let showShortcuts = $state(false);
+  let controlsHidden = $state(false);
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let expandedSections = $state<Set<string>>(new Set());
   let bookmarks = $state<Bookmark[]>([]);
   let bookmarksFor = $state<string | null>(null);
@@ -365,6 +367,7 @@
     unlisten.forEach((u) => u());
     observer?.disconnect();
     timers.forEach(clearTimeout);
+    clearTimeout(hideTimer);
     setImmersive(false);
     getCurrentWindow().setFullscreen(false).catch(() => {});
     // Grab a resume frame for the Continue Watching entry, then stop. The
@@ -398,6 +401,26 @@
   function relativeSeek(delta: number) {
     api.playerSeek(Math.max(0, state.position + delta)).catch(() => {});
   }
+
+  // Auto-hide the control bar in fullscreen so the video is truly full-height;
+  // hiding it reflows the pane (ResizeObserver re-syncs the mpv window). Mouse
+  // over the video goes to the native window, so we reveal via a bottom hover
+  // strip and any keypress.
+  function revealControls() {
+    controlsHidden = false;
+    clearTimeout(hideTimer);
+    if (ui.immersive) {
+      hideTimer = setTimeout(() => (controlsHidden = true), 2500);
+    }
+  }
+  $effect(() => {
+    if (ui.immersive) {
+      revealControls();
+    } else {
+      controlsHidden = false;
+      clearTimeout(hideTimer);
+    }
+  });
 
   function goBack() {
     // Esc / back button: leave immersive first if active, else return to the
@@ -447,6 +470,7 @@
       !!el?.isContentEditable ||
       (tag === "INPUT" && !["range", "checkbox", "radio", "button"].includes(type ?? ""));
     if (typing) return;
+    revealControls(); // any shortcut brings the controls back in fullscreen
 
     let handled = true;
     switch (e.key) {
@@ -652,8 +676,14 @@
       </div>
     {/if}
 
-    <!-- Control bar (docked below the video — never overlaps the native surface) -->
-    <div class="shrink-0 bg-surface border-t border-outline-variant px-4 py-3 flex flex-col gap-2">
+    <!-- Control bar (docked below the video — never overlaps the native surface).
+         Auto-hides in fullscreen so the video is truly full-height. -->
+    {#if !controlsHidden}
+      <div
+        class="shrink-0 bg-surface border-t border-outline-variant px-4 py-3 flex flex-col gap-2"
+        role="presentation"
+        onmousemove={revealControls}
+      >
       <div class="flex items-center gap-3">
         <span class="text-label-sm text-on-surface-variant tabular-nums w-12 text-right">
           {formatClock(state.position)}
@@ -849,6 +879,10 @@
         </div>
       </div>
       </div>
+    {:else if ui.immersive}
+      <!-- Thin hover strip to bring the auto-hidden controls back in fullscreen -->
+      <div class="shrink-0 h-2" role="presentation" onmousemove={revealControls}></div>
+    {/if}
       </div>
       <!-- Course content sidebar (Udemy-style: jump around the course here).
            Always rendered; width toggles so the flex row reliably reflows. -->
