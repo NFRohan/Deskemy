@@ -3,7 +3,7 @@
 
 use crate::db::queries;
 use crate::error::{DeskemyError, Result};
-use crate::player::{MpvPlayer, PlayerService, PlayerState};
+use crate::player::{MediaTracks, MpvPlayer, PlayerService, PlayerState};
 use crate::state::AppState;
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -78,6 +78,26 @@ pub fn player_next(state: State<AppState>) -> Result<()> {
 #[tauri::command]
 pub fn player_prev(state: State<AppState>) -> Result<()> {
     existing(&state, |p| p.prev())
+}
+
+#[tauri::command]
+pub fn player_tracks(state: State<AppState>) -> Result<MediaTracks> {
+    existing(&state, |p| Ok(p.tracks()))
+}
+
+#[tauri::command]
+pub fn player_set_subtitle(state: State<AppState>, sid: Option<i64>) -> Result<()> {
+    existing(&state, |p| p.set_subtitle(sid))
+}
+
+#[tauri::command]
+pub fn player_set_audio(state: State<AppState>, aid: Option<i64>) -> Result<()> {
+    existing(&state, |p| p.set_audio(aid))
+}
+
+#[tauri::command]
+pub fn player_set_chapter(state: State<AppState>, index: i64) -> Result<()> {
+    existing(&state, |p| p.set_chapter(index))
 }
 
 #[tauri::command]

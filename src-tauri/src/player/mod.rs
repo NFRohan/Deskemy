@@ -23,6 +23,12 @@ pub struct PlayerState {
     pub paused: bool,
     pub speed: f64,
     pub eof: bool,
+    /// Active subtitle track id (None = off).
+    pub sid: Option<i64>,
+    /// Active audio track id.
+    pub aid: Option<i64>,
+    /// Current chapter index (-1 if none).
+    pub chapter: i64,
 }
 
 impl Default for PlayerState {
@@ -34,8 +40,35 @@ impl Default for PlayerState {
             paused: true,
             speed: 1.0,
             eof: false,
+            sid: None,
+            aid: None,
+            chapter: -1,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackInfo {
+    pub id: i64,
+    pub kind: String, // "audio" | "sub"
+    pub lang: Option<String>,
+    pub title: Option<String>,
+    pub codec: Option<String>,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChapterInfo {
+    pub index: i64,
+    pub title: Option<String>,
+    pub time: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct MediaTracks {
+    pub audio: Vec<TrackInfo>,
+    pub subtitle: Vec<TrackInfo>,
+    pub chapters: Vec<ChapterInfo>,
 }
 
 #[derive(Clone)]
@@ -64,6 +97,11 @@ pub trait PlayerService: Send + Sync {
     fn set_rect(&self, x: f64, y: f64, w: f64, h: f64) -> Result<()>;
     fn stop(&self) -> Result<()>;
     fn state(&self) -> PlayerState;
+    /// Audio/subtitle tracks + chapters for the current file.
+    fn tracks(&self) -> MediaTracks;
+    fn set_subtitle(&self, sid: Option<i64>) -> Result<()>;
+    fn set_audio(&self, aid: Option<i64>) -> Result<()>;
+    fn set_chapter(&self, index: i64) -> Result<()>;
 }
 
 pub struct MpvPlayer {
@@ -160,6 +198,20 @@ impl PlayerService for MpvPlayer {
     }
     fn state(&self) -> PlayerState {
         self.inner.state.lock().unwrap().clone()
+    }
+    fn tracks(&self) -> MediaTracks {
+        self.inner.read_tracks()
+    }
+    fn set_subtitle(&self, sid: Option<i64>) -> Result<()> {
+        let v = sid.map(|s| s.to_string()).unwrap_or_else(|| "no".into());
+        self.inner.mpv.set_property("sid", &v)
+    }
+    fn set_audio(&self, aid: Option<i64>) -> Result<()> {
+        let v = aid.map(|s| s.to_string()).unwrap_or_else(|| "no".into());
+        self.inner.mpv.set_property("aid", &v)
+    }
+    fn set_chapter(&self, index: i64) -> Result<()> {
+        self.inner.mpv.set_property("chapter", &index.to_string())
     }
 }
 
@@ -287,6 +339,9 @@ impl PlayerInner {
                 .get_property_string("pause")
                 .map(|v| v == "yes")
                 .unwrap_or(s.paused);
+            s.sid = self.mpv.get_i64("sid");
+            s.aid = self.mpv.get_i64("aid");
+            s.chapter = self.mpv.get_i64("chapter").unwrap_or(-1);
         }
 
         let should_emit = force || {
@@ -364,6 +419,54 @@ impl PlayerInner {
     fn emit(&self) {
         let snapshot = self.state.lock().unwrap().clone();
         let _ = self.app.emit("player:state", snapshot);
+    }
+
+    /// Read audio/subtitle tracks + chapters live from mpv.
+    fn read_tracks(&self) -> MediaTracks {
+        let mut audio = Vec::new();
+        let mut subtitle = Vec::new();
+        let n = self.mpv.get_i64("track-list/count").unwrap_or(0).max(0);
+        for i in 0..n {
+            let kind = self
+                .mpv
+                .get_property_string(&format!("track-list/{i}/type"))
+                .unwrap_or_default();
+            let track = TrackInfo {
+                id: self.mpv.get_i64(&format!("track-list/{i}/id")).unwrap_or(0),
+                kind: kind.clone(),
+                lang: self.mpv.get_property_string(&format!("track-list/{i}/lang")),
+                title: self.mpv.get_property_string(&format!("track-list/{i}/title")),
+                codec: self.mpv.get_property_string(&format!("track-list/{i}/codec")),
+                selected: self
+                    .mpv
+                    .get_property_string(&format!("track-list/{i}/selected"))
+                    .map(|v| v == "yes")
+                    .unwrap_or(false),
+            };
+            match kind.as_str() {
+                "audio" => audio.push(track),
+                "sub" => subtitle.push(track),
+                _ => {}
+            }
+        }
+
+        let count = self.mpv.get_i64("chapters").unwrap_or(0).max(0);
+        let chapters = (0..count)
+            .map(|i| ChapterInfo {
+                index: i,
+                title: self.mpv.get_property_string(&format!("chapter-list/{i}/title")),
+                time: self
+                    .mpv
+                    .get_f64(&format!("chapter-list/{i}/time"))
+                    .unwrap_or(0.0),
+            })
+            .collect();
+
+        MediaTracks {
+            audio,
+            subtitle,
+            chapters,
+        }
     }
 
     fn set_rect(&self, x: f64, y: f64, w: f64, h: f64) {
