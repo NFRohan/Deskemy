@@ -120,6 +120,18 @@
 
   const sliderValue = $derived(seeking ? seekValue : state.position);
 
+  // The next playable lecture in the course, for the Up Next control.
+  const upNext = $derived.by(() => {
+    if (!course) return null;
+    const flat = course.sections.flatMap((s) => s.lectures);
+    const idx = flat.findIndex((l) => l.id === state.lecture_id);
+    if (idx < 0) return null;
+    for (let i = idx + 1; i < flat.length; i++) {
+      if (flat[i].playable) return flat[i];
+    }
+    return null;
+  });
+
   // Keep the speed selector in sync with the backend player.
   $effect(() => {
     if (SPEEDS.includes(state.speed)) speedSel = state.speed;
@@ -728,6 +740,28 @@
             />
           </div>
         </div>
+
+        <!-- Up next -->
+        {#if upNext}
+          <button
+            onclick={() => api.playerNext()}
+            class="hidden lg:flex items-center gap-2 min-w-0 flex-1 mx-4 px-3 py-1 rounded hover:bg-surface-container-highest transition-colors text-left"
+            title={`Up next: ${upNext.title}`}
+          >
+            <SkipForward size={14} class="text-on-surface-variant shrink-0" />
+            <span class="min-w-0 flex-1">
+              <span class="block text-label-sm text-on-surface-variant leading-tight">Up next</span>
+              <span class="block truncate text-body-sm text-on-surface leading-tight">
+                {upNext.title}
+              </span>
+            </span>
+            {#if upNext.duration}
+              <span class="text-label-sm text-on-surface-variant tabular-nums shrink-0">
+                {formatClock(upNext.duration)}
+              </span>
+            {/if}
+          </button>
+        {/if}
 
         <div class="flex items-center gap-2">
           <button
