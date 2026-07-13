@@ -115,3 +115,15 @@ export interface Bookmark {
   label: string | null;
   created_at: number;
 }
+
+export interface BookmarkDetail {
+  id: string;
+  lecture_id: string;
+  lecture_title: string;
+  section_title: string;
+  course_id: string;
+  course_title: string;
+  position_seconds: number;
+  label: string | null;
+  created_at: number;
+}

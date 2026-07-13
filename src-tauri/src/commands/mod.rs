@@ -3,7 +3,7 @@
 pub mod player;
 
 use crate::db::queries;
-use crate::domain::{Bookmark, CourseDetail, CourseSummary};
+use crate::domain::{Bookmark, BookmarkDetail, CourseDetail, CourseSummary};
 use crate::error::{DeskemyError, Result};
 use rusqlite::Connection;
 use serde::Serialize;
@@ -167,6 +167,13 @@ pub fn bookmark_list(state: State<AppState>, lecture_id: String) -> Result<Vec<B
 pub fn bookmark_delete(state: State<AppState>, id: String) -> Result<()> {
     let conn = db(&state)?;
     queries::delete_bookmark(&conn, &id)
+}
+
+/// All bookmarks across the library, for the global bookmarks page.
+#[tauri::command]
+pub fn bookmark_list_all(state: State<AppState>) -> Result<Vec<BookmarkDetail>> {
+    let conn = db(&state)?;
+    queries::list_all_bookmarks(&conn)
 }
 
 // ---------------------------------------------------------------------------

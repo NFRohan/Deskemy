@@ -68,6 +68,7 @@ pub fn run() {
             commands::bookmark_add,
             commands::bookmark_list,
             commands::bookmark_delete,
+            commands::bookmark_list_all,
             commands::config_get,
             commands::config_set,
             commands::player::player_available,

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { Library, Star, Search, Settings, FolderPlus, LoaderCircle } from "@lucide/svelte";
+  import { Library, Bookmark, Star, Search, Settings, FolderPlus, LoaderCircle } from "@lucide/svelte";
   import { api, pickFolder } from "$lib/api";
   import { loadLibrary, ui } from "$lib/stores/app.svelte";
 
@@ -9,6 +9,7 @@
 
   const nav = [
     { href: "/", label: "Library", icon: Library },
+    { href: "/bookmarks", label: "Bookmarks", icon: Bookmark },
     { href: "/favorites", label: "Favorites", icon: Star },
     { href: "/search", label: "Search", icon: Search },
     { href: "/settings", label: "Settings", icon: Settings },

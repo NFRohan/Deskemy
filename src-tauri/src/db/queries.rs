@@ -2,7 +2,7 @@
 //! derefs to it, so these compose inside import transactions).
 
 use crate::db::{new_id, now};
-use crate::domain::{Bookmark, CourseDetail, CourseSummary, Lecture, Section};
+use crate::domain::{Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, Section};
 use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
@@ -435,6 +435,36 @@ pub fn list_bookmarks(conn: &Connection, lecture_id: &str) -> Result<Vec<Bookmar
 pub fn delete_bookmark(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
     Ok(())
+}
+
+/// Every bookmark with lecture/course context, grouped-friendly (ordered by
+/// course, then lecture order, then time) for the global bookmarks page.
+pub fn list_all_bookmarks(conn: &Connection) -> Result<Vec<BookmarkDetail>> {
+    let mut stmt = conn.prepare(
+        "SELECT b.id, b.lecture_id, l.title, s.title, b.course_id, c.title,
+                b.position_seconds, b.label, b.created_at
+           FROM bookmarks b
+           JOIN lectures l ON l.id = b.lecture_id
+           JOIN sections s ON s.id = l.section_id
+           JOIN courses  c ON c.id = b.course_id
+          ORDER BY c.title, s.position, l.position, b.position_seconds",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(BookmarkDetail {
+                id: r.get(0)?,
+                lecture_id: r.get(1)?,
+                lecture_title: r.get(2)?,
+                section_title: r.get(3)?,
+                course_id: r.get(4)?,
+                course_title: r.get(5)?,
+                position_seconds: r.get(6)?,
+                label: r.get(7)?,
+                created_at: r.get(8)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
 }
 
 pub fn get_course_detail(conn: &Connection, id: &str) -> Result<Option<CourseDetail>> {

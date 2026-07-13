@@ -67,6 +67,8 @@
   let seeking = $state(false);
   let seekValue = $state(0);
   let speedSel = $state(1);
+  // A deep-link target from /watch/<id>?t=<sec>, applied once the file loads.
+  let pendingSeek = $state<number | null>(null);
   let tracks = $state<MediaTracks>({ audio: [], subtitle: [], chapters: [] });
   let tracksFor = $state<string | null>(null);
   let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | null>(null);
@@ -112,6 +114,8 @@
     error = null;
     try {
       await api.playerOpen(id);
+      const t = Number($page.url.searchParams.get("t"));
+      pendingSeek = Number.isFinite(t) && t > 0 ? t : null;
       await reportRectSoon();
       const st = await api.playerState();
       if (st) state = st;
@@ -121,6 +125,15 @@
       error = e?.message ?? String(e);
     }
   }
+
+  // Apply a deep-link seek (?t=) once the file has loaded (duration known).
+  $effect(() => {
+    if (pendingSeek != null && state.duration > 0) {
+      const target = pendingSeek;
+      pendingSeek = null;
+      api.playerSeek(target).catch(() => {});
+    }
+  });
 
   onMount(async () => {
     available = await api.playerAvailable().catch(() => false);

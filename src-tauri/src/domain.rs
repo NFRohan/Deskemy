@@ -89,3 +89,18 @@ pub struct Bookmark {
     pub label: Option<String>,
     pub created_at: i64,
 }
+
+/// A bookmark plus the lecture/course context the global bookmarks page needs
+/// to group and jump into it.
+#[derive(Debug, Clone, Serialize)]
+pub struct BookmarkDetail {
+    pub id: String,
+    pub lecture_id: String,
+    pub lecture_title: String,
+    pub section_title: String,
+    pub course_id: String,
+    pub course_title: String,
+    pub position_seconds: f64,
+    pub label: Option<String>,
+    pub created_at: i64,
+}
