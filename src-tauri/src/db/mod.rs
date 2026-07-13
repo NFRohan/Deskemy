@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -186,6 +186,16 @@ fn migrate(conn: &Connection) -> Result<()> {
                  start_ms   UNINDEXED,
                  text,
                  tokenize = 'unicode61'
+             );",
+        )?;
+    }
+    if version < 5 {
+        // Per-day watch telemetry for the stats page (heatmap, streaks, etc.).
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS daily_activity (
+                 day                TEXT PRIMARY KEY,
+                 watch_seconds      REAL NOT NULL DEFAULT 0,
+                 lectures_completed INTEGER NOT NULL DEFAULT 0
              );",
         )?;
     }

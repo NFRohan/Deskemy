@@ -127,6 +127,11 @@ struct PlayerInner {
     playlist: Mutex<Playlist>,
     last_emit: Mutex<Instant>,
     last_save: Mutex<Instant>,
+    // Watch-time telemetry (daily_activity): real seconds played since the last
+    // flush, the tick timestamp, and lectures counted complete this session.
+    watch_accum: Mutex<f64>,
+    last_watch: Mutex<Instant>,
+    completed_session: Mutex<std::collections::HashSet<String>>,
 }
 
 impl MpvPlayer {
@@ -165,6 +170,9 @@ impl MpvPlayer {
             playlist: Mutex::new(Playlist::default()),
             last_emit: Mutex::new(now),
             last_save: Mutex::new(now),
+            watch_accum: Mutex::new(0.0),
+            last_watch: Mutex::new(now),
+            completed_session: Mutex::new(std::collections::HashSet::new()),
         });
 
         spawn_pump(inner.clone());
@@ -205,6 +213,7 @@ impl PlayerService for MpvPlayer {
     }
     fn stop(&self) -> Result<()> {
         self.inner.save_progress(false);
+        self.inner.flush_watch();
         self.inner.mpv.set_property("pause", "yes").ok();
         self.inner.show(false);
         Ok(())
@@ -381,6 +390,18 @@ impl PlayerInner {
                 .unwrap_or(s.muted);
         }
 
+        // Accumulate real watch time while playing (capped per tick so a system
+        // suspend or long stall doesn't inflate it).
+        {
+            let paused = self.state.lock().unwrap().paused;
+            let mut lw = self.last_watch.lock().unwrap();
+            let delta = lw.elapsed().as_secs_f64();
+            *lw = Instant::now();
+            if !paused {
+                *self.watch_accum.lock().unwrap() += delta.min(2.0);
+            }
+        }
+
         let should_emit = force || {
             let mut last = self.last_emit.lock().unwrap();
             if last.elapsed() >= Duration::from_millis(200) {
@@ -406,7 +427,25 @@ impl PlayerInner {
         };
         if do_save {
             self.save_progress(false);
+            self.flush_watch();
         }
+    }
+
+    /// Persist accumulated watch seconds to today's activity bucket.
+    fn flush_watch(&self) {
+        let secs = {
+            let mut a = self.watch_accum.lock().unwrap();
+            std::mem::replace(&mut *a, 0.0)
+        };
+        if secs <= 0.0 {
+            return;
+        }
+        let st = self.app.state::<AppState>();
+        let db = match st.db.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let _ = queries::add_watch_seconds(&db, secs);
     }
 
     fn on_ended(&self) {
@@ -451,6 +490,11 @@ impl PlayerInner {
             Err(_) => return,
         };
         let _ = queries::save_progress(&db, &lecture_id, position, done);
+
+        // Count each lecture's completion once per session for daily activity.
+        if done && self.completed_session.lock().unwrap().insert(lecture_id) {
+            let _ = queries::add_completion(&db);
+        }
     }
 
     fn emit(&self) {

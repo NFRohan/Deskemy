@@ -3,8 +3,8 @@
 
 use crate::db::{new_id, now};
 use crate::domain::{
-    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, LibraryStats,
-    Section, SearchHit, SubtitleHit,
+    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, DayActivity, Lecture,
+    LibraryStats, Section, SearchHit, SubtitleHit,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -588,8 +588,46 @@ pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<SearchHi
     Ok(rows)
 }
 
-/// Aggregate library + watch statistics.
+// --- Daily activity telemetry ---
+
+/// Add watched seconds to today's activity bucket.
+pub fn add_watch_seconds(conn: &Connection, secs: f64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO daily_activity (day, watch_seconds) VALUES (date('now','localtime'), ?1)
+         ON CONFLICT(day) DO UPDATE SET watch_seconds = watch_seconds + ?1",
+        params![secs],
+    )?;
+    Ok(())
+}
+
+/// Record one lecture completion in today's activity bucket.
+pub fn add_completion(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "INSERT INTO daily_activity (day, lectures_completed) VALUES (date('now','localtime'), 1)
+         ON CONFLICT(day) DO UPDATE SET lectures_completed = lectures_completed + 1",
+        [],
+    )?;
+    Ok(())
+}
+
+/// All daily activity, oldest first: (julian_day_int, day 'YYYY-MM-DD',
+/// watch_seconds, lectures_completed). The julian int makes streak/window math
+/// straightforward.
+pub fn daily_activity(conn: &Connection) -> Result<Vec<(i64, String, f64, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT CAST(julianday(day) AS INTEGER), day, watch_seconds, lectures_completed
+           FROM daily_activity ORDER BY 1",
+    )?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Aggregate library + watch statistics. `daily_goal_minutes` is filled by the
+/// caller from config.
 pub fn stats(conn: &Connection) -> Result<LibraryStats> {
+    use std::collections::HashMap;
     let one = |sql: &str| -> Result<i64> { Ok(conn.query_row(sql, [], |r| r.get(0))?) };
     let one_f = |sql: &str| -> Result<f64> { Ok(conn.query_row(sql, [], |r| r.get(0))?) };
 
@@ -615,32 +653,102 @@ pub fn stats(conn: &Connection) -> Result<LibraryStats> {
     )?;
     let courses_in_progress = (started - courses_completed).max(0);
 
-    // Distinct active days (as integer julian days) for streak computation.
-    let today =
-        one("SELECT CAST(julianday(date('now','localtime')) AS INTEGER)")?;
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT CAST(julianday(date(last_watched_at,'unixepoch','localtime')) AS INTEGER) AS d
-           FROM progress WHERE last_watched_at IS NOT NULL ORDER BY d DESC",
-    )?;
-    let days: Vec<i64> = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    let days_active = days.len() as i64;
+    // --- Daily activity telemetry ---
+    let today = one("SELECT CAST(julianday(date('now','localtime')) AS INTEGER)")?;
+    let month_start =
+        one("SELECT CAST(julianday(date('now','localtime','start of month')) AS INTEGER)")?;
+    let rows = daily_activity(conn)?; // (jd, day, secs, completed)
+    let by_jd: HashMap<i64, (f64, i64)> =
+        rows.iter().map(|(jd, _, s, c)| (*jd, (*s, *c))).collect();
+
+    let watch_seconds_today = by_jd.get(&today).map(|x| x.0).unwrap_or(0.0);
+    let week: Vec<i64> = (today - 6..=today).collect();
+    let watch_seconds_week = week.iter().filter_map(|jd| by_jd.get(jd)).map(|x| x.0).sum();
+    let lectures_last_7 = week.iter().filter_map(|jd| by_jd.get(jd)).map(|x| x.1).sum();
+    let active_days_month = by_jd
+        .iter()
+        .filter(|(jd, (s, _))| **jd >= month_start && *s > 0.0)
+        .count() as i64;
+    let best_day_seconds = by_jd.values().map(|x| x.0).fold(0.0, f64::max);
+
+    // Streak: a day counts with >= 15 minutes watched.
+    const THRESHOLD: f64 = 15.0 * 60.0;
+    let qualifies = |jd: i64| by_jd.get(&jd).map(|x| x.0 >= THRESHOLD).unwrap_or(false);
     let mut current_streak = 0i64;
-    if let Some(&first) = days.first() {
-        if first == today || first == today - 1 {
-            current_streak = 1;
-            let mut prev = first;
-            for &d in days.iter().skip(1) {
-                if d == prev - 1 {
-                    current_streak += 1;
-                    prev = d;
-                } else {
-                    break;
+    let anchor = if qualifies(today) {
+        Some(today)
+    } else if qualifies(today - 1) {
+        Some(today - 1)
+    } else {
+        None
+    };
+    if let Some(mut jd) = anchor {
+        while qualifies(jd) {
+            current_streak += 1;
+            jd -= 1;
+        }
+    }
+    let mut qual_days: Vec<i64> = by_jd
+        .iter()
+        .filter(|(_, (s, _))| *s >= THRESHOLD)
+        .map(|(jd, _)| *jd)
+        .collect();
+    qual_days.sort_unstable();
+    let (mut best_streak, mut run, mut prev) = (0i64, 0i64, i64::MIN);
+    for jd in qual_days {
+        run = if jd == prev + 1 { run + 1 } else { 1 };
+        best_streak = best_streak.max(run);
+        prev = jd;
+    }
+
+    // Most-focused course: highest-completion in-progress course (tie: recent).
+    let (mut focus_course_id, mut focus_course_title, mut focus_course_pct) = (None, None, 0i64);
+    {
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.title, c.lecture_count, COALESCE(c.last_opened_at,0),
+                    (SELECT COUNT(*) FROM lectures l JOIN progress p ON p.lecture_id=l.id
+                      WHERE l.course_id=c.id AND p.completed=1) AS done
+               FROM courses c WHERE c.lecture_count > 0",
+        )?;
+        let candidates = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, i64>(4)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut best: Option<(f64, i64, String, String, i64)> = None; // (frac, opened, id, title, pct)
+        for (id, title, count, opened, done) in candidates {
+            if done > 0 && done < count {
+                let frac = done as f64 / count as f64;
+                let better = match &best {
+                    Some((bf, bo, ..)) => frac > *bf || (frac == *bf && opened > *bo),
+                    None => true,
+                };
+                if better {
+                    best = Some((frac, opened, id, title, (frac * 100.0).round() as i64));
                 }
             }
         }
+        if let Some((_, _, id, title, pct)) = best {
+            focus_course_id = Some(id);
+            focus_course_title = Some(title);
+            focus_course_pct = pct;
+        }
     }
+
+    let activity = rows
+        .into_iter()
+        .map(|(_, day, watch_seconds, lectures_completed)| DayActivity {
+            day,
+            watch_seconds,
+            lectures_completed,
+        })
+        .collect();
 
     Ok(LibraryStats {
         courses_total,
@@ -648,11 +756,21 @@ pub fn stats(conn: &Connection) -> Result<LibraryStats> {
         courses_in_progress,
         lectures_total,
         lectures_completed,
-        watched_seconds,
         library_seconds,
-        days_active,
-        current_streak,
+        watched_seconds,
         bookmarks_total,
+        watch_seconds_today,
+        watch_seconds_week,
+        active_days_month,
+        current_streak,
+        best_streak,
+        lectures_last_7,
+        best_day_seconds,
+        daily_goal_minutes: 30, // overwritten by the command from config
+        focus_course_id,
+        focus_course_title,
+        focus_course_pct,
+        activity,
     })
 }
 

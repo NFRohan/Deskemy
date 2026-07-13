@@ -14,6 +14,8 @@ pub struct AppConfig {
     pub default_speed: f64,
     /// Auto-advance to the next lecture when one ends.
     pub autoplay_next: bool,
+    /// Daily watch-time goal in minutes (stats page).
+    pub daily_goal_minutes: i64,
     /// Last library root the user registered (convenience).
     pub last_root: Option<String>,
 }
@@ -24,6 +26,7 @@ impl Default for AppConfig {
             theme: "dark".to_string(),
             default_speed: 1.0,
             autoplay_next: true,
+            daily_goal_minutes: 30,
             last_root: None,
         }
     }

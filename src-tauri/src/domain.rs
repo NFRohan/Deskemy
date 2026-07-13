@@ -94,21 +94,45 @@ pub struct Bookmark {
     pub created_at: i64,
 }
 
+/// One day's watch activity, for the heatmap / weekly chart.
+#[derive(Debug, Clone, Serialize)]
+pub struct DayActivity {
+    pub day: String, // YYYY-MM-DD
+    pub watch_seconds: f64,
+    pub lectures_completed: i64,
+}
+
 /// Aggregate library/watch statistics for the stats page.
 #[derive(Debug, Clone, Serialize)]
 pub struct LibraryStats {
+    // Overview
     pub courses_total: i64,
     pub courses_completed: i64,
     pub courses_in_progress: i64,
     pub lectures_total: i64,
     pub lectures_completed: i64,
-    /// Approx seconds watched (full duration for completed, else resume pos).
-    pub watched_seconds: f64,
     /// Total duration of every lecture in the library.
     pub library_seconds: f64,
-    pub days_active: i64,
-    pub current_streak: i64,
+    /// Lifetime content watched (full duration for completed, else resume pos).
+    pub watched_seconds: f64,
     pub bookmarks_total: i64,
+    // Watch-time telemetry (real, from daily_activity)
+    pub watch_seconds_today: f64,
+    pub watch_seconds_week: f64,
+    pub active_days_month: i64,
+    // Streaks (a day counts with >= 15 min watched)
+    pub current_streak: i64,
+    pub best_streak: i64,
+    // Velocity / records
+    pub lectures_last_7: i64,
+    pub best_day_seconds: f64,
+    pub daily_goal_minutes: i64,
+    // Most-focused (highest-completion in-progress) course
+    pub focus_course_id: Option<String>,
+    pub focus_course_title: Option<String>,
+    pub focus_course_pct: i64,
+    /// Daily series (oldest → today) for the heatmap + weekly chart.
+    pub activity: Vec<DayActivity>,
 }
 
 /// A non-media resource that shipped with a course (pdf, zip, code, …).

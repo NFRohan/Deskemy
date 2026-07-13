@@ -41,6 +41,11 @@
     applyTheme(config.theme);
     save();
   }
+  function onGoal(e: Event) {
+    if (!config) return;
+    config.daily_goal_minutes = +(e.target as HTMLSelectElement).value;
+    save();
+  }
 
   async function run(key: string, fn: () => Promise<string>) {
     if (busy) return;
@@ -159,6 +164,21 @@
                 {config.autoplay_next ? 'translate-x-5' : ''}"
             ></span>
           </button>
+        </div>
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div>
+            <p class="text-body-md text-on-surface">Daily goal</p>
+            <p class="text-label-sm text-on-surface-variant">Target watch time per day (Stats).</p>
+          </div>
+          <select
+            value={config.daily_goal_minutes}
+            onchange={onGoal}
+            class="bg-background border border-outline-variant rounded text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
+          >
+            {#each [15, 30, 45, 60, 90, 120] as m (m)}
+              <option value={m}>{m} min</option>
+            {/each}
+          </select>
         </div>
       </div>
     </section>

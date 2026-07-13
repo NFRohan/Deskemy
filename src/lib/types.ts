@@ -63,6 +63,7 @@ export interface AppConfig {
   theme: string;
   default_speed: number;
   autoplay_next: boolean;
+  daily_goal_minutes: number;
   last_root: string | null;
 }
 
@@ -129,17 +130,33 @@ export interface Bookmark {
   created_at: number;
 }
 
+export interface DayActivity {
+  day: string; // YYYY-MM-DD
+  watch_seconds: number;
+  lectures_completed: number;
+}
+
 export interface LibraryStats {
   courses_total: number;
   courses_completed: number;
   courses_in_progress: number;
   lectures_total: number;
   lectures_completed: number;
-  watched_seconds: number;
   library_seconds: number;
-  days_active: number;
-  current_streak: number;
+  watched_seconds: number;
   bookmarks_total: number;
+  watch_seconds_today: number;
+  watch_seconds_week: number;
+  active_days_month: number;
+  current_streak: number;
+  best_streak: number;
+  lectures_last_7: number;
+  best_day_seconds: number;
+  daily_goal_minutes: number;
+  focus_course_id: string | null;
+  focus_course_title: string | null;
+  focus_course_pct: number;
+  activity: DayActivity[];
 }
 
 export interface Attachment {

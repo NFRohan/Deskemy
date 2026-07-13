@@ -361,8 +361,15 @@ pub fn subtitles_reindex(state: State<AppState>) -> Result<i64> {
 /// Aggregate library + watch statistics for the stats page.
 #[tauri::command]
 pub fn stats_get(state: State<AppState>) -> Result<LibraryStats> {
+    let goal = state
+        .config
+        .lock()
+        .map(|c| c.daily_goal_minutes)
+        .unwrap_or(30);
     let conn = db(&state)?;
-    queries::stats(&conn)
+    let mut stats = queries::stats(&conn)?;
+    stats.daily_goal_minutes = goal;
+    Ok(stats)
 }
 
 // ---------------------------------------------------------------------------
