@@ -161,6 +161,9 @@
   }
 
   function trackLabel(t: TrackInfo): string {
+    // External subs (sidecar .srt): show the full file name so different
+    // languages are distinguishable.
+    if (t.filename) return t.lang ? `${t.lang} · ${t.filename}` : t.filename;
     const parts: string[] = [];
     if (t.lang) parts.push(t.lang);
     if (t.title) parts.push(t.title);
@@ -214,17 +217,28 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    const el = e.target as HTMLElement | null;
+    const tag = el?.tagName;
+    const type = (el as HTMLInputElement | null)?.type;
+    // Only ignore shortcuts while typing in a text field — range sliders,
+    // buttons and selects must not swallow the player keys.
+    const typing =
+      tag === "TEXTAREA" ||
+      !!el?.isContentEditable ||
+      (tag === "INPUT" && !["range", "checkbox", "radio", "button"].includes(type ?? ""));
+    if (typing) return;
+
     switch (e.key) {
       case " ":
         e.preventDefault();
         api.playerTogglePause().catch(() => {});
         break;
       case "ArrowRight":
+        e.preventDefault();
         relativeSeek(5);
         break;
       case "ArrowLeft":
+        e.preventDefault();
         relativeSeek(-5);
         break;
       case "ArrowUp":
@@ -249,6 +263,11 @@
         api.playerNext().catch(() => {});
         break;
     }
+  }
+
+  // Clear focus from a control after use so the keyboard shortcuts keep working.
+  function blurSelf(e: Event) {
+    (e.currentTarget as HTMLElement | null)?.blur();
   }
 </script>
 
@@ -356,6 +375,7 @@
           value={sliderValue}
           oninput={onSeekInput}
           onchange={onSeekCommit}
+          onpointerup={blurSelf}
           class="flex-1 accent-accent-blue cursor-pointer"
         />
         <span class="text-label-sm text-on-surface-variant tabular-nums w-12">
@@ -414,6 +434,7 @@
               step="1"
               value={volValue}
               oninput={onVolume}
+              onpointerup={blurSelf}
               class="w-20 accent-accent-blue cursor-pointer"
               aria-label="Volume"
             />

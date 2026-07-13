@@ -85,6 +85,7 @@ export interface TrackInfo {
   title: string | null;
   codec: string | null;
   selected: boolean;
+  filename: string | null;
 }
 
 export interface ChapterInfo {

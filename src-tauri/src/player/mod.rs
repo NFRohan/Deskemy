@@ -60,6 +60,8 @@ pub struct TrackInfo {
     pub title: Option<String>,
     pub codec: Option<String>,
     pub selected: bool,
+    /// For external tracks (e.g. sidecar .srt): the file's base name.
+    pub filename: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -469,6 +471,14 @@ impl PlayerInner {
                     .get_property_string(&format!("track-list/{i}/selected"))
                     .map(|v| v == "yes")
                     .unwrap_or(false),
+                filename: self
+                    .mpv
+                    .get_property_string(&format!("track-list/{i}/external-filename"))
+                    .and_then(|p| {
+                        std::path::Path::new(&p)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                    }),
             };
             match kind.as_str() {
                 "audio" => audio.push(track),
@@ -489,12 +499,6 @@ impl PlayerInner {
             })
             .collect();
 
-        tracing::debug!(
-            audio = audio.len(),
-            subtitle = subtitle.len(),
-            chapters = chapters.len(),
-            "read_tracks"
-        );
         MediaTracks {
             audio,
             subtitle,
