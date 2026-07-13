@@ -7,6 +7,7 @@ import type {
   CourseDetail,
   CourseSummary,
   LectureView,
+  MediaTracks,
   PlayerState,
   RootDto,
   ScanResult,
@@ -48,6 +49,10 @@ export const api = {
     invoke<void>("player_set_rect", { x, y, w, h }),
   playerStop: () => invoke<void>("player_stop"),
   playerState: () => invoke<PlayerState | null>("player_state"),
+  playerTracks: () => invoke<MediaTracks>("player_tracks"),
+  playerSetSubtitle: (sid: number | null) => invoke<void>("player_set_subtitle", { sid }),
+  playerSetAudio: (aid: number | null) => invoke<void>("player_set_audio", { aid }),
+  playerSetChapter: (index: number) => invoke<void>("player_set_chapter", { index }),
   lectureGet: (id: string) => invoke<LectureView | null>("lecture_get", { id }),
 };
 

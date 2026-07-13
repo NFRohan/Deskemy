@@ -71,6 +71,30 @@ export interface PlayerState {
   paused: boolean;
   speed: number;
   eof: boolean;
+  sid: number | null;
+  aid: number | null;
+  chapter: number;
+}
+
+export interface TrackInfo {
+  id: number;
+  kind: string;
+  lang: string | null;
+  title: string | null;
+  codec: string | null;
+  selected: boolean;
+}
+
+export interface ChapterInfo {
+  index: number;
+  title: string | null;
+  time: number;
+}
+
+export interface MediaTracks {
+  audio: TrackInfo[];
+  subtitle: TrackInfo[];
+  chapters: ChapterInfo[];
 }
 
 export interface LectureView {

@@ -13,13 +13,19 @@
     Maximize,
     Minimize,
     MonitorPlay,
+    Captions,
+    Languages,
+    List,
+    Check,
   } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs, setImmersive, ui } from "$lib/stores/app.svelte";
   import { formatClock } from "$lib/format";
-  import type { LectureView, PlayerState } from "$lib/types";
+  import type { LectureView, MediaTracks, PlayerState, TrackInfo } from "$lib/types";
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  const menuItem =
+    "w-full flex items-center gap-2 px-3 py-1.5 text-body-sm text-on-surface hover:bg-surface-container-highest text-left";
 
   let paneEl = $state<HTMLDivElement | null>(null);
   let state = $state<PlayerState>({
@@ -29,6 +35,9 @@
     paused: true,
     speed: 1,
     eof: false,
+    sid: null,
+    aid: null,
+    chapter: -1,
   });
   let lecture = $state<LectureView | null>(null);
   let available = $state<boolean | null>(null);
@@ -36,6 +45,9 @@
   let seeking = $state(false);
   let seekValue = $state(0);
   let speedSel = $state(1);
+  let tracks = $state<MediaTracks>({ audio: [], subtitle: [], chapters: [] });
+  let tracksFor = $state<string | null>(null);
+  let openMenu = $state<"sub" | "audio" | "chapters" | null>(null);
 
   let unlisten: UnlistenFn[] = [];
   let observer: ResizeObserver | null = null;
@@ -117,6 +129,44 @@
     }
   });
 
+  // Load track/chapter lists once the file is open (duration known).
+  $effect(() => {
+    const lid = state.lecture_id;
+    if (lid && state.duration > 0 && tracksFor !== lid) {
+      tracksFor = lid;
+      api.playerTracks().then((t) => (tracks = t)).catch(() => {});
+    }
+  });
+
+  function trackLabel(t: TrackInfo): string {
+    const parts: string[] = [];
+    if (t.lang) parts.push(t.lang);
+    if (t.title) parts.push(t.title);
+    if (parts.length === 0) parts.push(`Track ${t.id}`);
+    return parts.join(" · ");
+  }
+
+  function pickSub(sid: number | null) {
+    api.playerSetSubtitle(sid).catch(() => {});
+    openMenu = null;
+  }
+  function pickAudio(aid: number) {
+    api.playerSetAudio(aid).catch(() => {});
+    openMenu = null;
+  }
+  function pickChapter(index: number) {
+    api.playerSetChapter(index).catch(() => {});
+    openMenu = null;
+  }
+  function toggleMenu(m: "sub" | "audio" | "chapters") {
+    openMenu = openMenu === m ? null : m;
+  }
+  function onWindowPointerDown(e: PointerEvent) {
+    if (openMenu && !(e.target as HTMLElement)?.closest?.("[data-menu]")) {
+      openMenu = null;
+    }
+  }
+
   onDestroy(() => {
     unlisten.forEach((u) => u());
     observer?.disconnect();
@@ -174,7 +224,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKey} onresize={reportRect} />
+<svelte:window onkeydown={onKey} onresize={reportRect} onpointerdown={onWindowPointerDown} />
 
 {#if available === false}
   <div class="flex flex-col items-center justify-center h-full text-center gap-4 p-8">
@@ -273,7 +323,93 @@
           </button>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <!-- Chapters -->
+          {#if tracks.chapters.length > 0}
+            <div class="relative" data-menu>
+              <button
+                onclick={() => toggleMenu("chapters")}
+                class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+                title="Chapters"
+                aria-label="Chapters"
+              >
+                <List size={18} />
+              </button>
+              {#if openMenu === "chapters"}
+                <div
+                  class="absolute bottom-full right-0 mb-2 bg-surface-container border border-outline-variant rounded-lg py-1 min-w-56 max-h-72 overflow-y-auto z-20"
+                >
+                  {#each tracks.chapters as c (c.index)}
+                    <button onclick={() => pickChapter(c.index)} class={menuItem}>
+                      <span class="text-label-sm text-on-surface-variant tabular-nums w-12 shrink-0">
+                        {formatClock(c.time)}
+                      </span>
+                      <span class="flex-1 truncate">{c.title ?? `Chapter ${c.index + 1}`}</span>
+                      {#if state.chapter === c.index}<Check size={14} class="text-primary shrink-0" />{/if}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Audio tracks -->
+          {#if tracks.audio.length > 1}
+            <div class="relative" data-menu>
+              <button
+                onclick={() => toggleMenu("audio")}
+                class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+                title="Audio track"
+                aria-label="Audio track"
+              >
+                <Languages size={18} />
+              </button>
+              {#if openMenu === "audio"}
+                <div
+                  class="absolute bottom-full right-0 mb-2 bg-surface-container border border-outline-variant rounded-lg py-1 min-w-44 max-h-64 overflow-y-auto z-20"
+                >
+                  {#each tracks.audio as t (t.id)}
+                    <button onclick={() => pickAudio(t.id)} class={menuItem}>
+                      <span class="flex-1 truncate">{trackLabel(t)}</span>
+                      {#if state.aid === t.id}<Check size={14} class="text-primary shrink-0" />{/if}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Subtitles -->
+          {#if tracks.subtitle.length > 0}
+            <div class="relative" data-menu>
+              <button
+                onclick={() => toggleMenu("sub")}
+                class="p-2 rounded hover:bg-surface-container-highest transition-colors
+                  {state.sid != null ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'}"
+                title="Subtitles"
+                aria-label="Subtitles"
+              >
+                <Captions size={18} />
+              </button>
+              {#if openMenu === "sub"}
+                <div
+                  class="absolute bottom-full right-0 mb-2 bg-surface-container border border-outline-variant rounded-lg py-1 min-w-44 max-h-64 overflow-y-auto z-20"
+                >
+                  <button onclick={() => pickSub(null)} class={menuItem}>
+                    <span class="flex-1">Off</span>
+                    {#if state.sid == null}<Check size={14} class="text-primary shrink-0" />{/if}
+                  </button>
+                  {#each tracks.subtitle as t (t.id)}
+                    <button onclick={() => pickSub(t.id)} class={menuItem}>
+                      <span class="flex-1 truncate">{trackLabel(t)}</span>
+                      {#if state.sid === t.id}<Check size={14} class="text-primary shrink-0" />{/if}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
           <select
             bind:value={speedSel}
             onchange={() => api.playerSetSpeed(speedSel)}
