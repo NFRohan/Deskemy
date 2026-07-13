@@ -131,6 +131,55 @@ pub fn course_touch_opened(state: State<AppState>, id: String) -> Result<()> {
     queries::touch_opened(&conn, &id)
 }
 
+/// Store image bytes as a course's thumbnail and record its path. Returns the
+/// stored absolute path (for the frontend to display via the asset protocol).
+fn set_course_thumb(
+    state: &State<AppState>,
+    course_id: &str,
+    bytes: &[u8],
+    ext_hint: Option<&str>,
+) -> Result<String> {
+    let path = crate::thumbnails::store(&state.thumbnails_dir(), bytes, ext_hint)?;
+    let path_str = path.to_string_lossy().into_owned();
+    let conn = db(state)?;
+    queries::set_thumbnail(&conn, course_id, Some(&path_str))?;
+    Ok(path_str)
+}
+
+/// Set a course thumbnail from a local image file (from the native picker).
+#[tauri::command]
+pub fn course_set_thumbnail_file(
+    state: State<AppState>,
+    id: String,
+    src_path: String,
+) -> Result<String> {
+    let bytes = std::fs::read(&src_path)?;
+    let ext = Path::new(&src_path).extension().and_then(|e| e.to_str());
+    set_course_thumb(&state, &id, &bytes, ext)
+}
+
+/// Set a course thumbnail from base64-encoded image bytes (from clipboard paste).
+#[tauri::command]
+pub fn course_set_thumbnail_bytes(
+    state: State<AppState>,
+    id: String,
+    data_base64: String,
+    ext: Option<String>,
+) -> Result<String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.as_bytes())
+        .map_err(|e| DeskemyError::Other(format!("invalid image data: {e}")))?;
+    set_course_thumb(&state, &id, &bytes, ext.as_deref())
+}
+
+/// Remove a course's thumbnail (reverts to the placeholder).
+#[tauri::command]
+pub fn course_clear_thumbnail(state: State<AppState>, id: String) -> Result<()> {
+    let conn = db(&state)?;
+    queries::set_thumbnail(&conn, &id, None)
+}
+
 /// Manually mark a lecture complete/incomplete.
 #[tauri::command]
 pub fn lecture_set_completed(

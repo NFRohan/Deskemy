@@ -14,13 +14,15 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     pub config: Mutex<AppConfig>,
     pub config_path: PathBuf,
+    /// App data directory (holds the db, config, and thumbnails cache).
+    pub data_dir: PathBuf,
     pub importer: Importer,
     /// Embedded mpv player, created lazily on first playback.
     pub player: Mutex<Option<MpvPlayer>>,
 }
 
 impl AppState {
-    pub fn new(db: Connection, config: AppConfig, config_path: PathBuf) -> Self {
+    pub fn new(db: Connection, config: AppConfig, data_dir: PathBuf, config_path: PathBuf) -> Self {
         // Prefer the real libmpv prober; fall back to the stub if the DLL is
         // unavailable so the app still runs (import just lacks durations).
         let prober: Box<dyn MediaProber> = if MpvProber::available() {
@@ -35,8 +37,14 @@ impl AppState {
             db: Mutex::new(db),
             config: Mutex::new(config),
             config_path,
+            data_dir,
             importer: Importer::new(prober),
             player: Mutex::new(None),
         }
+    }
+
+    /// Directory where course thumbnails are cached.
+    pub fn thumbnails_dir(&self) -> PathBuf {
+        self.data_dir.join("thumbnails")
     }
 }

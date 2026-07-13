@@ -11,8 +11,13 @@
     TriangleAlert,
     ListVideo,
     LoaderCircle,
+    Upload,
+    Clipboard,
+    ImagePlus,
+    X,
   } from "@lucide/svelte";
-  import { api } from "$lib/api";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import { api, pickImage } from "$lib/api";
   import { setCrumbs, loadLibrary } from "$lib/stores/app.svelte";
   import { formatDuration, formatClock, pct } from "$lib/format";
   import type { CourseDetail, Lecture, Section } from "$lib/types";
@@ -22,6 +27,10 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let expanded = $state<Set<string>>(new Set());
+  let thumbBusy = $state(false);
+  let thumbError = $state<string | null>(null);
+
+  const thumbSrc = $derived(course?.thumbnail_path ? convertFileSrc(course.thumbnail_path) : "");
 
   function flat(c: CourseDetail): Lecture[] {
     return c.sections.flatMap((s) => s.lectures);
@@ -84,6 +93,77 @@
     loadLibrary(true);
   }
 
+  // --- Thumbnail: pick a file, paste an image, or remove ---
+
+  function bytesToBase64(bytes: Uint8Array): string {
+    let binary = "";
+    const chunk = 0x8000; // avoid arg-count limits on fromCharCode
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  async function setFromBlob(blob: Blob) {
+    if (!course) return;
+    thumbBusy = true;
+    thumbError = null;
+    try {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const ext = blob.type.startsWith("image/") ? blob.type.slice(6) : null;
+      const stored = await api.setCourseThumbnailBytes(course.id, bytesToBase64(bytes), ext);
+      course.thumbnail_path = stored;
+      loadLibrary(true);
+    } catch (e: any) {
+      thumbError = e?.message ?? String(e);
+    } finally {
+      thumbBusy = false;
+    }
+  }
+
+  async function setFromFile() {
+    if (!course) return;
+    const path = await pickImage();
+    if (!path) return;
+    thumbBusy = true;
+    thumbError = null;
+    try {
+      const stored = await api.setCourseThumbnailFile(course.id, path);
+      course.thumbnail_path = stored;
+      loadLibrary(true);
+    } catch (e: any) {
+      thumbError = e?.message ?? String(e);
+    } finally {
+      thumbBusy = false;
+    }
+  }
+
+  function onPaste(e: ClipboardEvent) {
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    // DataTransferItemList is not reliably iterable; index it.
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        const blob = item.getAsFile();
+        if (blob) {
+          e.preventDefault();
+          setFromBlob(blob);
+          return;
+        }
+      }
+    }
+  }
+
+  async function removeThumb() {
+    if (!course) return;
+    await api.clearCourseThumbnail(course.id).catch(() => {});
+    course.thumbnail_path = null;
+    loadLibrary(true);
+  }
+
   function openLecture(l: Lecture) {
     if (!l.playable) return;
     goto(`/watch/${l.id}`);
@@ -97,6 +177,8 @@
   }
 </script>
 
+<svelte:window onpaste={onPaste} />
+
 {#if loading}
   <div class="flex items-center justify-center py-32 text-on-surface-variant">
     <LoaderCircle size={28} class="animate-spin" />
@@ -109,10 +191,54 @@
   <div class="p-6 max-w-5xl mx-auto space-y-6">
     <!-- Header -->
     <div class="flex gap-6 bg-surface-container-low border border-outline-variant rounded-xl p-4">
-      <div
-        class="w-64 aspect-video rounded-lg bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center flex-shrink-0"
-      >
-        <ListVideo size={40} class="text-outline-variant" />
+      <div class="w-64 shrink-0 space-y-2">
+        <div
+          class="aspect-video rounded-lg overflow-hidden border border-outline-variant bg-surface-container-highest relative"
+        >
+          {#if course.thumbnail_path}
+            <img src={thumbSrc} alt={course.title} class="w-full h-full object-cover" />
+          {:else}
+            <div
+              class="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-surface-container-high to-surface-container-lowest text-outline-variant"
+            >
+              <ImagePlus size={32} />
+              <span class="text-label-sm">No thumbnail</span>
+            </div>
+          {/if}
+          {#if thumbBusy}
+            <div class="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <LoaderCircle size={24} class="animate-spin text-on-surface" />
+            </div>
+          {/if}
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            onclick={setFromFile}
+            disabled={thumbBusy}
+            class="flex-1 inline-flex items-center justify-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-2 py-1.5 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+          >
+            <Upload size={14} /> Upload
+          </button>
+          {#if course.thumbnail_path}
+            <button
+              onclick={removeThumb}
+              disabled={thumbBusy}
+              class="p-1.5 rounded text-on-surface-variant hover:text-error hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+              title="Remove thumbnail"
+              aria-label="Remove thumbnail"
+            >
+              <X size={16} />
+            </button>
+          {/if}
+        </div>
+
+        <p class="text-label-sm text-on-surface-variant flex items-center gap-1.5">
+          <Clipboard size={12} class="shrink-0" /> or paste an image (Ctrl+V)
+        </p>
+        {#if thumbError}
+          <p class="text-label-sm text-error">{thumbError}</p>
+        {/if}
       </div>
       <div class="flex-1 min-w-0 flex flex-col">
         <div class="flex items-start justify-between gap-4">

@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +30,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # Identity + hashing
 uuid = { version = "1", features = ["v7"] }
 blake3 = "1"
+base64 = "0.22"
 
 # Errors + logging
 thiserror = "2"

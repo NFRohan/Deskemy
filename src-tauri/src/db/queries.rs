@@ -115,6 +115,15 @@ pub fn set_favorite(conn: &Connection, id: &str, favorite: bool) -> Result<()> {
     Ok(())
 }
 
+/// Set (or clear, with `None`) a course's thumbnail path.
+pub fn set_thumbnail(conn: &Connection, id: &str, path: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE courses SET thumbnail_path = ?2 WHERE id = ?1",
+        params![id, path],
+    )?;
+    Ok(())
+}
+
 pub fn touch_opened(conn: &Connection, id: &str) -> Result<()> {
     conn.execute(
         "UPDATE courses SET last_opened_at = ?2 WHERE id = ?1",

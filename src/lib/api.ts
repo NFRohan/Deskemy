@@ -31,6 +31,11 @@ export const api = {
   setFavorite: (id: string, favorite: boolean) =>
     invoke<void>("course_set_favorite", { id, favorite }),
   touchOpened: (id: string) => invoke<void>("course_touch_opened", { id }),
+  setCourseThumbnailFile: (id: string, srcPath: string) =>
+    invoke<string>("course_set_thumbnail_file", { id, srcPath }),
+  setCourseThumbnailBytes: (id: string, dataBase64: string, ext: string | null) =>
+    invoke<string>("course_set_thumbnail_bytes", { id, dataBase64, ext }),
+  clearCourseThumbnail: (id: string) => invoke<void>("course_clear_thumbnail", { id }),
   setLectureCompleted: (lectureId: string, completed: boolean) =>
     invoke<void>("lecture_set_completed", { lectureId, completed }),
 
@@ -70,5 +75,14 @@ export const api = {
 /** Native folder picker. Returns the chosen path or null if cancelled. */
 export async function pickFolder(): Promise<string | null> {
   const result = await open({ directory: true, multiple: false });
+  return typeof result === "string" ? result : null;
+}
+
+/** Native image-file picker. Returns the chosen path or null if cancelled. */
+export async function pickImage(): Promise<string | null> {
+  const result = await open({
+    multiple: false,
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
+  });
   return typeof result === "string" ? result : null;
 }

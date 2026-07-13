@@ -12,6 +12,7 @@ pub mod media;
 pub mod mpv;
 pub mod player;
 pub mod scanner;
+pub mod thumbnails;
 
 use config::AppConfig;
 use state::AppState;
@@ -50,7 +51,7 @@ pub fn run() {
             let config = AppConfig::load(&config_path)?;
 
             tracing::info!(db = %db_path.display(), "database ready");
-            app.manage(AppState::new(conn, config, config_path));
+            app.manage(AppState::new(conn, config, data_dir, config_path));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -64,6 +65,9 @@ pub fn run() {
             commands::course_get,
             commands::course_set_favorite,
             commands::course_touch_opened,
+            commands::course_set_thumbnail_file,
+            commands::course_set_thumbnail_bytes,
+            commands::course_clear_thumbnail,
             commands::lecture_set_completed,
             commands::bookmark_add,
             commands::bookmark_list,
