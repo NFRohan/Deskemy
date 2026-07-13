@@ -258,8 +258,11 @@ pub fn open_resource(app: AppHandle, path: String) -> Result<()> {
 /// Cascades to its sections/lectures/progress/bookmarks and the search index.
 #[tauri::command]
 pub fn library_delete_course(state: State<AppState>, id: String) -> Result<()> {
-    let conn = db(&state)?;
-    queries::delete_course(&conn, &id)
+    let mut conn = db(&state)?;
+    let tx = conn.transaction()?;
+    queries::delete_course(&tx, &id)?;
+    tx.commit()?;
+    Ok(())
 }
 
 /// Manually mark a lecture complete/incomplete.

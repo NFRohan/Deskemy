@@ -4,6 +4,7 @@
 //! `library:changed` so the UI refreshes.
 
 use crate::db::queries;
+use crate::player::PlayerService;
 use crate::state::AppState;
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
@@ -65,7 +66,7 @@ impl LibraryWatcher {
             }
         }
         if let Ok(courses) = queries::all_course_folders(conn) {
-            for (folder, root_id) in courses {
+            for (_id, folder, root_id) in courses {
                 // Courses under a root are already covered by the root watch.
                 if root_id.is_none() {
                     self.watch(Path::new(&folder));
@@ -80,13 +81,38 @@ impl LibraryWatcher {
 /// Map changed paths to owning courses (or new course folders under a root) and
 /// re-import them, then notify the UI.
 fn handle_changes(app: &AppHandle, paths: Vec<PathBuf>) {
-    tracing::info!(count = paths.len(), "auto-rescan: filesystem change detected");
     let state = app.state::<AppState>();
+
+    // Auto-rescan is opt-in (off by default) — see AppConfig::auto_rescan.
+    if !state
+        .config
+        .lock()
+        .map(|c| c.auto_rescan)
+        .unwrap_or(false)
+    {
+        return;
+    }
+
+    // Never re-import the course currently playing — it would invalidate the
+    // live player's lecture ids mid-session. Lock player BEFORE db (matching the
+    // app-wide player→db order) so we don't invert lock ordering.
+    let active_lecture = state
+        .player
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|p| p.state().lecture_id));
+
+    tracing::info!(count = paths.len(), "auto-rescan: filesystem change detected");
     let mut guard = match state.db.lock() {
         Ok(g) => g,
         Err(_) => return,
     };
     let conn: &mut Connection = &mut guard;
+
+    let active_course = active_lecture
+        .as_deref()
+        .and_then(|lid| queries::get_lecture_playback(conn, lid).ok().flatten())
+        .map(|(_, course_id, _)| course_id);
 
     let courses = queries::all_course_folders(conn).unwrap_or_default();
     let roots = queries::list_library_roots(conn).unwrap_or_default();
@@ -94,7 +120,10 @@ fn handle_changes(app: &AppHandle, paths: Vec<PathBuf>) {
     // Dedup to the set of course folders that need re-importing.
     let mut to_import: HashMap<PathBuf, Option<String>> = HashMap::new();
     for p in &paths {
-        if let Some((folder, root_id)) = courses.iter().find(|(f, _)| p.starts_with(f)) {
+        if let Some((id, folder, root_id)) = courses.iter().find(|(_, f, _)| p.starts_with(f)) {
+            if Some(id.as_str()) == active_course.as_deref() {
+                continue; // skip the course being watched
+            }
             to_import
                 .entry(PathBuf::from(folder))
                 .or_insert_with(|| root_id.clone());

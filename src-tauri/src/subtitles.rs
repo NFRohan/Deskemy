@@ -42,7 +42,13 @@ fn parse_ts(s: &str) -> Option<i64> {
     let hour: i64 = parts.next().unwrap_or("0").trim().parse().ok()?;
     let digits: String = frac.chars().take(3).collect();
     let millis: i64 = format!("{digits:0<3}").parse().unwrap_or(0);
-    Some((hour * 3600 + min * 60 + sec) * 1000 + millis)
+    Some(
+        hour.saturating_mul(3600)
+            .saturating_add(min.saturating_mul(60))
+            .saturating_add(sec)
+            .saturating_mul(1000)
+            .saturating_add(millis),
+    )
 }
 
 /// Strip `<...>` tags and collapse whitespace.

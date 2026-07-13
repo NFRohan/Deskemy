@@ -159,16 +159,23 @@ fn configure(conn: &Connection) -> Result<()> {
 
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    if version >= SCHEMA_VERSION {
+        return Ok(());
+    }
+    // Run every step + the version bump in one transaction so an interrupted
+    // upgrade rolls back cleanly instead of leaving a half-migrated (and
+    // possibly unopenable) database. DDL and user_version are transactional.
+    let tx = conn.unchecked_transaction()?;
     if version < 1 {
-        conn.execute_batch(SCHEMA_V1)?;
+        tx.execute_batch(SCHEMA_V1)?;
     }
     if version < 2 {
         // A frame grabbed from the player at the resume point, shown on the
         // library's Continue Watching entry.
-        conn.execute_batch("ALTER TABLE courses ADD COLUMN resume_thumbnail_path TEXT;")?;
+        tx.execute_batch("ALTER TABLE courses ADD COLUMN resume_thumbnail_path TEXT;")?;
     }
     if version < 3 {
-        conn.execute_batch(
+        tx.execute_batch(
             "CREATE TABLE course_tags (
                  course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
                  tag       TEXT NOT NULL,
@@ -179,7 +186,7 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
     if version < 4 {
         // Full-text index over sidecar subtitle text, one row per cue.
-        conn.execute_batch(
+        tx.execute_batch(
             "CREATE VIRTUAL TABLE IF NOT EXISTS subtitle_index USING fts5(
                  lecture_id UNINDEXED,
                  course_id  UNINDEXED,
@@ -191,7 +198,7 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
     if version < 5 {
         // Per-day watch telemetry for the stats page (heatmap, streaks, etc.).
-        conn.execute_batch(
+        tx.execute_batch(
             "CREATE TABLE IF NOT EXISTS daily_activity (
                  day                TEXT PRIMARY KEY,
                  watch_seconds      REAL NOT NULL DEFAULT 0,
@@ -199,8 +206,7 @@ fn migrate(conn: &Connection) -> Result<()> {
              );",
         )?;
     }
-    if version != SCHEMA_VERSION {
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-    }
+    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    tx.commit()?;
     Ok(())
 }

@@ -16,6 +16,10 @@ pub struct AppConfig {
     pub autoplay_next: bool,
     /// Daily watch-time goal in minutes (stats page).
     pub daily_goal_minutes: i64,
+    /// Auto re-import a course when its folder changes on disk. Off by default:
+    /// re-importing probes new files while holding the DB lock, which can briefly
+    /// block the UI, and it must not run against a course being watched.
+    pub auto_rescan: bool,
     /// Last library root the user registered (convenience).
     pub last_root: Option<String>,
 }
@@ -27,6 +31,7 @@ impl Default for AppConfig {
             default_speed: 1.0,
             autoplay_next: true,
             daily_goal_minutes: 30,
+            auto_rescan: false,
             last_root: None,
         }
     }

@@ -219,7 +219,7 @@ impl PlayerService for MpvPlayer {
         Ok(())
     }
     fn state(&self) -> PlayerState {
-        self.inner.state.lock().unwrap().clone()
+        self.inner.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
     fn tracks(&self) -> MediaTracks {
         self.inner.read_tracks()
@@ -273,7 +273,7 @@ impl PlayerInner {
             .unwrap_or(0);
 
         {
-            let mut pl = self.playlist.lock().unwrap();
+            let mut pl = self.playlist.lock().unwrap_or_else(|e| e.into_inner());
             pl.course_id = course_id;
             pl.items = items
                 .into_iter()
@@ -290,20 +290,20 @@ impl PlayerInner {
 
     fn step(&self, delta: i32) -> Result<()> {
         let next = {
-            let pl = self.playlist.lock().unwrap();
+            let pl = self.playlist.lock().unwrap_or_else(|e| e.into_inner());
             let n = pl.index as i32 + delta;
             if n < 0 || n as usize >= pl.items.len() {
                 return Ok(());
             }
             n as usize
         };
-        self.playlist.lock().unwrap().index = next;
+        self.playlist.lock().unwrap_or_else(|e| e.into_inner()).index = next;
         self.load_current(false)
     }
 
     fn load_current(&self, resume: bool) -> Result<()> {
         let (lecture_id, path, course_id) = {
-            let pl = self.playlist.lock().unwrap();
+            let pl = self.playlist.lock().unwrap_or_else(|e| e.into_inner());
             let item = pl
                 .items
                 .get(pl.index)
@@ -313,13 +313,13 @@ impl PlayerInner {
 
         let (saved_pos, completed) = {
             let st = self.app.state::<AppState>();
-            let db = st.db.lock().unwrap();
+            let db = st.db.lock().unwrap_or_else(|e| e.into_inner());
             queries::get_progress(&db, &lecture_id).unwrap_or((0.0, false))
         };
         let start = if resume && !completed { saved_pos } else { 0.0 };
         let speed = {
             let st = self.app.state::<AppState>();
-            let cfg = st.config.lock().unwrap();
+            let cfg = st.config.lock().unwrap_or_else(|e| e.into_inner());
             cfg.default_speed
         };
 
@@ -341,7 +341,7 @@ impl PlayerInner {
         self.show(true);
 
         {
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
             s.lecture_id = Some(lecture_id.clone());
             s.position = start;
             s.paused = false;
@@ -351,7 +351,7 @@ impl PlayerInner {
 
         {
             let st = self.app.state::<AppState>();
-            let db = st.db.lock().unwrap();
+            let db = st.db.lock().unwrap_or_else(|e| e.into_inner());
             let _ = queries::set_last_lecture(&db, &course_id, &lecture_id);
         }
 
@@ -362,7 +362,7 @@ impl PlayerInner {
     /// Refresh the observable state from mpv and emit (throttled).
     fn tick(&self, force: bool) {
         {
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(p) = self.mpv.get_f64("time-pos") {
                 s.position = p;
             }
@@ -393,17 +393,17 @@ impl PlayerInner {
         // Accumulate real watch time while playing (capped per tick so a system
         // suspend or long stall doesn't inflate it).
         {
-            let paused = self.state.lock().unwrap().paused;
-            let mut lw = self.last_watch.lock().unwrap();
+            let paused = self.state.lock().unwrap_or_else(|e| e.into_inner()).paused;
+            let mut lw = self.last_watch.lock().unwrap_or_else(|e| e.into_inner());
             let delta = lw.elapsed().as_secs_f64();
             *lw = Instant::now();
             if !paused {
-                *self.watch_accum.lock().unwrap() += delta.min(2.0);
+                *self.watch_accum.lock().unwrap_or_else(|e| e.into_inner()) += delta.min(2.0);
             }
         }
 
         let should_emit = force || {
-            let mut last = self.last_emit.lock().unwrap();
+            let mut last = self.last_emit.lock().unwrap_or_else(|e| e.into_inner());
             if last.elapsed() >= Duration::from_millis(200) {
                 *last = Instant::now();
                 true
@@ -417,7 +417,7 @@ impl PlayerInner {
 
         // Periodically persist progress.
         let do_save = {
-            let mut last = self.last_save.lock().unwrap();
+            let mut last = self.last_save.lock().unwrap_or_else(|e| e.into_inner());
             if last.elapsed() >= Duration::from_secs(5) {
                 *last = Instant::now();
                 true
@@ -434,7 +434,7 @@ impl PlayerInner {
     /// Persist accumulated watch seconds to today's activity bucket.
     fn flush_watch(&self) {
         let secs = {
-            let mut a = self.watch_accum.lock().unwrap();
+            let mut a = self.watch_accum.lock().unwrap_or_else(|e| e.into_inner());
             std::mem::replace(&mut *a, 0.0)
         };
         if secs <= 0.0 {
@@ -453,21 +453,21 @@ impl PlayerInner {
 
         let autoplay = {
             let st = self.app.state::<AppState>();
-            let a = st.config.lock().unwrap().autoplay_next;
+            let a = st.config.lock().unwrap_or_else(|e| e.into_inner()).autoplay_next;
             a
         };
         let has_next = {
-            let pl = self.playlist.lock().unwrap();
+            let pl = self.playlist.lock().unwrap_or_else(|e| e.into_inner());
             pl.index + 1 < pl.items.len()
         };
 
         if autoplay && has_next {
-            self.playlist.lock().unwrap().index += 1;
+            self.playlist.lock().unwrap_or_else(|e| e.into_inner()).index += 1;
             let _ = self.load_current(false);
             let _ = self.app.emit("player:advanced", ());
         } else {
             {
-                let mut s = self.state.lock().unwrap();
+                let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
                 s.eof = true;
                 s.paused = true;
             }
@@ -477,7 +477,7 @@ impl PlayerInner {
 
     fn save_progress(&self, completed: bool) {
         let (lecture_id, position, duration) = {
-            let s = self.state.lock().unwrap();
+            let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
             (s.lecture_id.clone(), s.position, s.duration)
         };
         let Some(lecture_id) = lecture_id else {
@@ -492,13 +492,13 @@ impl PlayerInner {
         let _ = queries::save_progress(&db, &lecture_id, position, done);
 
         // Count each lecture's completion once per session for daily activity.
-        if done && self.completed_session.lock().unwrap().insert(lecture_id) {
+        if done && self.completed_session.lock().unwrap_or_else(|e| e.into_inner()).insert(lecture_id) {
             let _ = queries::add_completion(&db);
         }
     }
 
     fn emit(&self) {
-        let snapshot = self.state.lock().unwrap().clone();
+        let snapshot = self.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let _ = self.app.emit("player:state", snapshot);
     }
 

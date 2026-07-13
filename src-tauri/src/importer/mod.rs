@@ -116,15 +116,15 @@ impl Importer {
             )));
         }
 
-        // Replace any previous import of the same folder.
-        if let Some(existing) = &existing {
-            queries::delete_course(conn, existing)?;
-        }
-
         let course_id = new_id();
         let thumbnail = detect_thumbnail(&scan);
 
         let tx = conn.transaction()?;
+        // Replace any previous import of the same folder — atomic with the
+        // re-insert, so a mid-import failure can't destroy the old course.
+        if let Some(existing) = &existing {
+            queries::delete_course(&tx, existing)?;
+        }
         queries::insert_course(
             &tx,
             &course_id,
@@ -211,13 +211,20 @@ impl Importer {
                 }
             }
 
+            // Only carry over thumbnails whose files still exist, so a dangling
+            // path doesn't win over a freshly-detected cover.
+            let thumb = p.thumbnail_path.as_deref().filter(|p| Path::new(p).exists());
+            let resume = p
+                .resume_thumbnail_path
+                .as_deref()
+                .filter(|p| Path::new(p).exists());
             queries::restore_course_fields(
                 &tx,
                 &course_id,
                 p.is_favorite,
                 p.last_opened_at,
-                p.thumbnail_path.as_deref(),
-                p.resume_thumbnail_path.as_deref(),
+                thumb,
+                resume,
             )?;
             if let Some(f) = &p.last_lecture_file {
                 if let Some(&nid) = by_path.get(f.as_str()) {
