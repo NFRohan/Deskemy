@@ -9,9 +9,11 @@
     Settings,
     FolderPlus,
     LoaderCircle,
+    PanelLeftClose,
+    PanelLeftOpen,
   } from "@lucide/svelte";
   import { api, pickFolder } from "$lib/api";
-  import { loadLibrary, ui } from "$lib/stores/app.svelte";
+  import { loadLibrary, toggleSidebar, ui } from "$lib/stores/app.svelte";
 
   let importing = $state(false);
   let importError = $state<string | null>(null);
@@ -51,18 +53,36 @@
   class="{ui.sidebarCollapsed ? 'w-16' : 'w-[240px]'} shrink-0 h-full bg-surface-container-low
     border-r border-outline-variant flex flex-col py-6 transition-[width] duration-200 overflow-hidden"
 >
-  <!-- Brand -->
-  <div class="mb-8 flex items-center gap-3 {ui.sidebarCollapsed ? 'justify-center px-0' : 'px-6'}">
-    <div
-      class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center font-bold text-on-primary-container shrink-0"
-    >
-      D
-    </div>
-    {#if !ui.sidebarCollapsed}
-      <div class="min-w-0">
+  <!-- Brand + collapse control -->
+  <div class="mb-8 flex items-center gap-3 {ui.sidebarCollapsed ? 'justify-center px-2' : 'px-6'}">
+    {#if ui.sidebarCollapsed}
+      <!-- Collapsed: the logo becomes the expander -->
+      <button
+        onclick={toggleSidebar}
+        class="p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
+        title="Expand sidebar"
+        aria-label="Expand sidebar"
+      >
+        <PanelLeftOpen size={20} />
+      </button>
+    {:else}
+      <div
+        class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center font-bold text-on-primary-container shrink-0"
+      >
+        D
+      </div>
+      <div class="min-w-0 flex-1">
         <h1 class="text-headline-md text-primary">Deskemy</h1>
         <p class="text-label-sm text-on-surface-variant">Power Learner</p>
       </div>
+      <button
+        onclick={toggleSidebar}
+        class="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors shrink-0"
+        title="Collapse sidebar"
+        aria-label="Collapse sidebar"
+      >
+        <PanelLeftClose size={18} />
+      </button>
     {/if}
   </div>
 
