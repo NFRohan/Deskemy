@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { goto } from "$app/navigation";
   import { Search, BookOpen, ListVideo, Play, Paperclip, Captions, LoaderCircle } from "@lucide/svelte";
   import { api } from "$lib/api";
@@ -20,6 +20,7 @@
     setCrumbs([{ label: "Search" }]);
     inputEl?.focus();
   });
+  onDestroy(() => clearTimeout(timer));
 
   function onInput() {
     clearTimeout(timer);

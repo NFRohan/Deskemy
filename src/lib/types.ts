@@ -64,6 +64,7 @@ export interface AppConfig {
   default_speed: number;
   autoplay_next: boolean;
   daily_goal_minutes: number;
+  auto_rescan: boolean;
   last_root: string | null;
 }
 

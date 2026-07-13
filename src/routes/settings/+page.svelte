@@ -35,6 +35,11 @@
     config.autoplay_next = !config.autoplay_next;
     save();
   }
+  function toggleAutoRescan() {
+    if (!config) return;
+    config.auto_rescan = !config.auto_rescan;
+    save();
+  }
   function onTheme(e: Event) {
     if (!config) return;
     config.theme = (e.target as HTMLSelectElement).value;
@@ -191,6 +196,28 @@
       <div
         class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant"
       >
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Auto-rescan folders</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Re-import a course when its folder changes on disk. May briefly pause the UI while it
+              re-scans; the course you're watching is never touched.
+            </p>
+          </div>
+          <button
+            onclick={toggleAutoRescan}
+            role="switch"
+            aria-checked={config.auto_rescan}
+            aria-label="Auto-rescan folders"
+            class="relative w-11 h-6 rounded-full transition-colors shrink-0
+              {config.auto_rescan ? 'bg-primary-container' : 'bg-surface-container-highest'}"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform
+                {config.auto_rescan ? 'translate-x-5' : ''}"
+            ></span>
+          </button>
+        </div>
         <div class="flex items-center justify-between gap-4 p-4">
           <div class="min-w-0">
             <p class="text-body-md text-on-surface">Check for missing files</p>

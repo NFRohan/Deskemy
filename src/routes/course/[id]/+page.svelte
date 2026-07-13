@@ -50,6 +50,7 @@
   let showThumbModal = $state(false);
   let showDeleteModal = $state(false);
   let deleting = $state(false);
+  let deleteError = $state<string | null>(null);
 
   const thumbSrc = $derived(course?.thumbnail_path ? convertFileSrc(course.thumbnail_path) : "");
 
@@ -184,6 +185,8 @@
   }
 
   function onPaste(e: ClipboardEvent) {
+    // Only capture pastes while the thumbnail editor is open.
+    if (!showThumbModal) return;
     const tag = (e.target as HTMLElement | null)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
     const items = e.clipboardData?.items;
@@ -218,6 +221,11 @@
     api.openResource(a.file_path).catch(() => {});
   }
 
+  // Move keyboard focus into a modal when it opens.
+  function focusOnMount(node: HTMLElement) {
+    node.focus();
+  }
+
   async function addTag() {
     if (!course) return;
     const t = newTag.trim();
@@ -242,13 +250,14 @@
   async function confirmDelete() {
     if (!course) return;
     deleting = true;
+    deleteError = null;
     try {
       await api.deleteCourse(course.id);
       await loadLibrary(true);
       goto("/");
-    } catch {
-      deleting = false;
-      showDeleteModal = false;
+    } catch (e: any) {
+      deleteError = e?.message ?? String(e);
+      deleting = false; // keep the modal open so the failure is visible
     }
   }
 </script>
@@ -530,6 +539,7 @@
         aria-modal="true"
         aria-label="Course thumbnail"
         tabindex="-1"
+        use:focusOnMount
         onclick={(e) => e.stopPropagation()}
       >
         <div class="flex items-center justify-between">
@@ -604,6 +614,8 @@
         role="dialog"
         aria-modal="true"
         aria-label="Remove course"
+        tabindex="-1"
+        use:focusOnMount
         onclick={(e) => e.stopPropagation()}
       >
         <h3 class="text-headline-sm text-on-surface">Remove from library?</h3>
@@ -612,6 +624,9 @@
           its progress and bookmarks. Your video files on disk are not deleted — you can re-import the
           folder later.
         </p>
+        {#if deleteError}
+          <p class="text-label-sm text-error">Couldn't remove: {deleteError}</p>
+        {/if}
         <div class="flex justify-end gap-2">
           <button
             onclick={() => (showDeleteModal = false)}
@@ -633,4 +648,12 @@
       </div>
     </div>
   {/if}
+{:else}
+  <div class="flex flex-col items-center justify-center py-32 text-center gap-3">
+    <p class="text-headline-md text-on-surface">Course not found</p>
+    <p class="text-body-sm text-on-surface-variant">It may have been removed from your library.</p>
+    <a href="/" class="inline-flex items-center gap-2 text-label-md text-primary hover:underline">
+      Back to library
+    </a>
+  </div>
 {/if}

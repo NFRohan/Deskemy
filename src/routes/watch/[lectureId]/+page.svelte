@@ -151,10 +151,26 @@
     }
   });
 
-  // (Re)load whenever the route's lecture id changes.
+  // Guards load() against re-running when `available` flips null→true (which
+  // would double-open the player + double-apply a ?t= seek).
+  let loadedKey = "";
+  // Pending timeouts, cleared on unmount so they don't fire post-navigation.
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  function later(fn: () => void, ms: number) {
+    const id = setTimeout(() => {
+      timers.delete(id);
+      fn();
+    }, ms);
+    timers.add(id);
+  }
+
+  // (Re)load whenever the route's lecture id (or ?t=) changes.
   $effect(() => {
     const id = $page.params.lectureId;
-    if (id && available !== false) {
+    const t = $page.url.searchParams.get("t") ?? "";
+    const key = `${id}?${t}`;
+    if (id && available !== false && key !== loadedKey) {
+      loadedKey = key;
       load(id);
     }
   });
@@ -177,8 +193,8 @@
     if (lid && state.duration > 0 && tracksFor !== lid) {
       tracksFor = lid;
       refetchTracks();
-      setTimeout(refetchTracks, 400);
-      setTimeout(refetchTracks, 1200);
+      later(refetchTracks, 400);
+      later(refetchTracks, 1200);
     }
   });
   function refetchTracks() {
@@ -259,8 +275,8 @@
     showPlaylist = !showPlaylist;
     // Re-sync the mpv window to the resized pane a few times as the layout settles.
     reportRectSoon();
-    setTimeout(reportRect, 80);
-    setTimeout(reportRect, 250);
+    later(reportRect, 80);
+    later(reportRect, 250);
   }
   function toggleSection(id: string) {
     const next = new Set(expandedSections);
@@ -291,7 +307,7 @@
   function pickChapter(index: number) {
     api.playerSetChapter(index).catch(() => {});
   }
-  function toggleMenu(m: "sub" | "audio" | "chapters") {
+  function toggleMenu(m: "sub" | "audio" | "chapters" | "bookmarks") {
     openMenu = openMenu === m ? null : m;
     // The panel resizes the video pane; re-sync the mpv window to it.
     reportRectSoon();
@@ -300,6 +316,7 @@
   onDestroy(() => {
     unlisten.forEach((u) => u());
     observer?.disconnect();
+    timers.forEach(clearTimeout);
     setImmersive(false);
     getCurrentWindow().setFullscreen(false).catch(() => {});
     // Grab a resume frame for the Continue Watching entry, then stop. The

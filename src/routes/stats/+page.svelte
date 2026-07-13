@@ -21,11 +21,17 @@
 
   let stats = $state<LibraryStats | null>(null);
   let loading = $state(true);
+  let error = $state<string | null>(null);
 
   onMount(async () => {
     setCrumbs([{ label: "Stats" }]);
-    stats = await api.getStats().catch(() => null);
-    loading = false;
+    try {
+      stats = await api.getStats();
+    } catch (e: any) {
+      error = e?.message ?? String(e);
+    } finally {
+      loading = false;
+    }
   });
 
   function key(d: Date): string {
@@ -114,6 +120,8 @@
     <div class="flex justify-center py-24 text-on-surface-variant">
       <LoaderCircle size={26} class="animate-spin" />
     </div>
+  {:else if error}
+    <p class="text-body-sm text-error py-16 text-center">Couldn't load stats: {error}</p>
   {:else if stats}
     <!-- Today's Progress -->
     <section class="space-y-3">
