@@ -2,8 +2,14 @@
   import { onMount } from "svelte";
   import { Settings, RefreshCw, Trash2, FileSearch, LoaderCircle } from "@lucide/svelte";
   import { api } from "$lib/api";
-  import { setCrumbs, loadLibrary } from "$lib/stores/app.svelte";
+  import { setCrumbs, loadLibrary, applyTheme } from "$lib/stores/app.svelte";
   import type { AppConfig } from "$lib/types";
+
+  const THEMES = [
+    { value: "dark", label: "Dark" },
+    { value: "light", label: "Light" },
+    { value: "system", label: "System" },
+  ];
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -27,6 +33,12 @@
   function toggleAutoplay() {
     if (!config) return;
     config.autoplay_next = !config.autoplay_next;
+    save();
+  }
+  function onTheme(e: Event) {
+    if (!config) return;
+    config.theme = (e.target as HTMLSelectElement).value;
+    applyTheme(config.theme);
     save();
   }
 
@@ -77,6 +89,30 @@
   </h2>
 
   {#if config}
+    <!-- Appearance -->
+    <section class="space-y-3">
+      <h3 class="text-label-md text-on-surface-variant uppercase tracking-wide">Appearance</h3>
+      <div
+        class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant"
+      >
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div>
+            <p class="text-body-md text-on-surface">Theme</p>
+            <p class="text-label-sm text-on-surface-variant">Follow the system or force light/dark.</p>
+          </div>
+          <select
+            value={config.theme}
+            onchange={onTheme}
+            class="bg-background border border-outline-variant rounded text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
+          >
+            {#each THEMES as t (t.value)}
+              <option value={t.value}>{t.label}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+    </section>
+
     <!-- Playback -->
     <section class="space-y-3">
       <h3 class="text-label-md text-on-surface-variant uppercase tracking-wide">Playback</h3>

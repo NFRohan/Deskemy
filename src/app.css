@@ -65,6 +65,35 @@
   color-scheme: dark;
 }
 
+/* Light theme: override the @theme tokens (which are CSS vars on :root) under a
+   higher-specificity selector, so every Tailwind utility re-colors. Applied by
+   setting data-theme="light" on <html>. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-background: #f6f6f9;
+  --color-surface: #ffffff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3f2f7;
+  --color-surface-container: #ededf2;
+  --color-surface-container-high: #e6e5ec;
+  --color-surface-container-highest: #e0dfe7;
+
+  --color-on-surface: #1b1b1f;
+  --color-on-surface-variant: #48454e;
+  --color-outline: #79767f;
+  --color-outline-variant: #cac5d1;
+  --color-border: #dcdae2;
+
+  --color-primary: #7b1fa2;
+  --color-primary-container: #a435f0;
+  --color-on-primary-container: #ffffff;
+  --color-inverse-primary: #8410cf;
+  --color-secondary-container: #1f6fd0;
+  --color-accent-blue: #0067c0;
+  --color-error: #ba1a1a;
+}
+
 html,
 body {
   height: 100%;

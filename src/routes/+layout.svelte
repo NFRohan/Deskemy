@@ -1,12 +1,19 @@
 <script lang="ts">
   import "@fontsource-variable/inter";
   import "../app.css";
+  import { onMount } from "svelte";
   import { page } from "$app/stores";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import TopBar from "$lib/components/TopBar.svelte";
-  import { ui } from "$lib/stores/app.svelte";
+  import { api } from "$lib/api";
+  import { ui, applyTheme } from "$lib/stores/app.svelte";
 
   let { children } = $props();
+
+  onMount(async () => {
+    const cfg = await api.getConfig().catch(() => null);
+    applyTheme(cfg?.theme ?? "dark");
+  });
 
   // The player renders into a native child window that does NOT move with DOM
   // scroll, so the watch route must never scroll — it manages its own fixed

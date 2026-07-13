@@ -54,3 +54,24 @@ export function setImmersive(on: boolean): void {
 export function toggleSidebar(): void {
   ui.sidebarCollapsed = !ui.sidebarCollapsed;
 }
+
+// Theme: "dark" | "light" | "system". Applied by stamping data-theme on <html>;
+// "system" follows the OS preference and tracks changes.
+let systemThemeCleanup: (() => void) | null = null;
+
+export function applyTheme(theme: string): void {
+  if (typeof document === "undefined") return;
+  systemThemeCleanup?.();
+  systemThemeCleanup = null;
+  const root = document.documentElement;
+
+  if (theme === "system") {
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const set = () => (root.dataset.theme = mq.matches ? "light" : "dark");
+    set();
+    mq.addEventListener("change", set);
+    systemThemeCleanup = () => mq.removeEventListener("change", set);
+  } else {
+    root.dataset.theme = theme === "light" ? "light" : "dark";
+  }
+}
