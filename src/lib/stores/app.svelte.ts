@@ -35,9 +35,10 @@ export interface Crumb {
   href?: string;
 }
 
-export const ui = $state<{ crumbs: Crumb[]; immersive: boolean }>({
+export const ui = $state<{ crumbs: Crumb[]; immersive: boolean; sidebarCollapsed: boolean }>({
   crumbs: [{ label: "Library" }],
   immersive: false,
+  sidebarCollapsed: false,
 });
 
 export function setCrumbs(crumbs: Crumb[]): void {
@@ -47,4 +48,9 @@ export function setCrumbs(crumbs: Crumb[]): void {
 /** Immersive/cinema mode hides the sidebar + titlebar so the video fills the window. */
 export function setImmersive(on: boolean): void {
   ui.immersive = on;
+}
+
+/** Collapse the left sidebar to an icon rail (more room for course content). */
+export function toggleSidebar(): void {
+  ui.sidebarCollapsed = !ui.sidebarCollapsed;
 }
