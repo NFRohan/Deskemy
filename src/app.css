@@ -68,6 +68,10 @@
 html,
 body {
   height: 100%;
+  overflow: hidden;
+  /* No document-level scroll or touchpad rubber-band; the native video window
+     is positioned in screen coords and would desync from any page scroll. */
+  overscroll-behavior: none;
 }
 
 body {

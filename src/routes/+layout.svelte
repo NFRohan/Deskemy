@@ -1,11 +1,17 @@
 <script lang="ts">
   import "@fontsource-variable/inter";
   import "../app.css";
+  import { page } from "$app/stores";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import TopBar from "$lib/components/TopBar.svelte";
   import { ui } from "$lib/stores/app.svelte";
 
   let { children } = $props();
+
+  // The player renders into a native child window that does NOT move with DOM
+  // scroll, so the watch route must never scroll — it manages its own fixed
+  // layout. Other routes scroll their content normally.
+  const scrolls = $derived(!$page.url.pathname.startsWith("/watch"));
 </script>
 
 <div class="flex h-screen overflow-hidden">
@@ -16,7 +22,7 @@
     {#if !ui.immersive}
       <TopBar />
     {/if}
-    <main class="flex-1 overflow-y-auto bg-background">
+    <main class="flex-1 min-h-0 bg-background {scrolls ? 'overflow-y-auto' : 'overflow-hidden'}">
       {@render children()}
     </main>
   </div>

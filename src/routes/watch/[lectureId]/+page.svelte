@@ -177,12 +177,22 @@
   }
 
   // Course-content sidebar: fetch the curriculum and follow the current lecture.
-  // Refetch on lecture change so completion ticks stay current.
+  // Refetch when the course or the active lecture changes (so completion ticks
+  // stay current) — but not on every player tick.
+  let courseFetchKey = "";
   $effect(() => {
     const cid = lecture?.course_id;
-    void state.lecture_id;
-    if (cid) api.getCourse(cid).then((c) => (course = c)).catch(() => {});
+    const lid = state.lecture_id;
+    if (!cid) return;
+    const key = `${cid}:${lid ?? ""}`;
+    if (key === courseFetchKey) return;
+    courseFetchKey = key;
+    api.getCourse(cid).then((c) => (course = c)).catch(() => {});
   });
+
+  function sectionProgress(lectures: Lecture[]): { done: number; total: number } {
+    return { done: lectures.filter((l) => l.completed).length, total: lectures.length };
+  }
   $effect(() => {
     const lid = state.lecture_id;
     if (course && lid) {
