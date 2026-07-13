@@ -35,8 +35,16 @@ export interface Crumb {
   href?: string;
 }
 
-export const ui = $state<{ crumbs: Crumb[] }>({ crumbs: [{ label: "Library" }] });
+export const ui = $state<{ crumbs: Crumb[]; immersive: boolean }>({
+  crumbs: [{ label: "Library" }],
+  immersive: false,
+});
 
 export function setCrumbs(crumbs: Crumb[]): void {
   ui.crumbs = crumbs;
+}
+
+/** Immersive/cinema mode hides the sidebar + titlebar so the video fills the window. */
+export function setImmersive(on: boolean): void {
+  ui.immersive = on;
 }

@@ -63,3 +63,20 @@ export interface AppConfig {
   autoplay_next: boolean;
   last_root: string | null;
 }
+
+export interface PlayerState {
+  lecture_id: string | null;
+  position: number;
+  duration: number;
+  paused: boolean;
+  speed: number;
+  eof: boolean;
+}
+
+export interface LectureView {
+  id: string;
+  title: string;
+  course_id: string;
+  course_title: string;
+  section_title: string;
+}

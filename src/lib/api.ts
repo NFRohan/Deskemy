@@ -6,6 +6,8 @@ import type {
   AppConfig,
   CourseDetail,
   CourseSummary,
+  LectureView,
+  PlayerState,
   RootDto,
   ScanResult,
 } from "./types";
@@ -30,6 +32,21 @@ export const api = {
   // config_*
   getConfig: () => invoke<AppConfig>("config_get"),
   setConfig: (config: AppConfig) => invoke<void>("config_set", { config }),
+
+  // player_*
+  playerAvailable: () => invoke<boolean>("player_available"),
+  playerOpen: (lectureId: string) => invoke<void>("player_open", { lectureId }),
+  playerTogglePause: () => invoke<void>("player_toggle_pause"),
+  playerSetPaused: (paused: boolean) => invoke<void>("player_set_paused", { paused }),
+  playerSeek: (position: number) => invoke<void>("player_seek", { position }),
+  playerSetSpeed: (speed: number) => invoke<void>("player_set_speed", { speed }),
+  playerNext: () => invoke<void>("player_next"),
+  playerPrev: () => invoke<void>("player_prev"),
+  playerSetRect: (x: number, y: number, w: number, h: number) =>
+    invoke<void>("player_set_rect", { x, y, w, h }),
+  playerStop: () => invoke<void>("player_stop"),
+  playerState: () => invoke<PlayerState | null>("player_state"),
+  lectureGet: (id: string) => invoke<LectureView | null>("lecture_get", { id }),
 };
 
 /** Native folder picker. Returns the chosen path or null if cancelled. */
