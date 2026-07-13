@@ -13,6 +13,7 @@ import type {
   PlayerState,
   RootDto,
   ScanResult,
+  SearchHit,
 } from "./types";
 
 export const api = {
@@ -45,6 +46,9 @@ export const api = {
   listBookmarks: (lectureId: string) => invoke<Bookmark[]>("bookmark_list", { lectureId }),
   deleteBookmark: (id: string) => invoke<void>("bookmark_delete", { id }),
   listAllBookmarks: () => invoke<BookmarkDetail[]>("bookmark_list_all"),
+
+  // search_*
+  search: (query: string) => invoke<SearchHit[]>("search_query", { query }),
 
   // config_*
   getConfig: () => invoke<AppConfig>("config_get"),

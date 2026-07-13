@@ -50,6 +50,11 @@ pub fn run() {
             let conn = db::open(&db_path)?;
             let config = AppConfig::load(&config_path)?;
 
+            // Rebuild the search index on startup — cheap for a local library
+            // and keeps it consistent with the base tables (and any entities
+            // indexed after they were first imported).
+            db::queries::rebuild_search_index(&conn)?;
+
             tracing::info!(db = %db_path.display(), "database ready");
             app.manage(AppState::new(conn, config, data_dir, config_path));
             Ok(())
@@ -73,6 +78,7 @@ pub fn run() {
             commands::bookmark_list,
             commands::bookmark_delete,
             commands::bookmark_list_all,
+            commands::search_query,
             commands::config_get,
             commands::config_set,
             commands::player::player_available,

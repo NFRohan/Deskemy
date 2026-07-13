@@ -92,6 +92,16 @@ pub struct Bookmark {
     pub created_at: i64,
 }
 
+/// One full-text search result across courses/sections/lectures/attachments.
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchHit {
+    pub kind: String,
+    pub entity_id: String,
+    pub course_id: String,
+    pub course_title: String,
+    pub title: String,
+}
+
 /// A bookmark plus the lecture/course context the global bookmarks page needs
 /// to group and jump into it.
 #[derive(Debug, Clone, Serialize)]

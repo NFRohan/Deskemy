@@ -117,6 +117,14 @@ export interface Bookmark {
   created_at: number;
 }
 
+export interface SearchHit {
+  kind: string; // course | section | lecture | attachment
+  entity_id: string;
+  course_id: string;
+  course_title: string;
+  title: string;
+}
+
 export interface BookmarkDetail {
   id: string;
   lecture_id: string;

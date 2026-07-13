@@ -261,9 +261,10 @@ impl Importer {
                     let key = section_key(f);
                     let section = by_key.get(key.as_str()).copied();
                     let lecture_id = section.and_then(|s| match_attachment(f, s)).map(|l| l.id.clone());
+                    let att_id = new_id();
                     queries::insert_attachment(
                         conn,
-                        &new_id(),
+                        &att_id,
                         course_id,
                         section.map(|s| s.id.as_str()),
                         lecture_id.as_deref(),
@@ -271,6 +272,7 @@ impl Importer {
                         &f.path.to_string_lossy(),
                         Some(attachment_kind(f)),
                     )?;
+                    queries::fts_insert(conn, "attachment", &att_id, course_id, &f.name)?;
                 }
             }
         }

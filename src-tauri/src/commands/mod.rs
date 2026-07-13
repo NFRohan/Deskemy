@@ -3,7 +3,7 @@
 pub mod player;
 
 use crate::db::queries;
-use crate::domain::{Bookmark, BookmarkDetail, CourseDetail, CourseSummary};
+use crate::domain::{Bookmark, BookmarkDetail, CourseDetail, CourseSummary, SearchHit};
 use crate::error::{DeskemyError, Result};
 use rusqlite::Connection;
 use serde::Serialize;
@@ -223,6 +223,16 @@ pub fn bookmark_delete(state: State<AppState>, id: String) -> Result<()> {
 pub fn bookmark_list_all(state: State<AppState>) -> Result<Vec<BookmarkDetail>> {
     let conn = db(&state)?;
     queries::list_all_bookmarks(&conn)
+}
+
+// ---------------------------------------------------------------------------
+// search_*
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn search_query(state: State<AppState>, query: String) -> Result<Vec<SearchHit>> {
+    let conn = db(&state)?;
+    queries::search(&conn, &query, 50)
 }
 
 // ---------------------------------------------------------------------------

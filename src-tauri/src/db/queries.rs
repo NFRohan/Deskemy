@@ -2,7 +2,9 @@
 //! derefs to it, so these compose inside import transactions).
 
 use crate::db::{new_id, now};
-use crate::domain::{Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, Section};
+use crate::domain::{
+    Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, Section, SearchHit,
+};
 use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
@@ -259,6 +261,82 @@ pub fn fts_insert(
         "INSERT INTO search_index (kind, entity_id, course_id, title)
          VALUES (?1, ?2, ?3, ?4)",
         params![kind, entity_id, course_id, title],
+    )?;
+    Ok(())
+}
+
+/// Build a safe FTS5 MATCH expression from free-form user input: each token
+/// becomes a quoted prefix term restricted to the `title` column. `None` when
+/// there are no usable tokens (so we skip running MATCH on an empty/invalid
+/// expression).
+fn fts_match_expr(input: &str) -> Option<String> {
+    let terms: Vec<String> = input
+        .split_whitespace()
+        .filter(|t| t.chars().any(char::is_alphanumeric))
+        .map(|t| format!("\"{}\"*", t.replace('"', "\"\"")))
+        .collect();
+    (!terms.is_empty()).then(|| format!("title : ({})", terms.join(" ")))
+}
+
+/// Full-text search across indexed courses/sections/lectures/attachments,
+/// ranked by relevance.
+pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
+    let Some(expr) = fts_match_expr(query) else {
+        return Ok(Vec::new());
+    };
+    let mut stmt = conn.prepare(
+        "SELECT s.kind, s.entity_id, s.course_id, c.title, s.title
+           FROM search_index s
+           JOIN courses c ON c.id = s.course_id
+          WHERE search_index MATCH ?1
+          ORDER BY rank
+          LIMIT ?2",
+    )?;
+    let rows = stmt
+        .query_map(params![expr, limit], |r| {
+            Ok(SearchHit {
+                kind: r.get(0)?,
+                entity_id: r.get(1)?,
+                course_id: r.get(2)?,
+                course_title: r.get(3)?,
+                title: r.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn search_index_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM search_index", [], |r| r.get(0))?)
+}
+
+pub fn course_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM courses", [], |r| r.get(0))?)
+}
+
+/// Rebuild the whole search index from the base tables (used as a startup
+/// safety net for libraries imported before a given entity was indexed).
+pub fn rebuild_search_index(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM search_index", [])?;
+    conn.execute(
+        "INSERT INTO search_index (kind, entity_id, course_id, title)
+         SELECT 'course', id, id, title FROM courses",
+        [],
+    )?;
+    conn.execute(
+        "INSERT INTO search_index (kind, entity_id, course_id, title)
+         SELECT 'section', id, course_id, title FROM sections",
+        [],
+    )?;
+    conn.execute(
+        "INSERT INTO search_index (kind, entity_id, course_id, title)
+         SELECT 'lecture', id, course_id, title FROM lectures",
+        [],
+    )?;
+    conn.execute(
+        "INSERT INTO search_index (kind, entity_id, course_id, title)
+         SELECT 'attachment', id, course_id, name FROM attachments",
+        [],
     )?;
     Ok(())
 }
