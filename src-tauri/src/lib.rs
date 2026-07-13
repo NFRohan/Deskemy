@@ -1,0 +1,84 @@
+mod commands;
+mod state;
+
+// Exposed for integration tests (tests/ is a separate crate).
+pub mod config;
+pub mod db;
+pub mod domain;
+pub mod error;
+pub mod hashing;
+pub mod importer;
+pub mod media;
+pub mod mpv;
+pub mod player;
+pub mod scanner;
+
+use config::AppConfig;
+use state::AppState;
+use tauri::Manager;
+use tracing_subscriber::EnvFilter;
+
+/// Lightweight backend health check used by the frontend to confirm the
+/// Rust <-> WebView bridge is wired up.
+#[tauri::command]
+fn app_health() -> String {
+    "ok".to_string()
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("deskemy=debug,info")),
+        )
+        .init();
+
+    tracing::info!("Deskemy starting");
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+
+            let db_path = data_dir.join("deskemy.db");
+            let config_path = data_dir.join("config.json");
+
+            let conn = db::open(&db_path)?;
+            let config = AppConfig::load(&config_path)?;
+
+            tracing::info!(db = %db_path.display(), "database ready");
+            app.manage(AppState::new(conn, config, config_path));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            app_health,
+            commands::library_add_root,
+            commands::library_list_roots,
+            commands::library_remove_root,
+            commands::library_import_course,
+            commands::library_scan_root,
+            commands::library_list_courses,
+            commands::course_get,
+            commands::course_set_favorite,
+            commands::course_touch_opened,
+            commands::config_get,
+            commands::config_set,
+            commands::player::player_available,
+            commands::player::player_open,
+            commands::player::player_toggle_pause,
+            commands::player::player_set_paused,
+            commands::player::player_seek,
+            commands::player::player_set_speed,
+            commands::player::player_next,
+            commands::player::player_prev,
+            commands::player::player_set_rect,
+            commands::player::player_stop,
+            commands::player::player_state,
+            commands::player::lecture_get,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
