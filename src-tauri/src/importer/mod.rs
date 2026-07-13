@@ -24,6 +24,21 @@ pub struct Importer {
     prober: Box<dyn MediaProber>,
 }
 
+/// User data snapshotted before a re-import so it survives the delete+reinsert,
+/// remapped to the new lecture ids by file path.
+struct Preserved {
+    is_favorite: bool,
+    last_opened_at: Option<i64>,
+    last_lecture_file: Option<String>,
+    thumbnail_path: Option<String>,
+    resume_thumbnail_path: Option<String>,
+    tags: Vec<String>,
+    /// (file_path, position_seconds, completed, last_watched_at)
+    progress: Vec<(String, f64, bool, Option<i64>)>,
+    /// (file_path, position_seconds, label, created_at)
+    bookmarks: Vec<(String, f64, Option<String>, i64)>,
+}
+
 /// Metadata carried over from a previous import so an unchanged file's video
 /// doesn't have to be re-probed on rescan.
 struct PriorMeta {
@@ -82,11 +97,16 @@ impl Importer {
 
         let scan = FilesystemScanner.scan(course_dir)?;
 
-        // Snapshot the prior import's media so unchanged files skip re-probing.
+        // Snapshot the prior import: media (to skip re-probing unchanged files)
+        // and user data (to survive the delete + reinsert below).
         let existing = queries::find_course_by_path(conn, &folder_path)?;
         let prior = match &existing {
             Some(id) => Self::snapshot_prior(conn, id)?,
             None => HashMap::new(),
+        };
+        let preserved = match &existing {
+            Some(id) => Some(Self::snapshot_preserved(conn, id)?),
+            None => None,
         };
 
         let sections = self.plan_sections(&scan, &prior)?;
@@ -182,8 +202,74 @@ impl Importer {
             crate::domain::ScanStatus::Ready.as_str(),
         )?;
 
+        // Restore preserved user data, remapped to new lecture ids by file path.
+        if let Some(p) = &preserved {
+            let mut by_path: HashMap<&str, &str> = HashMap::new();
+            for s in &sections {
+                for l in &s.lectures {
+                    by_path.insert(l.path.as_str(), l.id.as_str());
+                }
+            }
+
+            queries::restore_course_fields(
+                &tx,
+                &course_id,
+                p.is_favorite,
+                p.last_opened_at,
+                p.thumbnail_path.as_deref(),
+                p.resume_thumbnail_path.as_deref(),
+            )?;
+            if let Some(f) = &p.last_lecture_file {
+                if let Some(&nid) = by_path.get(f.as_str()) {
+                    queries::set_last_lecture_id(&tx, &course_id, nid)?;
+                }
+            }
+            for tag in &p.tags {
+                queries::add_tag(&tx, &course_id, tag)?;
+            }
+            for (path, pos, completed, watched) in &p.progress {
+                if let Some(&nid) = by_path.get(path.as_str()) {
+                    queries::restore_progress(&tx, nid, *pos, *completed, *watched)?;
+                }
+            }
+            for (path, pos, label, created) in &p.bookmarks {
+                if let Some(&nid) = by_path.get(path.as_str()) {
+                    queries::restore_bookmark(
+                        &tx,
+                        &new_id(),
+                        nid,
+                        &course_id,
+                        *pos,
+                        label.as_deref(),
+                        *created,
+                    )?;
+                }
+            }
+        }
+
         tx.commit()?;
         Ok(course_id)
+    }
+
+    /// Snapshot user data (progress, bookmarks, tags, course fields) so it can
+    /// be reattached to the new lecture ids after a re-import.
+    fn snapshot_preserved(conn: &Connection, course_id: &str) -> Result<Preserved> {
+        let (is_favorite, last_opened_at, last_lecture_id, thumbnail_path, resume_thumbnail_path) =
+            queries::course_preserve(conn, course_id)?;
+        let last_lecture_file = match last_lecture_id {
+            Some(lid) => queries::lecture_file_path(conn, &lid)?,
+            None => None,
+        };
+        Ok(Preserved {
+            is_favorite,
+            last_opened_at,
+            last_lecture_file,
+            thumbnail_path,
+            resume_thumbnail_path,
+            tags: queries::tags_for_course(conn, course_id)?,
+            progress: queries::progress_with_files(conn, course_id)?,
+            bookmarks: queries::bookmarks_with_files(conn, course_id)?,
+        })
     }
 
     /// Load a previous import's media keyed by file path, for reuse on rescan.

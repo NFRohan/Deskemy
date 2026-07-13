@@ -87,3 +87,61 @@ fn imports_hierarchy_ordering_and_resources() {
         .unwrap();
     assert!(hits >= 1);
 }
+
+#[test]
+fn reimport_preserves_user_data() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Preserve Course");
+    let s1 = course.join("01 - Intro");
+    fs::create_dir_all(&s1).unwrap();
+    touch(&s1.join("001 First.mp4"));
+    touch(&s1.join("002 Second.mp4"));
+
+    let mut conn = db::open_in_memory().unwrap();
+    let importer = Importer::new(Box::new(StubProber));
+    let cid1 = importer.import_course(&mut conn, None, &course).unwrap();
+
+    // Attach user data to the "First" lecture.
+    let detail = db::queries::get_course_detail(&conn, &cid1).unwrap().unwrap();
+    let lec = detail
+        .sections
+        .iter()
+        .flat_map(|s| &s.lectures)
+        .find(|l| l.title == "First")
+        .unwrap();
+    let old_lec_id = lec.id.clone();
+    let file_path = lec.file_path.clone();
+
+    db::queries::save_progress(&conn, &old_lec_id, 123.5, true).unwrap();
+    db::queries::add_bookmark(&conn, &old_lec_id, 42.0, Some("note")).unwrap();
+    db::queries::add_tag(&conn, &cid1, "sql").unwrap();
+    db::queries::set_favorite(&conn, &cid1, true).unwrap();
+
+    // Re-import the same folder → new ids, but user data must survive.
+    let cid2 = importer.import_course(&mut conn, None, &course).unwrap();
+    assert_ne!(cid1, cid2);
+
+    let detail2 = db::queries::get_course_detail(&conn, &cid2).unwrap().unwrap();
+    let lec2 = detail2
+        .sections
+        .iter()
+        .flat_map(|s| &s.lectures)
+        .find(|l| l.file_path == file_path)
+        .unwrap();
+    assert_ne!(lec2.id, old_lec_id, "new lecture id after re-import");
+
+    // Progress remapped by file path.
+    let (pos, completed) = db::queries::get_progress(&conn, &lec2.id).unwrap();
+    assert!(completed);
+    assert!((pos - 123.5).abs() < 0.01);
+    assert!(lec2.completed);
+
+    // Bookmark remapped.
+    let bms = db::queries::list_bookmarks(&conn, &lec2.id).unwrap();
+    assert_eq!(bms.len(), 1);
+    assert_eq!(bms[0].label.as_deref(), Some("note"));
+
+    // Tag + favorite preserved on the new course.
+    assert_eq!(db::queries::tags_for_course(&conn, &cid2).unwrap(), vec!["sql".to_string()]);
+    assert!(detail2.is_favorite);
+}

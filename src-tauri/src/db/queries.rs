@@ -330,6 +330,138 @@ pub fn course_chapters(
     Ok(rows)
 }
 
+// --- Preserve user data across a re-import (rescan) ---
+
+/// (is_favorite, last_opened_at, last_lecture_id, thumbnail_path,
+/// resume_thumbnail_path) for a course.
+#[allow(clippy::type_complexity)]
+pub fn course_preserve(
+    conn: &Connection,
+    id: &str,
+) -> Result<(bool, Option<i64>, Option<String>, Option<String>, Option<String>)> {
+    Ok(conn.query_row(
+        "SELECT is_favorite, last_opened_at, last_lecture_id, thumbnail_path, resume_thumbnail_path
+           FROM courses WHERE id = ?1",
+        params![id],
+        |r| {
+            Ok((
+                r.get::<_, i64>(0)? != 0,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+            ))
+        },
+    )?)
+}
+
+pub fn lecture_file_path(conn: &Connection, lecture_id: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT file_path FROM lectures WHERE id = ?1",
+            params![lecture_id],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// (file_path, position_seconds, completed, last_watched_at) per progress row.
+pub fn progress_with_files(
+    conn: &Connection,
+    course_id: &str,
+) -> Result<Vec<(String, f64, bool, Option<i64>)>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.file_path, p.position_seconds, p.completed, p.last_watched_at
+           FROM progress p JOIN lectures l ON l.id = p.lecture_id
+          WHERE l.course_id = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![course_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// (file_path, position_seconds, label, created_at) per bookmark.
+pub fn bookmarks_with_files(
+    conn: &Connection,
+    course_id: &str,
+) -> Result<Vec<(String, f64, Option<String>, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.file_path, b.position_seconds, b.label, b.created_at
+           FROM bookmarks b JOIN lectures l ON l.id = b.lecture_id
+          WHERE b.course_id = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![course_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Reapply preserved course-row fields after a re-import (thumbnail kept only
+/// when the caller has one, so folder-detected thumbnails aren't clobbered).
+pub fn restore_course_fields(
+    conn: &Connection,
+    id: &str,
+    is_favorite: bool,
+    last_opened_at: Option<i64>,
+    thumbnail_path: Option<&str>,
+    resume_thumbnail_path: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE courses SET is_favorite = ?2, last_opened_at = ?3,
+             thumbnail_path = COALESCE(?4, thumbnail_path),
+             resume_thumbnail_path = ?5
+           WHERE id = ?1",
+        params![id, is_favorite as i64, last_opened_at, thumbnail_path, resume_thumbnail_path],
+    )?;
+    Ok(())
+}
+
+pub fn set_last_lecture_id(conn: &Connection, course_id: &str, lecture_id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE courses SET last_lecture_id = ?2 WHERE id = ?1",
+        params![course_id, lecture_id],
+    )?;
+    Ok(())
+}
+
+pub fn restore_progress(
+    conn: &Connection,
+    lecture_id: &str,
+    position_seconds: f64,
+    completed: bool,
+    last_watched_at: Option<i64>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO progress (lecture_id, position_seconds, completed, last_watched_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![lecture_id, position_seconds, completed as i64, last_watched_at],
+    )?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn restore_bookmark(
+    conn: &Connection,
+    id: &str,
+    lecture_id: &str,
+    course_id: &str,
+    position_seconds: f64,
+    label: Option<&str>,
+    created_at: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO bookmarks (id, lecture_id, course_id, position_seconds, label, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, lecture_id, course_id, position_seconds, label, created_at],
+    )?;
+    Ok(())
+}
+
 /// A course's resources (pdfs, archives, code, …), ordered by section then name.
 pub fn list_course_attachments(conn: &Connection, course_id: &str) -> Result<Vec<Attachment>> {
     let mut stmt = conn.prepare(
