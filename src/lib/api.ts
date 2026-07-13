@@ -18,6 +18,7 @@ import type {
   RootDto,
   ScanResult,
   SearchHit,
+  SubtitleHit,
 } from "./types";
 
 export const api = {
@@ -63,6 +64,8 @@ export const api = {
   // search_*
   search: (query: string) => invoke<SearchHit[]>("search_query", { query }),
   reindexSearch: () => invoke<number>("search_reindex"),
+  searchSubtitles: (query: string) => invoke<SubtitleHit[]>("subtitle_search", { query }),
+  reindexSubtitles: () => invoke<number>("subtitles_reindex"),
 
   // stats
   getStats: () => invoke<LibraryStats>("stats_get"),

@@ -12,6 +12,7 @@ pub mod media;
 pub mod mpv;
 pub mod player;
 pub mod scanner;
+pub mod subtitles;
 pub mod thumbnails;
 
 use config::AppConfig;
@@ -86,6 +87,8 @@ pub fn run() {
             commands::bookmark_list_all,
             commands::search_query,
             commands::search_reindex,
+            commands::subtitle_search,
+            commands::subtitles_reindex,
             commands::stats_get,
             commands::library_reconcile,
             commands::thumbnails_gc,

@@ -5,6 +5,7 @@ pub mod player;
 use crate::db::queries;
 use crate::domain::{
     Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, LibraryStats, SearchHit,
+    SubtitleHit,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::Connection;
@@ -303,6 +304,39 @@ pub fn search_reindex(state: State<AppState>) -> Result<i64> {
     let conn = db(&state)?;
     queries::rebuild_search_index(&conn)?;
     queries::search_index_count(&conn)
+}
+
+/// Full-text search over subtitle text; returns snippets with jump timestamps.
+#[tauri::command]
+pub fn subtitle_search(state: State<AppState>, query: String) -> Result<Vec<SubtitleHit>> {
+    let conn = db(&state)?;
+    queries::subtitle_search(&conn, &query, 50)
+}
+
+/// (Re)build the subtitle text index by parsing every sidecar subtitle file.
+/// Returns the number of indexed cues.
+#[tauri::command]
+pub fn subtitles_reindex(state: State<AppState>) -> Result<i64> {
+    let files = {
+        let conn = db(&state)?;
+        queries::all_subtitle_files(&conn)?
+    };
+    let mut conn = db(&state)?;
+    let tx = conn.transaction()?;
+    queries::clear_subtitle_index(&tx)?;
+    let mut total = 0i64;
+    for (lecture_id, course_id, path) in files {
+        let content = match std::fs::read(&path) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(_) => continue, // skip missing/unreadable subtitle files
+        };
+        for (start_ms, text) in crate::subtitles::parse(&content) {
+            queries::insert_subtitle_cue(&tx, &lecture_id, &course_id, start_ms, &text)?;
+            total += 1;
+        }
+    }
+    tx.commit()?;
+    Ok(total)
 }
 
 /// Aggregate library + watch statistics for the stats page.

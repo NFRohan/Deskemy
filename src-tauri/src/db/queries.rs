@@ -4,7 +4,7 @@
 use crate::db::{new_id, now};
 use crate::domain::{
     Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, Lecture, LibraryStats,
-    Section, SearchHit,
+    Section, SearchHit, SubtitleHit,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -360,22 +360,21 @@ pub fn fts_insert(
 }
 
 /// Build a safe FTS5 MATCH expression from free-form user input: each token
-/// becomes a quoted prefix term restricted to the `title` column. `None` when
-/// there are no usable tokens (so we skip running MATCH on an empty/invalid
-/// expression).
-fn fts_match_expr(input: &str) -> Option<String> {
+/// becomes a quoted prefix term restricted to `column`. `None` when there are
+/// no usable tokens (so we skip running MATCH on an empty/invalid expression).
+fn fts_match_expr(input: &str, column: &str) -> Option<String> {
     let terms: Vec<String> = input
         .split_whitespace()
         .filter(|t| t.chars().any(char::is_alphanumeric))
         .map(|t| format!("\"{}\"*", t.replace('"', "\"\"")))
         .collect();
-    (!terms.is_empty()).then(|| format!("title : ({})", terms.join(" ")))
+    (!terms.is_empty()).then(|| format!("{column} : ({})", terms.join(" ")))
 }
 
 /// Full-text search across indexed courses/sections/lectures/attachments,
 /// ranked by relevance.
 pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
-    let Some(expr) = fts_match_expr(query) else {
+    let Some(expr) = fts_match_expr(query, "title") else {
         return Ok(Vec::new());
     };
     let mut stmt = conn.prepare(
@@ -470,6 +469,74 @@ pub fn stats(conn: &Connection) -> Result<LibraryStats> {
 
 pub fn search_index_count(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("SELECT COUNT(*) FROM search_index", [], |r| r.get(0))?)
+}
+
+// --- Subtitle full-text index ---
+
+/// (lecture_id, course_id, file_path) for every sidecar subtitle.
+pub fn all_subtitle_files(conn: &Connection) -> Result<Vec<(String, String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.lecture_id, l.course_id, s.file_path
+           FROM subtitles s JOIN lectures l ON l.id = s.lecture_id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn clear_subtitle_index(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM subtitle_index", [])?;
+    Ok(())
+}
+
+pub fn insert_subtitle_cue(
+    conn: &Connection,
+    lecture_id: &str,
+    course_id: &str,
+    start_ms: i64,
+    text: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO subtitle_index (lecture_id, course_id, start_ms, text)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![lecture_id, course_id, start_ms, text],
+    )?;
+    Ok(())
+}
+
+pub fn subtitle_index_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM subtitle_index", [], |r| r.get(0))?)
+}
+
+/// Full-text search over subtitle cues; returns snippet + jump timestamp.
+pub fn subtitle_search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<SubtitleHit>> {
+    let Some(expr) = fts_match_expr(query, "text") else {
+        return Ok(Vec::new());
+    };
+    let mut stmt = conn.prepare(
+        "SELECT si.lecture_id, si.course_id, c.title, l.title, si.start_ms,
+                snippet(subtitle_index, 3, '[', ']', '…', 10)
+           FROM subtitle_index si
+           JOIN lectures l ON l.id = si.lecture_id
+           JOIN courses  c ON c.id = si.course_id
+          WHERE subtitle_index MATCH ?1
+          ORDER BY rank
+          LIMIT ?2",
+    )?;
+    let rows = stmt
+        .query_map(params![expr, limit], |r| {
+            Ok(SubtitleHit {
+                lecture_id: r.get(0)?,
+                course_id: r.get(1)?,
+                course_title: r.get(2)?,
+                lecture_title: r.get(3)?,
+                start_ms: r.get(4)?,
+                snippet: r.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
 }
 
 pub fn course_count(conn: &Connection) -> Result<i64> {

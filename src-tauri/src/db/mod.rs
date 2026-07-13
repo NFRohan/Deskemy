@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -175,6 +175,18 @@ fn migrate(conn: &Connection) -> Result<()> {
                  PRIMARY KEY (course_id, tag)
              );
              CREATE INDEX idx_course_tags_tag ON course_tags(tag);",
+        )?;
+    }
+    if version < 4 {
+        // Full-text index over sidecar subtitle text, one row per cue.
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS subtitle_index USING fts5(
+                 lecture_id UNINDEXED,
+                 course_id  UNINDEXED,
+                 start_ms   UNINDEXED,
+                 text,
+                 tokenize = 'unicode61'
+             );",
         )?;
     }
     if version != SCHEMA_VERSION {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Settings, RefreshCw, Trash2, FileSearch, LoaderCircle } from "@lucide/svelte";
+  import { Settings, RefreshCw, Trash2, FileSearch, Captions, LoaderCircle } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs, loadLibrary, applyTheme } from "$lib/stores/app.svelte";
   import type { AppConfig } from "$lib/types";
@@ -74,6 +74,13 @@
     });
   const reindex = () =>
     run("reindex", async () => `Reindexed ${plural(await api.reindexSearch(), "item")}.`);
+  const indexSubs = () =>
+    run("subs", async () => {
+      const n = await api.reindexSubtitles();
+      return n === 0
+        ? "No sidecar subtitle files found."
+        : `Indexed ${plural(n, "subtitle line")}.`;
+    });
   const cleanThumbs = () =>
     run("gc", async () => {
       const r = await api.gcThumbnails();
@@ -199,6 +206,25 @@
             {#if busy === "reindex"}<LoaderCircle size={15} class="animate-spin" />{:else}<RefreshCw
                 size={15}
               />{/if} Rebuild
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Index subtitle text</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Parse sidecar subtitles so Search can find spoken words.
+            </p>
+            {#if results.subs}<p class="text-label-sm text-primary mt-1">{results.subs}</p>{/if}
+          </div>
+          <button
+            onclick={indexSubs}
+            disabled={busy !== null}
+            class="shrink-0 inline-flex items-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+          >
+            {#if busy === "subs"}<LoaderCircle size={15} class="animate-spin" />{:else}<Captions
+                size={15}
+              />{/if} Index
           </button>
         </div>
 

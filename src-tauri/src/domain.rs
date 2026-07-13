@@ -132,6 +132,17 @@ pub struct SearchHit {
     pub title: String,
 }
 
+/// A subtitle full-text match: a spoken snippet with the lecture + timestamp.
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleHit {
+    pub lecture_id: String,
+    pub course_id: String,
+    pub course_title: String,
+    pub lecture_title: String,
+    pub start_ms: i64,
+    pub snippet: String,
+}
+
 /// A bookmark plus the lecture/course context the global bookmarks page needs
 /// to group and jump into it.
 #[derive(Debug, Clone, Serialize)]

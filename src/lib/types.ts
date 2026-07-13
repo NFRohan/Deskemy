@@ -159,6 +159,15 @@ export interface SearchHit {
   title: string;
 }
 
+export interface SubtitleHit {
+  lecture_id: string;
+  course_id: string;
+  course_title: string;
+  lecture_title: string;
+  start_ms: number;
+  snippet: string;
+}
+
 export interface BookmarkDetail {
   id: string;
   lecture_id: string;

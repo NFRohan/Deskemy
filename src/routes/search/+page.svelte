@@ -1,13 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import { Search, BookOpen, ListVideo, Play, Paperclip, LoaderCircle } from "@lucide/svelte";
+  import { Search, BookOpen, ListVideo, Play, Paperclip, Captions, LoaderCircle } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs } from "$lib/stores/app.svelte";
-  import type { SearchHit } from "$lib/types";
+  import { formatClock } from "$lib/format";
+  import type { SearchHit, SubtitleHit } from "$lib/types";
 
   let query = $state("");
   let results = $state<SearchHit[]>([]);
+  let subResults = $state<SubtitleHit[]>([]);
   let loading = $state(false);
   let searched = $state(false);
   let inputEl = $state<HTMLInputElement | null>(null);
@@ -23,6 +25,7 @@
     clearTimeout(timer);
     if (!query.trim()) {
       results = [];
+      subResults = [];
       searched = false;
       loading = false;
       return;
@@ -36,17 +39,28 @@
     if (!q) return;
     const mine = ++seq;
     try {
-      const hits = await api.search(q);
+      const [hits, subs] = await Promise.all([
+        api.search(q),
+        api.searchSubtitles(q).catch(() => [] as SubtitleHit[]),
+      ]);
       if (mine !== seq) return; // a newer query superseded this one
       results = hits;
+      subResults = subs;
     } catch {
-      if (mine === seq) results = [];
+      if (mine === seq) {
+        results = [];
+        subResults = [];
+      }
     } finally {
       if (mine === seq) {
         loading = false;
         searched = true;
       }
     }
+  }
+
+  function jumpSub(hit: SubtitleHit) {
+    goto(`/watch/${hit.lecture_id}?t=${Math.floor(hit.start_ms / 1000)}`);
   }
 
   const meta: Record<string, { icon: any; label: string }> = {
@@ -110,13 +124,50 @@
         </li>
       {/each}
     </ul>
-  {:else if searched && !loading}
+  {/if}
+
+  {#if subResults.length > 0}
+    <section class="space-y-2">
+      <h3
+        class="flex items-center gap-2 text-label-md text-on-surface-variant uppercase tracking-wide"
+      >
+        <Captions size={14} /> In lecture subtitles
+      </h3>
+      <ul
+        class="rounded-lg border border-outline-variant divide-y divide-outline-variant overflow-hidden"
+      >
+        {#each subResults as hit (hit.lecture_id + "@" + hit.start_ms)}
+          <li>
+            <button
+              onclick={() => jumpSub(hit)}
+              class="w-full flex items-start gap-3 px-4 py-3 text-left bg-surface-container-low hover:bg-surface-container transition-colors"
+            >
+              <span
+                class="flex items-center gap-1 text-label-sm text-accent-blue tabular-nums shrink-0 w-14 pt-0.5"
+              >
+                <Play size={12} fill="currentColor" />
+                {formatClock(hit.start_ms / 1000)}
+              </span>
+              <span class="flex-1 min-w-0">
+                <span class="block text-body-md text-on-surface">{hit.snippet}</span>
+                <span class="block truncate text-label-sm text-on-surface-variant">
+                  {hit.lecture_title} · {hit.course_title}
+                </span>
+              </span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
+  {#if searched && !loading && results.length === 0 && subResults.length === 0}
     <p class="text-body-sm text-on-surface-variant py-16 text-center">
       No matches for "{query.trim()}".
     </p>
   {:else if !query.trim()}
     <p class="text-body-sm text-on-surface-variant py-16 text-center">
-      Search across your library — course titles, sections, lectures, and attachments.
+      Search across your library — titles, resources, and spoken subtitle text.
     </p>
   {/if}
 </div>
