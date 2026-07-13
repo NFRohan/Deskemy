@@ -33,6 +33,19 @@ pub struct ScanResult {
     pub errors: Vec<String>,
 }
 
+#[derive(Serialize)]
+pub struct ReconcileReport {
+    pub courses_checked: i64,
+    pub courses_missing: i64,
+    pub files_missing: i64,
+}
+
+#[derive(Serialize)]
+pub struct GcReport {
+    pub removed: i64,
+    pub freed_bytes: i64,
+}
+
 // ---------------------------------------------------------------------------
 // library_*
 // ---------------------------------------------------------------------------
@@ -233,6 +246,91 @@ pub fn bookmark_list_all(state: State<AppState>) -> Result<Vec<BookmarkDetail>> 
 pub fn search_query(state: State<AppState>, query: String) -> Result<Vec<SearchHit>> {
     let conn = db(&state)?;
     queries::search(&conn, &query, 50)
+}
+
+/// Rebuild the search index from the base tables; returns the new row count.
+#[tauri::command]
+pub fn search_reindex(state: State<AppState>) -> Result<i64> {
+    let conn = db(&state)?;
+    queries::rebuild_search_index(&conn)?;
+    queries::search_index_count(&conn)
+}
+
+// ---------------------------------------------------------------------------
+// maintenance
+// ---------------------------------------------------------------------------
+
+/// Check every lecture's file on disk and flag courses with missing files as
+/// Missing (or clear the flag when the files are back).
+#[tauri::command]
+pub fn library_reconcile(state: State<AppState>) -> Result<ReconcileReport> {
+    use std::collections::HashMap;
+    let entries = {
+        let conn = db(&state)?;
+        queries::all_lecture_files(&conn)?
+    };
+    let mut total: HashMap<String, i64> = HashMap::new();
+    let mut missing: HashMap<String, i64> = HashMap::new();
+    let mut files_missing = 0i64;
+    for (cid, path) in &entries {
+        *total.entry(cid.clone()).or_default() += 1;
+        if !Path::new(path).exists() {
+            *missing.entry(cid.clone()).or_default() += 1;
+            files_missing += 1;
+        }
+    }
+
+    let conn = db(&state)?;
+    let mut courses_missing = 0i64;
+    for cid in total.keys() {
+        let is_missing = missing.get(cid).copied().unwrap_or(0) > 0;
+        queries::set_missing(&conn, cid, is_missing)?;
+        if is_missing {
+            courses_missing += 1;
+        }
+    }
+    Ok(ReconcileReport {
+        courses_checked: total.len() as i64,
+        courses_missing,
+        files_missing,
+    })
+}
+
+/// Delete thumbnail-cache files no longer referenced by any course.
+#[tauri::command]
+pub fn thumbnails_gc(state: State<AppState>) -> Result<GcReport> {
+    let referenced: std::collections::HashSet<String> = {
+        let conn = db(&state)?;
+        queries::all_thumbnail_paths(&conn)?
+            .iter()
+            .filter_map(|p| Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect()
+    };
+
+    let dir = state.thumbnails_dir();
+    let mut removed = 0i64;
+    let mut freed_bytes = 0i64;
+    if dir.exists() {
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = match path.file_name() {
+                Some(n) => n.to_string_lossy().into_owned(),
+                None => continue,
+            };
+            if !referenced.contains(&name) {
+                let size = entry.metadata().map(|m| m.len() as i64).unwrap_or(0);
+                if std::fs::remove_file(&path).is_ok() {
+                    removed += 1;
+                    freed_bytes += size;
+                }
+            }
+        }
+    }
+    Ok(GcReport { removed, freed_bytes })
 }
 
 // ---------------------------------------------------------------------------

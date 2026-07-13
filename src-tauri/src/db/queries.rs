@@ -143,6 +143,46 @@ pub fn touch_opened(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// (course_id, file_path) for every lecture — used to check for missing files.
+pub fn all_lecture_files(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT course_id, file_path FROM lectures")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Toggle a course between Ready and Missing during reconciliation, without
+/// disturbing Importing/Scanning/Error states.
+pub fn set_missing(conn: &Connection, id: &str, missing: bool) -> Result<()> {
+    if missing {
+        conn.execute(
+            "UPDATE courses SET scan_status='Missing'
+              WHERE id=?1 AND scan_status IN ('Ready','Missing')",
+            params![id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE courses SET scan_status='Ready' WHERE id=?1 AND scan_status='Missing'",
+            params![id],
+        )?;
+    }
+    Ok(())
+}
+
+/// Every thumbnail path referenced by a course (course + resume frames).
+pub fn all_thumbnail_paths(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT thumbnail_path FROM courses WHERE thumbnail_path IS NOT NULL
+         UNION
+         SELECT resume_thumbnail_path FROM courses WHERE resume_thumbnail_path IS NOT NULL",
+    )?;
+    let rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 // ---------------------------------------------------------------------------
 // Sections / lectures / associated rows
 // ---------------------------------------------------------------------------

@@ -8,9 +8,11 @@ import type {
   BookmarkDetail,
   CourseDetail,
   CourseSummary,
+  GcReport,
   LectureView,
   MediaTracks,
   PlayerState,
+  ReconcileReport,
   RootDto,
   ScanResult,
   SearchHit,
@@ -49,6 +51,11 @@ export const api = {
 
   // search_*
   search: (query: string) => invoke<SearchHit[]>("search_query", { query }),
+  reindexSearch: () => invoke<number>("search_reindex"),
+
+  // maintenance
+  reconcileLibrary: () => invoke<ReconcileReport>("library_reconcile"),
+  gcThumbnails: () => invoke<GcReport>("thumbnails_gc"),
 
   // config_*
   getConfig: () => invoke<AppConfig>("config_get"),

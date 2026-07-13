@@ -65,6 +65,17 @@ export interface AppConfig {
   last_root: string | null;
 }
 
+export interface ReconcileReport {
+  courses_checked: number;
+  courses_missing: number;
+  files_missing: number;
+}
+
+export interface GcReport {
+  removed: number;
+  freed_bytes: number;
+}
+
 export interface PlayerState {
   lecture_id: string | null;
   position: number;
