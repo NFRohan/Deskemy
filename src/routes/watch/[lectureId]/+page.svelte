@@ -24,8 +24,8 @@
   import type { LectureView, MediaTracks, PlayerState, TrackInfo } from "$lib/types";
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-  const menuItem =
-    "w-full flex items-center gap-2 px-3 py-1.5 text-body-sm text-on-surface hover:bg-surface-container-highest text-left";
+  const panelItem =
+    "w-full flex items-center gap-3 px-6 py-2 text-body-md text-on-surface hover:bg-surface-container text-left";
 
   let paneEl = $state<HTMLDivElement | null>(null);
   let state = $state<PlayerState>({
@@ -148,23 +148,17 @@
 
   function pickSub(sid: number | null) {
     api.playerSetSubtitle(sid).catch(() => {});
-    openMenu = null;
   }
   function pickAudio(aid: number) {
     api.playerSetAudio(aid).catch(() => {});
-    openMenu = null;
   }
   function pickChapter(index: number) {
     api.playerSetChapter(index).catch(() => {});
-    openMenu = null;
   }
   function toggleMenu(m: "sub" | "audio" | "chapters") {
     openMenu = openMenu === m ? null : m;
-  }
-  function onWindowPointerDown(e: PointerEvent) {
-    if (openMenu && !(e.target as HTMLElement)?.closest?.("[data-menu]")) {
-      openMenu = null;
-    }
+    // The panel resizes the video pane; re-sync the mpv window to it.
+    reportRectSoon();
   }
 
   onDestroy(() => {
@@ -224,7 +218,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKey} onresize={reportRect} onpointerdown={onWindowPointerDown} />
+<svelte:window onkeydown={onKey} onresize={reportRect} />
 
 {#if available === false}
   <div class="flex flex-col items-center justify-center h-full text-center gap-4 p-8">
@@ -272,6 +266,47 @@
 
     <!-- mpv renders into a native child window positioned over this pane -->
     <div bind:this={paneEl} class="flex-1 min-h-0 relative bg-black"></div>
+
+    <!-- Track/chapter panel: pushes the video up rather than overlapping the
+         native surface, so playback continues uninterrupted (just resized). -->
+    {#if openMenu}
+      <div class="shrink-0 bg-surface border-t border-outline-variant">
+        <div class="max-h-56 overflow-y-auto py-1">
+          {#if openMenu === "sub"}
+            <button onclick={() => pickSub(null)} class={panelItem}>
+              <Captions size={16} class="text-on-surface-variant shrink-0" />
+              <span class="flex-1">Subtitles off</span>
+              {#if state.sid == null}<Check size={16} class="text-primary shrink-0" />{/if}
+            </button>
+            {#each tracks.subtitle as t (t.id)}
+              <button onclick={() => pickSub(t.id)} class={panelItem}>
+                <Captions size={16} class="text-on-surface-variant shrink-0" />
+                <span class="flex-1 truncate">{trackLabel(t)}</span>
+                {#if state.sid === t.id}<Check size={16} class="text-primary shrink-0" />{/if}
+              </button>
+            {/each}
+          {:else if openMenu === "audio"}
+            {#each tracks.audio as t (t.id)}
+              <button onclick={() => pickAudio(t.id)} class={panelItem}>
+                <Languages size={16} class="text-on-surface-variant shrink-0" />
+                <span class="flex-1 truncate">{trackLabel(t)}</span>
+                {#if state.aid === t.id}<Check size={16} class="text-primary shrink-0" />{/if}
+              </button>
+            {/each}
+          {:else if openMenu === "chapters"}
+            {#each tracks.chapters as c (c.index)}
+              <button onclick={() => pickChapter(c.index)} class={panelItem}>
+                <span class="text-label-sm text-on-surface-variant tabular-nums w-14 shrink-0">
+                  {formatClock(c.time)}
+                </span>
+                <span class="flex-1 truncate">{c.title ?? `Chapter ${c.index + 1}`}</span>
+                {#if state.chapter === c.index}<Check size={16} class="text-primary shrink-0" />{/if}
+              </button>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {/if}
 
     <!-- Control bar (docked below the video — never overlaps the native surface) -->
     <div class="shrink-0 bg-surface border-t border-outline-variant px-4 py-3 flex flex-col gap-2">
@@ -324,90 +359,39 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <!-- Chapters -->
           {#if tracks.chapters.length > 0}
-            <div class="relative" data-menu>
-              <button
-                onclick={() => toggleMenu("chapters")}
-                class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
-                title="Chapters"
-                aria-label="Chapters"
-              >
-                <List size={18} />
-              </button>
-              {#if openMenu === "chapters"}
-                <div
-                  class="absolute bottom-full right-0 mb-2 bg-surface-container border border-outline-variant rounded-lg py-1 min-w-56 max-h-72 overflow-y-auto z-20"
-                >
-                  {#each tracks.chapters as c (c.index)}
-                    <button onclick={() => pickChapter(c.index)} class={menuItem}>
-                      <span class="text-label-sm text-on-surface-variant tabular-nums w-12 shrink-0">
-                        {formatClock(c.time)}
-                      </span>
-                      <span class="flex-1 truncate">{c.title ?? `Chapter ${c.index + 1}`}</span>
-                      {#if state.chapter === c.index}<Check size={14} class="text-primary shrink-0" />{/if}
-                    </button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
+            <button
+              onclick={() => toggleMenu("chapters")}
+              class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
+                {openMenu === 'chapters' ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
+              title="Chapters"
+              aria-label="Chapters"
+            >
+              <List size={18} />
+            </button>
           {/if}
-
-          <!-- Audio tracks -->
           {#if tracks.audio.length > 1}
-            <div class="relative" data-menu>
-              <button
-                onclick={() => toggleMenu("audio")}
-                class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
-                title="Audio track"
-                aria-label="Audio track"
-              >
-                <Languages size={18} />
-              </button>
-              {#if openMenu === "audio"}
-                <div
-                  class="absolute bottom-full right-0 mb-2 bg-surface-container border border-outline-variant rounded-lg py-1 min-w-44 max-h-64 overflow-y-auto z-20"
-                >
-                  {#each tracks.audio as t (t.id)}
-                    <button onclick={() => pickAudio(t.id)} class={menuItem}>
-                      <span class="flex-1 truncate">{trackLabel(t)}</span>
-                      {#if state.aid === t.id}<Check size={14} class="text-primary shrink-0" />{/if}
-                    </button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
+            <button
+              onclick={() => toggleMenu("audio")}
+              class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
+                {openMenu === 'audio' ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
+              title="Audio track"
+              aria-label="Audio track"
+            >
+              <Languages size={18} />
+            </button>
           {/if}
-
-          <!-- Subtitles -->
           {#if tracks.subtitle.length > 0}
-            <div class="relative" data-menu>
-              <button
-                onclick={() => toggleMenu("sub")}
-                class="p-2 rounded hover:bg-surface-container-highest transition-colors
-                  {state.sid != null ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'}"
-                title="Subtitles"
-                aria-label="Subtitles"
-              >
-                <Captions size={18} />
-              </button>
-              {#if openMenu === "sub"}
-                <div
-                  class="absolute bottom-full right-0 mb-2 bg-surface-container border border-outline-variant rounded-lg py-1 min-w-44 max-h-64 overflow-y-auto z-20"
-                >
-                  <button onclick={() => pickSub(null)} class={menuItem}>
-                    <span class="flex-1">Off</span>
-                    {#if state.sid == null}<Check size={14} class="text-primary shrink-0" />{/if}
-                  </button>
-                  {#each tracks.subtitle as t (t.id)}
-                    <button onclick={() => pickSub(t.id)} class={menuItem}>
-                      <span class="flex-1 truncate">{trackLabel(t)}</span>
-                      {#if state.sid === t.id}<Check size={14} class="text-primary shrink-0" />{/if}
-                    </button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
+            <button
+              onclick={() => toggleMenu("sub")}
+              class="p-2 rounded transition-colors hover:bg-surface-container-highest
+                {openMenu === 'sub' ? 'bg-surface-container-highest' : ''}
+                {state.sid != null ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'}"
+              title="Subtitles"
+              aria-label="Subtitles"
+            >
+              <Captions size={18} />
+            </button>
           {/if}
 
           <select
