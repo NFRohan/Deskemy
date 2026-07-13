@@ -195,7 +195,10 @@
 
   function togglePlaylist() {
     showPlaylist = !showPlaylist;
+    // Re-sync the mpv window to the resized pane a few times as the layout settles.
     reportRectSoon();
+    setTimeout(reportRect, 80);
+    setTimeout(reportRect, 250);
   }
   function toggleSection(id: string) {
     const next = new Set(expandedSections);
