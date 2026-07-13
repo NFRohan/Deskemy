@@ -20,11 +20,24 @@
     Volume2,
     Volume1,
     VolumeX,
+    PanelRight,
+    ChevronDown,
+    ChevronRight,
+    CircleCheck,
+    Circle,
+    X,
   } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs, setImmersive, ui } from "$lib/stores/app.svelte";
   import { formatClock } from "$lib/format";
-  import type { LectureView, MediaTracks, PlayerState, TrackInfo } from "$lib/types";
+  import type {
+    CourseDetail,
+    Lecture,
+    LectureView,
+    MediaTracks,
+    PlayerState,
+    TrackInfo,
+  } from "$lib/types";
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const panelItem =
@@ -53,6 +66,9 @@
   let tracks = $state<MediaTracks>({ audio: [], subtitle: [], chapters: [] });
   let tracksFor = $state<string | null>(null);
   let openMenu = $state<"sub" | "audio" | "chapters" | null>(null);
+  let course = $state<CourseDetail | null>(null);
+  let showPlaylist = $state(false);
+  let expandedSections = $state<Set<string>>(new Set());
 
   let unlisten: UnlistenFn[] = [];
   let observer: ResizeObserver | null = null;
@@ -158,6 +174,36 @@
     api.playerSetVolume(v).catch(() => {});
     if (v > 0 && state.muted) api.playerSetMuted(false).catch(() => {});
     if (v === 0 && !state.muted) api.playerSetMuted(true).catch(() => {});
+  }
+
+  // Course-content sidebar: fetch the curriculum and follow the current lecture.
+  // Refetch on lecture change so completion ticks stay current.
+  $effect(() => {
+    const cid = lecture?.course_id;
+    void state.lecture_id;
+    if (cid) api.getCourse(cid).then((c) => (course = c)).catch(() => {});
+  });
+  $effect(() => {
+    const lid = state.lecture_id;
+    if (course && lid) {
+      const sec = course.sections.find((s) => s.lectures.some((l) => l.id === lid));
+      if (sec && !expandedSections.has(sec.id)) {
+        expandedSections = new Set(expandedSections).add(sec.id);
+      }
+    }
+  });
+
+  function togglePlaylist() {
+    showPlaylist = !showPlaylist;
+    reportRectSoon();
+  }
+  function toggleSection(id: string) {
+    const next = new Set(expandedSections);
+    next.has(id) ? next.delete(id) : next.add(id);
+    expandedSections = next;
+  }
+  function jumpTo(l: Lecture) {
+    if (l.playable) goto(`/watch/${l.id}`);
   }
 
   function trackLabel(t: TrackInfo): string {
@@ -317,8 +363,11 @@
       <div class="bg-error/10 border-b border-error/30 text-error text-body-sm px-4 py-2">{error}</div>
     {/if}
 
-    <!-- mpv renders into a native child window positioned over this pane -->
-    <div bind:this={paneEl} class="flex-1 min-h-0 relative bg-black"></div>
+    <div class="flex-1 flex min-h-0">
+      <!-- Video area (shrinks when the course-content sidebar opens) -->
+      <div class="flex-1 flex flex-col min-w-0">
+        <!-- mpv renders into a native child window positioned over this pane -->
+        <div bind:this={paneEl} class="flex-1 min-h-0 relative bg-black"></div>
 
     <!-- Track/chapter panel: pushes the video up rather than overlapping the
          native surface, so playback continues uninterrupted (just resized). -->
@@ -488,6 +537,15 @@
             {/each}
           </select>
           <button
+            onclick={togglePlaylist}
+            class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
+              {showPlaylist ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
+            title="Course content"
+            aria-label="Course content"
+          >
+            <PanelRight size={18} />
+          </button>
+          <button
             onclick={toggleImmersive}
             class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
             aria-label="Toggle immersive"
@@ -500,6 +558,93 @@
           </button>
         </div>
       </div>
+      </div>
+      </div>
+      <!-- Course content sidebar (Udemy-style: jump around the course here) -->
+      {#if showPlaylist}
+        <aside
+          class="w-80 shrink-0 bg-surface-container-low border-l border-outline-variant flex flex-col"
+        >
+          <div
+            class="h-12 shrink-0 flex items-center justify-between px-4 border-b border-outline-variant"
+          >
+            <span class="text-headline-sm text-on-surface truncate">
+              {course?.title ?? "Course content"}
+            </span>
+            <button
+              onclick={togglePlaylist}
+              class="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+              aria-label="Close course content"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto">
+            {#if course}
+              {#each course.sections as section (section.id)}
+                {@const prog = sectionProgress(section.lectures)}
+                <div>
+                  <button
+                    onclick={() => toggleSection(section.id)}
+                    class="w-full flex items-center justify-between gap-2 px-3 py-2 hover:bg-surface-container transition-colors text-left"
+                  >
+                    <span class="flex items-center gap-2 min-w-0">
+                      {#if expandedSections.has(section.id)}
+                        <ChevronDown size={16} class="text-on-surface-variant shrink-0" />
+                      {:else}
+                        <ChevronRight size={16} class="text-on-surface-variant shrink-0" />
+                      {/if}
+                      <span class="text-body-md text-on-surface truncate">{section.title}</span>
+                    </span>
+                    <span class="text-label-sm text-on-surface-variant shrink-0">
+                      {prog.done}/{prog.total}
+                    </span>
+                  </button>
+                  {#if expandedSections.has(section.id)}
+                    <ul>
+                      {#each section.lectures as l (l.id)}
+                        {@const current = l.id === state.lecture_id}
+                        <li>
+                          <button
+                            onclick={() => jumpTo(l)}
+                            disabled={!l.playable}
+                            class="w-full flex items-center gap-2 pl-8 pr-3 py-1.5 text-left transition-colors
+                              {current ? 'bg-primary-container/15' : 'hover:bg-surface-container'}
+                              {l.playable ? '' : 'opacity-60 cursor-not-allowed'}"
+                          >
+                            {#if l.completed}
+                              <CircleCheck size={15} class="text-secondary-container shrink-0" />
+                            {:else}
+                              <Circle size={15} class="text-outline shrink-0" />
+                            {/if}
+                            <span
+                              class="flex-1 truncate text-body-sm
+                                {current
+                                ? 'text-primary'
+                                : l.completed
+                                  ? 'text-on-surface-variant'
+                                  : 'text-on-surface'}"
+                            >
+                              {l.title}
+                            </span>
+                            {#if l.duration}
+                              <span class="text-label-sm text-on-surface-variant tabular-nums shrink-0">
+                                {formatClock(l.duration)}
+                              </span>
+                            {/if}
+                          </button>
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                </div>
+              {/each}
+            {:else}
+              <div class="p-4 text-body-sm text-on-surface-variant">Loading…</div>
+            {/if}
+          </div>
+        </aside>
+      {/if}
     </div>
   </div>
 {/if}
