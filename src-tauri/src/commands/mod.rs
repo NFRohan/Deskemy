@@ -193,6 +193,14 @@ pub fn course_clear_thumbnail(state: State<AppState>, id: String) -> Result<()> 
     queries::set_thumbnail(&conn, &id, None)
 }
 
+/// Remove a course from the library (DB only — does not touch files on disk).
+/// Cascades to its sections/lectures/progress/bookmarks and the search index.
+#[tauri::command]
+pub fn library_delete_course(state: State<AppState>, id: String) -> Result<()> {
+    let conn = db(&state)?;
+    queries::delete_course(&conn, &id)
+}
+
 /// Manually mark a lecture complete/incomplete.
 #[tauri::command]
 pub fn lecture_set_completed(

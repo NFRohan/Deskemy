@@ -34,6 +34,7 @@ export const api = {
   setFavorite: (id: string, favorite: boolean) =>
     invoke<void>("course_set_favorite", { id, favorite }),
   touchOpened: (id: string) => invoke<void>("course_touch_opened", { id }),
+  deleteCourse: (id: string) => invoke<void>("library_delete_course", { id }),
   setCourseThumbnailFile: (id: string, srcPath: string) =>
     invoke<string>("course_set_thumbnail_file", { id, srcPath }),
   setCourseThumbnailBytes: (id: string, dataBase64: string, ext: string | null) =>

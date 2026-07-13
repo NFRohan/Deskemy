@@ -70,6 +70,7 @@ pub fn run() {
             commands::course_get,
             commands::course_set_favorite,
             commands::course_touch_opened,
+            commands::library_delete_course,
             commands::course_set_thumbnail_file,
             commands::course_set_thumbnail_bytes,
             commands::course_clear_thumbnail,

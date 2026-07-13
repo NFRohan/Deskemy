@@ -16,6 +16,7 @@
     ImagePlus,
     X,
     Pencil,
+    Trash2,
   } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { api, pickImage } from "$lib/api";
@@ -31,6 +32,8 @@
   let thumbBusy = $state(false);
   let thumbError = $state<string | null>(null);
   let showThumbModal = $state(false);
+  let showDeleteModal = $state(false);
+  let deleting = $state(false);
 
   const thumbSrc = $derived(course?.thumbnail_path ? convertFileSrc(course.thumbnail_path) : "");
 
@@ -177,11 +180,28 @@
     await api.setLectureCompleted(l.id, val).catch(() => {});
     loadLibrary(true); // keep the library progress count in sync
   }
+
+  async function confirmDelete() {
+    if (!course) return;
+    deleting = true;
+    try {
+      await api.deleteCourse(course.id);
+      await loadLibrary(true);
+      goto("/");
+    } catch {
+      deleting = false;
+      showDeleteModal = false;
+    }
+  }
 </script>
 
 <svelte:window
   onpaste={onPaste}
-  onkeydown={(e) => e.key === "Escape" && showThumbModal && (showThumbModal = false)}
+  onkeydown={(e) => {
+    if (e.key !== "Escape") return;
+    if (showThumbModal) showThumbModal = false;
+    else if (showDeleteModal && !deleting) showDeleteModal = false;
+  }}
 />
 
 {#if loading}
@@ -227,17 +247,28 @@
       <div class="flex-1 min-w-0 flex flex-col">
         <div class="flex items-start justify-between gap-4">
           <h1 class="text-display-sm text-on-surface">{course.title}</h1>
-          <button
-            onclick={toggleFavorite}
-            class="p-2 rounded hover:bg-surface-container-highest transition-colors shrink-0"
-            aria-label="Toggle favorite"
-          >
-            <Star
-              size={20}
-              class={course.is_favorite ? "text-primary" : "text-on-surface-variant"}
-              fill={course.is_favorite ? "currentColor" : "none"}
-            />
-          </button>
+          <div class="flex items-center gap-1 shrink-0">
+            <button
+              onclick={toggleFavorite}
+              class="p-2 rounded hover:bg-surface-container-highest transition-colors"
+              aria-label="Toggle favorite"
+              title={course.is_favorite ? "Unfavorite" : "Favorite"}
+            >
+              <Star
+                size={20}
+                class={course.is_favorite ? "text-primary" : "text-on-surface-variant"}
+                fill={course.is_favorite ? "currentColor" : "none"}
+              />
+            </button>
+            <button
+              onclick={() => (showDeleteModal = true)}
+              class="p-2 rounded text-on-surface-variant hover:text-error hover:bg-surface-container-highest transition-colors"
+              aria-label="Remove from library"
+              title="Remove from library"
+            >
+              <Trash2 size={20} />
+            </button>
+          </div>
         </div>
 
         <div class="mt-auto pt-4">
@@ -437,6 +468,48 @@
         {#if thumbError}
           <p class="text-label-sm text-error">{thumbError}</p>
         {/if}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Remove-from-library confirm modal -->
+  {#if showDeleteModal}
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      role="presentation"
+      onclick={() => !deleting && (showDeleteModal = false)}
+    >
+      <div
+        class="w-full max-w-md bg-surface-container rounded-xl border border-outline-variant p-5 space-y-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Remove course"
+        onclick={(e) => e.stopPropagation()}
+      >
+        <h3 class="text-headline-sm text-on-surface">Remove from library?</h3>
+        <p class="text-body-sm text-on-surface-variant">
+          <span class="text-on-surface">{course.title}</span> will be removed from Deskemy, along with
+          its progress and bookmarks. Your video files on disk are not deleted — you can re-import the
+          folder later.
+        </p>
+        <div class="flex justify-end gap-2">
+          <button
+            onclick={() => (showDeleteModal = false)}
+            disabled={deleting}
+            class="px-3 py-2 rounded text-label-md text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={confirmDelete}
+            disabled={deleting}
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded text-label-md bg-error/15 text-error border border-error/30 hover:bg-error/25 transition-colors disabled:opacity-60"
+          >
+            {#if deleting}<LoaderCircle size={15} class="animate-spin" />{:else}<Trash2
+                size={15}
+              />{/if} Remove
+          </button>
+        </div>
       </div>
     </div>
   {/if}
