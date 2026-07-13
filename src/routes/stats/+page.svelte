@@ -60,8 +60,8 @@
     return stats.activity.reduce((a, d) => a + d.watch_seconds, 0);
   });
 
-  // Heatmap: 18 weeks of columns (Sun..Sat), oldest → newest.
-  const WEEKS = 18;
+  // Heatmap: weeks of columns (Sun..Sat), oldest → newest, stretched to width.
+  const WEEKS = 26;
   const heatmap = $derived.by(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -239,19 +239,19 @@
               {stats.active_days_month} active days this month
             </span>
           </div>
-          <div class="overflow-x-auto">
-            <div class="flex gap-1 w-max">
-              {#each heatmap as col (col[0].day)}
-                <div class="flex flex-col gap-1">
-                  {#each col as cell (cell.day)}
-                    <div
-                      class="w-3 h-3 rounded-sm {cell.future ? 'opacity-0' : LEVELS[level(cell.secs)]}"
-                      title={cell.future ? "" : `${cell.day}: ${formatDuration(cell.secs)}`}
-                    ></div>
-                  {/each}
-                </div>
-              {/each}
-            </div>
+          <div class="flex gap-1">
+            {#each heatmap as col (col[0].day)}
+              <div class="flex-1 flex flex-col gap-1">
+                {#each col as cell (cell.day)}
+                  <div
+                    class="w-full aspect-square rounded-[3px] {cell.future
+                      ? 'opacity-0'
+                      : LEVELS[level(cell.secs)]}"
+                    title={cell.future ? "" : `${cell.day}: ${formatDuration(cell.secs)}`}
+                  ></div>
+                {/each}
+              </div>
+            {/each}
           </div>
           <div class="flex items-center gap-1 mt-2 text-label-sm text-on-surface-variant">
             <span>Less</span>

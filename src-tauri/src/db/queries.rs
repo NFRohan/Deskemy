@@ -701,43 +701,73 @@ pub fn stats(conn: &Connection) -> Result<LibraryStats> {
         prev = jd;
     }
 
-    // Most-focused course: highest-completion in-progress course (tie: recent).
+    // Most-focused course: the one worked on most in the last 7 days (most
+    // lectures touched, tie: most recent). Falls back to the highest-completion
+    // in-progress course when there's been no activity this week.
     let (mut focus_course_id, mut focus_course_title, mut focus_course_pct) = (None, None, 0i64);
     {
-        let mut stmt = conn.prepare(
-            "SELECT c.id, c.title, c.lecture_count, COALESCE(c.last_opened_at,0),
-                    (SELECT COUNT(*) FROM lectures l JOIN progress p ON p.lecture_id=l.id
-                      WHERE l.course_id=c.id AND p.completed=1) AS done
-               FROM courses c WHERE c.lecture_count > 0",
-        )?;
-        let candidates = stmt
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, i64>(2)?,
-                    r.get::<_, i64>(3)?,
-                    r.get::<_, i64>(4)?,
-                ))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut best: Option<(f64, i64, String, String, i64)> = None; // (frac, opened, id, title, pct)
-        for (id, title, count, opened, done) in candidates {
-            if done > 0 && done < count {
-                let frac = done as f64 / count as f64;
-                let better = match &best {
-                    Some((bf, bo, ..)) => frac > *bf || (frac == *bf && opened > *bo),
-                    None => true,
-                };
-                if better {
-                    best = Some((frac, opened, id, title, (frac * 100.0).round() as i64));
+        let recent: Option<(String, String, i64, i64)> = conn
+            .query_row(
+                "SELECT l.course_id, c.title, c.lecture_count,
+                        (SELECT COUNT(*) FROM lectures l2 JOIN progress p2 ON p2.lecture_id=l2.id
+                          WHERE l2.course_id=l.course_id AND p2.completed=1)
+                   FROM progress p
+                   JOIN lectures l ON l.id = p.lecture_id
+                   JOIN courses  c ON c.id = l.course_id
+                  WHERE p.last_watched_at >= strftime('%s','now','-7 days')
+                  GROUP BY l.course_id
+                  ORDER BY COUNT(*) DESC, MAX(p.last_watched_at) DESC
+                  LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+
+        let chosen = match recent {
+            Some(x) => Some(x),
+            None => {
+                let mut stmt = conn.prepare(
+                    "SELECT c.id, c.title, c.lecture_count, COALESCE(c.last_opened_at,0),
+                            (SELECT COUNT(*) FROM lectures l JOIN progress p ON p.lecture_id=l.id
+                              WHERE l.course_id=c.id AND p.completed=1) AS done
+                       FROM courses c WHERE c.lecture_count > 0",
+                )?;
+                let cands = stmt
+                    .query_map([], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, i64>(2)?,
+                            r.get::<_, i64>(3)?,
+                            r.get::<_, i64>(4)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                let mut best: Option<(f64, i64, (String, String, i64, i64))> = None;
+                for (id, title, count, opened, done) in cands {
+                    if done > 0 && done < count {
+                        let frac = done as f64 / count as f64;
+                        let better = best
+                            .as_ref()
+                            .map(|(bf, bo, _)| frac > *bf || (frac == *bf && opened > *bo))
+                            .unwrap_or(true);
+                        if better {
+                            best = Some((frac, opened, (id, title, count, done)));
+                        }
+                    }
                 }
+                best.map(|(_, _, t)| t)
             }
-        }
-        if let Some((_, _, id, title, pct)) = best {
+        };
+
+        if let Some((id, title, count, done)) = chosen {
             focus_course_id = Some(id);
             focus_course_title = Some(title);
-            focus_course_pct = pct;
+            focus_course_pct = if count > 0 {
+                ((done as f64 / count as f64) * 100.0).round() as i64
+            } else {
+                0
+            };
         }
     }
 
