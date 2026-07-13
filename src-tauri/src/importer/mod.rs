@@ -341,10 +341,12 @@ impl Importer {
                 let path = v.path.to_string_lossy().to_string();
                 let size = v.size as i64;
 
-                // Reuse metadata when the same file is unchanged (size + mtime).
-                let reuse = prior
-                    .get(&path)
-                    .filter(|p| p.size == Some(size) && p.mtime == Some(v.mtime));
+                // Reuse metadata when the file is unchanged (size + mtime) AND
+                // we already have a duration — so files imported before mpv was
+                // available (no duration) get re-probed on rescan.
+                let reuse = prior.get(&path).filter(|p| {
+                    p.size == Some(size) && p.mtime == Some(v.mtime) && p.duration.is_some()
+                });
                 let (container, video_codec, playable, duration, chapters) = match reuse {
                     Some(p) => (
                         p.container.clone(),

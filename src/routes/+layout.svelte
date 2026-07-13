@@ -3,16 +3,22 @@
   import "../app.css";
   import { onMount } from "svelte";
   import { page } from "$app/stores";
+  import { listen } from "@tauri-apps/api/event";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import TopBar from "$lib/components/TopBar.svelte";
   import { api } from "$lib/api";
-  import { ui, applyTheme } from "$lib/stores/app.svelte";
+  import { ui, applyTheme, loadLibrary } from "$lib/stores/app.svelte";
 
   let { children } = $props();
 
-  onMount(async () => {
-    const cfg = await api.getConfig().catch(() => null);
-    applyTheme(cfg?.theme ?? "dark");
+  onMount(() => {
+    (async () => {
+      const cfg = await api.getConfig().catch(() => null);
+      applyTheme(cfg?.theme ?? "dark");
+    })();
+    // Auto-rescan pushes this when a watched course folder changes.
+    const unlisten = listen("library:changed", () => loadLibrary(true));
+    return () => void unlisten.then((fn) => fn());
   });
 
   // The player renders into a native child window that does NOT move with DOM

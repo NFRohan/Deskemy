@@ -37,8 +37,9 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Filesystem scanning
+# Filesystem scanning + watching
 walkdir = "2"
+notify-debouncer-mini = "0.4"
 
 # Runtime FFI to libmpv (no build-time link dependency)
 libloading = "0.8"

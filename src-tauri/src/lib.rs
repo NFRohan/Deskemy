@@ -14,6 +14,7 @@ pub mod player;
 pub mod scanner;
 pub mod subtitles;
 pub mod thumbnails;
+pub mod watcher;
 
 use config::AppConfig;
 use state::AppState;
@@ -58,6 +59,17 @@ pub fn run() {
 
             tracing::info!(db = %db_path.display(), "database ready");
             app.manage(AppState::new(conn, config, data_dir, config_path));
+
+            // Filesystem watcher: auto-rescan course folders on change.
+            match watcher::LibraryWatcher::start(app.handle().clone()) {
+                Ok(mut w) => {
+                    if let Ok(conn) = app.state::<AppState>().db.lock() {
+                        w.sync(&conn);
+                    }
+                    app.manage(std::sync::Mutex::new(w));
+                }
+                Err(e) => tracing::warn!(error = %e, "library watcher failed to start"),
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

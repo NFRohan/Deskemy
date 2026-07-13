@@ -12,7 +12,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::MutexGuard;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::config::AppConfig;
 use crate::state::AppState;
@@ -74,17 +74,34 @@ pub fn library_remove_root(state: State<AppState>, id: String) -> Result<()> {
     queries::remove_library_root(&conn, &id)
 }
 
+/// Add a path to the filesystem watcher if the watcher is running.
+fn watch_path(app: &AppHandle, path: &str) {
+    if let Some(w) = app.try_state::<std::sync::Mutex<crate::watcher::LibraryWatcher>>() {
+        if let Ok(mut w) = w.lock() {
+            w.watch(Path::new(path));
+        }
+    }
+}
+
 /// Import a single folder as one course.
 #[tauri::command]
-pub fn library_import_course(state: State<AppState>, path: String) -> Result<String> {
-    let mut guard = db(&state)?;
-    let conn: &mut Connection = &mut guard;
-    state.importer.import_course(conn, None, Path::new(&path))
+pub fn library_import_course(app: AppHandle, state: State<AppState>, path: String) -> Result<String> {
+    let id = {
+        let mut guard = db(&state)?;
+        let conn: &mut Connection = &mut guard;
+        state.importer.import_course(conn, None, Path::new(&path))?
+    };
+    watch_path(&app, &path);
+    Ok(id)
 }
 
 /// Scan a registered root: each immediate subfolder becomes a course.
 #[tauri::command]
-pub fn library_scan_root(state: State<AppState>, root_id: String) -> Result<ScanResult> {
+pub fn library_scan_root(
+    app: AppHandle,
+    state: State<AppState>,
+    root_id: String,
+) -> Result<ScanResult> {
     let root_path = {
         let conn = db(&state)?;
         queries::list_library_roots(&conn)?
@@ -93,6 +110,8 @@ pub fn library_scan_root(state: State<AppState>, root_id: String) -> Result<Scan
             .map(|(_, p)| p)
             .ok_or_else(|| DeskemyError::NotFound(format!("library root {root_id}")))?
     };
+    // Watch the whole root so new courses under it are picked up too.
+    watch_path(&app, &root_path);
 
     let mut imported = 0;
     let mut errors = Vec::new();

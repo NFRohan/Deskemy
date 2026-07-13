@@ -34,6 +34,15 @@ pub fn add_library_root(conn: &Connection, path: &str) -> Result<String> {
     Ok(id)
 }
 
+/// (folder_path, root_id) for every course — used to set up filesystem watches.
+pub fn all_course_folders(conn: &Connection) -> Result<Vec<(String, Option<String>)>> {
+    let mut stmt = conn.prepare("SELECT folder_path, root_id FROM courses")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn list_library_roots(conn: &Connection) -> Result<Vec<(String, String)>> {
     let mut stmt = conn.prepare("SELECT id, path FROM library_roots ORDER BY added_at")?;
     let rows = stmt
