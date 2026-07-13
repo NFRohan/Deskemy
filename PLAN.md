@@ -1,164 +1,179 @@
 # Deskemy — Offline Course Player
 
 A **desktop-first** local app (Windows primary, Linux supported) that gives a
-Udemy-style experience for downloaded courses: import a folder of courses,
+Udemy-style experience for downloaded courses: import folders of courses,
 auto-structure them from the folder tree, and play them offline with resume,
-chapters, subtitles, bookmarks, and search.
+chapters, subtitles, bookmarks, tags, full-text + subtitle search, and a stats
+dashboard.
 
-## Stack
+> **Status: v1 baseline complete.** All milestones **M0–M8** shipped, plus a
+> round of post-v1 features (resources, tags, subtitle search, watch-time stats,
+> auto-rescan) and a full pre-release code review with fixes. This document is
+> the **current baseline** — what exists today — ahead of the next expansion.
+> Schema is at **version 5**.
 
-- **Frontend:** SvelteKit + `adapter-static` (SPA), Svelte 5 runes, TypeScript,
-  Tailwind v4 (dark-first), lucide icons.
+---
+
+## Stack (as built)
+
+- **Frontend:** SvelteKit + `adapter-static` (SPA, `ssr=false`), **Svelte 5
+  runes**, TypeScript, **Tailwind v4** (`@theme` tokens, dark + light + system),
+  `@lucide/svelte`, Inter (`@fontsource-variable/inter`).
 - **Backend:** Rust — `rusqlite` (bundled SQLite + FTS5), scanner + importer,
-  swappable media probing, a player service, exposed as Tauri v2 commands.
-- **Playback:** **libmpv** (`libmpv2` crate) as the **sole playback backend** —
-  no transcoding pipeline in v1. Behind a `PlayerService` trait, embedded as a
-  native child window (HWND on Windows / X11 window-id on Linux) sized to the
-  video pane. Driven by mpv properties (`time-pos`, `speed`, `sid`, `chapter`,
-  `pause`); mpv events surfaced as a typed `PlayerEvent`. (Plays almost every
-  format; corrupt / encrypted / exotic files can still fail → `playable` flag.)
-- **Media probing:** behind a `MediaProber` trait; `MpvProber` (libmpv headless)
-  for v1 → a concrete `MediaMetadata`. Swappable to an `FfprobeProber` later
-  without touching callers. No ffmpeg/ffprobe sidecars in v1.
+  swappable media probing, an embedded player service, a filesystem watcher,
+  exposed as **Tauri v2** commands.
+- **Playback:** **libmpv** loaded at **runtime via FFI** (`libloading` →
+  `libmpv-2.dll` / `libmpv.so`) — **not bundled**; Deskemy uses the user's
+  installed mpv (discovered via `DESKEMY_LIBMPV`, exe dir, PATH, common install
+  dirs) and prompts to install if missing. Embedded as a **native child window**
+  (Win32 `--wid` HWND) sized to the video pane; z-ordered above WebView2. Driven
+  by mpv properties, polled by a 200 ms pump; state pushed to the UI as
+  `player:state` events.
+- **Media probing:** behind a `MediaProber` trait — `MpvProber` (headless
+  libmpv) with a `StubProber` fallback when libmpv is absent (import still works,
+  minus durations). Swappable to an `FfprobeProber` later.
+- **Key deps:** `uuid` (v7), `blake3`, `thiserror`, `tracing`, `walkdir`,
+  `notify-debouncer-mini`, `base64`, `windows-sys`, `libloading`,
+  `tauri-plugin-dialog`, `tauri-plugin-opener` (`protocol-asset` feature).
 
 ## Cross-cutting decisions
 
-- **Desktop-first**, not Windows-locked. Platform-specific window embedding is
-  isolated inside `PlayerService`; everything else is portable.
-- **UUIDv7** `TEXT` primary keys everywhere (time-ordered, index-friendly,
-  sync-safe for future Android / LAN sync). Never auto-increment ints.
-- **Domain models ≠ persistence models.** Each feature module owns its domain
-  type (`Lecture`, `Course`…); `db/models.rs` owns the `*Row` SQLite shapes and
-  the conversions. The persistence layer never leaks upward.
-- **One error type.** A single `DeskemyError` enum; every command returns
-  `Result<T, DeskemyError>` — never stringly-typed errors.
-- **Namespaced IPC.** Commands are grouped by domain (`library_*`, `course_*`,
-  `player_*`, `bookmark_*`, `search_*`, `config_*`), never bare `play`/`seek`.
-- **Typed config**: a serde `AppConfig` persisted as `config.json` in app-data.
-- **Logging from day one**: `tracing` + `tracing-subscriber`.
+- **Desktop-first**, not Windows-locked. Platform window embedding is isolated
+  in `player/`; everything else is portable.
+- **UUIDv7 `TEXT` primary keys** everywhere (time-ordered, index-friendly,
+  sync-safe). Never auto-increment ints.
+- **Domain vs. persistence:** `domain.rs` holds serializable domain types sent
+  to the UI as-is; `db/queries.rs` owns **all** SQL and maps rows directly into
+  domain types (no rusqlite detail leaks upward).
+- **One error type:** a single `DeskemyError` enum; every command returns
+  `Result<T, DeskemyError>`, serialized to `{ kind, message }` for the UI.
+- **Namespaced IPC:** commands grouped by domain (`library_*`, `course_*`,
+  `player_*`, `bookmark_*`, `search_*`, `stats_*`, `config_*`, …).
+- **Typed config:** a serde `AppConfig` persisted as `config.json` in app-data.
+- **Logging from day one:** `tracing` + `tracing-subscriber`.
+- **The "airspace" rule:** mpv's native surface can't be overlaid by HTML, so
+  player controls **dock below** the video and side panels **shrink** it — the UI
+  never floats over the video. (See `memory/player-compositing-decision`.)
+- **`Co-Authored-By` trailer is intentionally omitted** from commits.
 
-## Confirmed product decisions
-
-- Library **root auto-scan**: register a root folder; each immediate subfolder = a course.
-- **Reference files in place** — never copy. DB stores paths only.
-- **Custom player controls docked below** the video pane (mpv's native surface
-  can't be overlaid by HTML — "airspace"; docking beneath avoids it).
-- Search = **FTS5 over titles** (course / section / lecture / attachment, each
-  indexed separately). Subtitle full-text deferred.
-- v1 player: resume + autoplay-next (playlist model), speed + keyboard shortcuts,
-  subtitle track picker (embedded + external), chapters, **bookmarks**.
-  Timestamped notes deferred.
-- Netflix-style continue-watching + recently-opened.
-- blake3 change/move detection.
-
-## Architecture — clean separations
+## Architecture — module layout (actual)
 
 ```
-scanner/   Scanner trait → FilesystemScanner: walk + classify → ScannedTree
-           (no DB, no rules; future Zip/Network/Cloud scanners slot in here)
-importer/  models.rs (domain) + structuring rules → persist; owns scan_status
-media/     metadata.rs (MediaMetadata + tracks + Chapter) + MediaProber → MpvProber
-player/    models.rs (PlayerState) + PlayerService → MpvPlayer (mpv + Playlist),
-           emits PlayerEvent
-config/    typed AppConfig (serde) ↔ config.json
-db/        models.rs (*Row types) + schema + migrations + queries
-error/     DeskemyError (single crate-wide error enum)
-commands/  thin, namespaced Tauri handlers over the above
+src-tauri/src/
+  scanner/mod.rs        Scanner trait → FilesystemScanner: walk + classify → ScannedTree
+  importer/mod.rs       structuring rules → persist; metadata reuse + data preservation on
+       structure.rs     re-import; owns scan_status
+  media/mod.rs          MediaMetadata + tracks + Chapter
+       mpv_prober.rs     MpvProber (headless libmpv)   stub.rs  StubProber (fallback)
+  mpv/mod.rs            runtime FFI wrapper over libmpv (libloading) + discovery
+  player/mod.rs         PlayerState + PlayerService → MpvPlayer (child window, pump,
+                        playlist, tracks, chapters, resume, watch-time telemetry)
+  subtitles.rs          minimal SRT/VTT parser → (start_ms, text) cues
+  thumbnails.rs         content-addressed thumbnail store (blake3) + magic-byte sniffing
+  watcher.rs            notify filesystem watcher → debounced re-import (opt-in)
+  hashing.rs            blake3 content hashing
+  config.rs             typed AppConfig ↔ config.json
+  db/mod.rs             schema + migrations (v1..v5) + open/configure
+       queries.rs        every SQL statement; maps rows → domain
+  domain.rs             serializable domain types (Course/Lecture/Section/… + DTOs)
+  error.rs              DeskemyError (single crate-wide enum)
+  state.rs              AppState (db, config, importer, player, watcher, data_dir)
+  commands/mod.rs       thin namespaced Tauri handlers
+       player.rs         player_* commands + lecture_get
+  examples/             dev tools: dbcheck, statscheck, searchcheck, subcheck, probe_mpv,
+                        import_sample
+
+src/
+  routes/               library (/) · course/[id] · watch/[lectureId] · search ·
+                        bookmarks · favorites · stats · settings
+  lib/api.ts            typed invoke wrappers      lib/types.ts   TS mirrors of domain
+  lib/stores/app.svelte.ts   library store · ui state · theme
+  lib/components/        Sidebar · TopBar · CourseCard · ProgressBar
 ```
 
-## Domain types
+---
 
-### MediaMetadata (the single prober return shape)
+## Feature inventory (shipped baseline)
 
-```rust
-pub struct MediaMetadata {
-    pub duration: Duration,
-    pub playable: bool,
-    pub video_tracks: Vec<VideoTrack>,
-    pub audio_tracks: Vec<AudioTrack>,
-    pub subtitle_tracks: Vec<SubtitleTrack>,   // embedded
-    pub chapters: Vec<Chapter>,
-    pub container: String,
-    pub video_codec: String,
-    pub thumbnail: Option<PathBuf>,
-}
-```
-Every `MediaProber` impl returns this exact object.
+### Library & import
+- Register library **roots** (each immediate subfolder = a course) or **import a
+  single folder** as one course. Files are **referenced in place**, never copied.
+- **Auto-structuring** from the folder tree: subfolders → sections (loose root
+  videos → "Introduction"); natural-sort ordering by leading number; title
+  cleanup; sidecar subtitles matched to videos; resources attached to
+  lecture/section; per-video probe for duration/codec/chapters/`playable`.
+- Library grid with **Continue Watching** hero, recently-opened ordering, filter,
+  sort (recent/alpha/progress), `scan_status` + `playable` (⚠ Corrupted) badges.
+- **Remove course** from the library (DB only; files untouched) with a confirm
+  modal, atomic delete.
 
-### PlayerState (single object the frontend subscribes to)
+### Player (embedded mpv)
+- Native child-window embedding, rect-synced to the video pane (DPI-aware).
+- Play/pause, seek, **speed**, volume/mute, prev/next, **resume** from saved
+  position, **autoplay-next** (playlist model), fullscreen/immersive, keyboard
+  shortcuts (space/arrows/f/m/n/esc) that don't get stolen by focused controls.
+- **Subtitle + audio track picker** (embedded + external sidecar subs via mpv
+  `track-list`; full sidecar filename shown), **chapter navigation** — all in a
+  panel that pushes the video up (no airspace overlap).
+- **Course-content sidebar** (Udemy-style tree) to jump around the course; back
+  button + Esc to the course; progress written periodically + on completion (EOF
+  or ≥90 %); manual complete toggle.
+- **Deep-link seek**: `/watch/<id>?t=<sec>` jumps to a timestamp (used by
+  bookmarks and subtitle search).
 
-```rust
-pub struct PlayerState {
-    pub lecture_id: Uuid,
-    pub position: Duration,
-    pub duration: Duration,
-    pub paused: bool,
-    pub speed: f64,
-    pub subtitle_track: Option<i64>,
-    pub chapter: usize,
-}
-```
-`PlayerEvent`s mutate this; Svelte subscribes to one store, not scattered values.
+### Bookmarks
+- Capture the current time-pos with an optional label; per-lecture list with
+  jump-to + delete; a **global `/bookmarks` page** grouped by course that
+  deep-links into the player.
 
-### PlayerService + Playlist
+### Thumbnails
+- Set a course cover by **file upload** or **clipboard paste** (Ctrl+V), or
+  **remove**, via a hover-edit → modal. Stored **content-addressed** in
+  `app-data/thumbnails/` (blake3) and served through the Tauri **asset protocol**.
+- **Resume-frame grab**: leaving the player captures an mpv screenshot of where
+  you left off; the Continue Watching hero shows it.
+- **Thumbnail-cache GC** (Settings) sweeps unreferenced files.
 
-`MpvPlayer` owns the embedded mpv instance and a **Playlist** (ordered lectures
-of the current course + a cursor). Autoplay-next = advance the cursor, not an
-ad-hoc load — smooth transitions, consistent progress writes. Platform window
-embedding lives here and nowhere else.
+### Search
+- **FTS5 over titles** — course / section / lecture / **attachment** (indexed on
+  import; rebuilt on startup + on demand). Ranked, injection-safe query builder.
+- **Subtitle full-text search**: sidecar SRT/VTT parsed into a `subtitle_index`
+  FTS table; results show a snippet + timestamp and **jump to that moment**.
+  Built via Settings → "Index subtitle text".
 
-### PlayerEvent (typed — no stringly-typed events)
+### Tags
+- Add/remove **tags** on a course; **filter the library** by tag chips.
 
-```
-PlayerReady        mpv instance up, ready to load
-PlayerOpened       a file finished loading (duration/tracks/chapters known)
-Playing            playback (re)started            (+ counterpart to Paused)
-Paused
-TimeChanged        position tick
-Ended              current item reached EOF
-TrackChanged       audio/video track switched
-SubtitleChanged    subtitle track (sid) switched
-ChapterChanged     current chapter changed
-SpeedChanged
-PlaylistAdvanced   autoplay moved to next lecture  (+ for playlist model)
-Error              typed error payload
-```
-(The bottom-marked entries extend the requested list; the rest are as specified.)
+### Stats (watch telemetry)
+- Per-day **`daily_activity`** telemetry: the player records real watch-time and
+  completions. Dashboard: daily-goal ring, current + best **streak** (≥15 min/day),
+  watch time, lectures/courses completed, overall-progress bar, a **GitHub-style
+  watch heatmap**, this-week chart, active-days-this-month, last-7-day velocity,
+  and a "currently focused" card (most-progressed course this week).
 
-## Error model
+### Settings
+- Theme (**dark / light / system**), default speed, autoplay-next, daily goal,
+  **auto-rescan toggle** (opt-in), and maintenance actions: check for missing
+  files (reconcile), rebuild search index, index subtitles, clean thumbnail cache.
 
-```rust
-pub enum DeskemyError {
-    Import(..),      // scanning / structuring
-    Probe(..),       // MediaProber failures
-    Player(..),      // mpv / embedding
-    Database(..),    // rusqlite
-    Config(..),
-    Io(..),
-}
-```
-Commands return `Result<T, DeskemyError>`; serialized to a typed payload for the UI.
+### Auto-rescan (opt-in)
+- A `notify` watcher over roots + standalone course folders → debounced **data-
+  preserving re-import** on change (progress/bookmarks/tags/favorite/thumbnails
+  survive, remapped by file path; unchanged files skip re-probing). Emits
+  `library:changed` → the grid refreshes. **Off by default**; never re-imports
+  the course currently playing.
 
-## IPC command namespaces
+---
 
-```
-library_add_root · library_scan · library_list_courses · library_remove_root
-course_get · course_set_favorite · course_touch_opened
-player_open · player_pause · player_resume · player_seek · player_set_speed
-        · player_set_subtitle · player_set_chapter · player_next · player_prev
-bookmark_add · bookmark_list · bookmark_delete
-search_query
-config_get · config_set
-```
-
-## Data model (SQLite, UUIDv7 TEXT keys)
+## Data model (SQLite, schema v5, UUIDv7 TEXT keys)
 
 ```
 library_roots(id, path UNIQUE, added_at)
 
 courses(id, root_id, title, folder_path UNIQUE, thumbnail_path,
+        resume_thumbnail_path,             -- v2: Continue-Watching frame
         total_duration, lecture_count, is_favorite,
-        scan_status TEXT,        -- Importing | Scanning | Ready | Missing | Error
+        scan_status TEXT,                  -- Importing | Scanning | Ready | Missing | Error
         last_opened_at, last_lecture_id,   -- continue-watching resume pointer
         imported_at, last_scanned_at)
 
@@ -166,102 +181,119 @@ sections(id, course_id, title, position, folder_path)
 
 lectures(id, course_id, section_id, title, file_path, position,
          duration, container, video_codec,
-         playable BOOLEAN,       -- false if mpv can't open (corrupted) → UI ⚠
-         file_size, mtime, content_hash)   -- change/move detection
+         playable,                         -- 0 = mpv can't open (corrupted) → UI ⚠
+         file_size, mtime, content_hash)   -- (size,mtime) used for re-probe skip
 
 chapters(id, lecture_id, idx, title, start_time)   -- cached from probe
-
-subtitles(id, lecture_id, lang, label, file_path)  -- external subs only
+subtitles(id, lecture_id, lang, label, file_path)  -- external sidecar subs
 attachments(id, course_id, section_id, lecture_id, name, file_path, kind)
 
 progress(lecture_id PK, position_seconds, completed, last_watched_at)
 bookmarks(id, lecture_id, course_id, position_seconds, label, created_at)
+course_tags(course_id, tag, PRIMARY KEY(course_id, tag))          -- v3
+daily_activity(day PK, watch_seconds, lectures_completed)         -- v5: telemetry
 
-search_index USING fts5(kind, entity_id UNINDEXED, course_id UNINDEXED, title)
-             -- kind ∈ course | section | lecture | attachment
+search_index   USING fts5(kind, entity_id UNINDEXED, course_id UNINDEXED, title)
+subtitle_index USING fts5(lecture_id UNINDEXED, course_id UNINDEXED,             -- v4
+                          start_ms UNINDEXED, text)
 ```
 
-Course progress derived from `progress`. Continue-watching = most recent
-`last_watched_at`; recently-opened = `courses.last_opened_at`.
-Config lives in `config.json`, not the DB.
+Migrations run in a **single transaction** (atomic; safe to interrupt). FK
+cascades on `courses`/`lectures`; FTS tables have no FK and are cleared
+explicitly in `delete_course`. Config lives in `config.json`, not the DB.
 
-## Thumbnail cache
+## Config (`config.json`)
 
-Thumbnails live in `app-data/thumbnail_cache/` keyed by content identity, not by
-source filename: `<content_hash>.jpg` (lecture frame) / `<course_uuid>.jpg`
-(course cover). `courses.thumbnail_path` stores the cache path. Content-hash keys
-make invalidation trivial — a changed file yields a new key, orphans get swept.
-
-## Change detection (hashing)
-
-- Quick key `(file_size, mtime)` → skip unchanged files instantly on re-scan.
-- **blake3** content hash (bounded sample for very large files) → stable identity
-  to detect moved/renamed files and carry over progress + bookmarks.
-
-## Auto-structuring algorithm (in importer/)
-
-1. Consume `ScannedTree` (already classified: video / subtitle / attachment / image).
-2. Immediate subfolders = **sections**; videos loose in root → implicit
-   "Introduction". Flat folder → single section.
-3. **Ordering:** parse leading integer (`01`, `1.`, `1 -`, `Section 1`);
-   natural-sort fallback. Same rule for sections and lectures.
-4. **Title cleanup:** strip numeric prefix + separator + extension for display;
-   keep raw for sort tiebreak.
-5. **Subtitles:** match by video basename (`name.srt`, `name.en.vtt`); parse lang.
-6. **Attachments:** basename match → lecture; files under
-   `resources/attachments/code/assets` → nearest lecture or section-level.
-7. **Probe:** `MediaProber` per video → `MediaMetadata` (duration/chapters/codec/
-   playable/tracks).
-8. **Thumbnail:** prefer a cover/thumbnail/poster image; else mpv screenshot →
-   cache by content hash.
-9. Set `courses.scan_status` across the lifecycle (Importing → Scanning → Ready,
-   or Missing/Error).
-
-## Project layout
-
-```
-src/routes/       library · course/[id] · watch/[lectureId] · search · settings
-src/lib/          api.ts (typed invoke wrappers) · stores · components
-src-tauri/src/    scanner/ · importer/ · media/ · player/ · config/ · db/ · error/ · commands/
-src-tauri/binaries/  libmpv-2.dll (+ generated MSVC import lib)
+```rust
+AppConfig { theme: "dark"|"light"|"system", default_speed: f64,
+            autoplay_next: bool, daily_goal_minutes: i64,
+            auto_rescan: bool, last_root: Option<String> }
 ```
 
-## Milestones
+## IPC commands (namespaced)
 
-- **M0** Scaffold: create-tauri-app (SvelteKit-TS) + adapter-static + Tailwind +
-  rusqlite + `tracing`; empty `tauri dev` window runs.
-- **M1** Backend core: DB schema/migrations (UUIDv7), `error/`, `Scanner`/
-  `FilesystemScanner` (unit-tested), `importer/` structuring (unit-tested),
-  `MediaProber`/`MpvProber` → `MediaMetadata`, typed config, namespaced commands.
-- **M1-IT** Importer integration test: sample library folder → scan → SQLite →
-  assert full course/section/lecture hierarchy + ordering. (Catches the most regressions.)
-- **M2** Library grid + course view: sections, chapters, continue-watching,
-  recently-opened, `scan_status` + `playable` (⚠ Corrupted) badges.
-- **M3** `PlayerService`/`MpvPlayer`: embed via native child window, HWND rect-sync,
-  `PlayerEvent` → `PlayerState`, Playlist, play/pause/seek, resume, speed,
-  shortcuts, autoplay-next, progress writes.
-- **M4** Subtitle + track picker (embedded + external via mpv `track-list`);
-  chapter navigation.
-- **M5** Bookmarks (capture current `time-pos` + label; jump-to; list per lecture).
-- **M6** Thumbnails (mpv screenshot + image-file detection + content-hash cache).
-- **M7** Search (FTS5 populate for course/section/lecture/attachment + UI).
-- **M8** Settings/config UI, favorites, theme, missing/moved-file reconciliation,
-  polish.
+```
+library_add_root · library_list_roots · library_remove_root · library_scan_root
+        · library_import_course · library_list_courses · library_delete_course
+        · library_reconcile
+course_get · course_set_favorite · course_touch_opened · lecture_set_completed
+        · course_attachments · course_tags · course_add_tag · course_remove_tag
+        · course_set_thumbnail_file · course_set_thumbnail_bytes · course_clear_thumbnail
+open_resource · thumbnails_gc
+player_open · player_toggle_pause · player_set_paused · player_seek · player_set_speed
+        · player_next · player_prev · player_tracks · player_set_subtitle · player_set_audio
+        · player_set_chapter · player_set_volume · player_set_muted · player_set_rect
+        · player_stop · player_grab_resume_frame · player_state · player_available · lecture_get
+bookmark_add · bookmark_list · bookmark_delete · bookmark_list_all
+search_query · search_reindex · subtitle_search · subtitles_reindex
+stats_get
+config_get · config_set
+```
 
-## Future work (post-v1, architecture already accommodates)
+Events: `player:state` (PlayerState tick), `player:advanced` (autoplay),
+`library:changed` (watcher).
 
-- **Watch-folder** via `notify` → incremental rescan on filesystem changes.
-- **More scanners** behind the `Scanner` trait: `ZipScanner`, `NetworkScanner`,
-  `CloudScanner`.
-- **`FfprobeProber`** alternative behind `MediaProber`.
-- Subtitle full-text search; timestamped notes; tags/categories; stats/streaks.
+---
+
+## Milestones — all complete ✅
+
+- **M0** Scaffold (Tauri + SvelteKit-TS + adapter-static + Tailwind + rusqlite + tracing).
+- **M1** Backend core: schema/migrations, error, scanner, importer, prober, config, commands.
+- **M1-IT** Importer integration test (hierarchy/ordering/resources; + re-import preservation).
+- **M2** Library grid + course view (continue-watching, badges).
+- **M3** Embedded mpv player (child window, resume, autoplay, shortcuts, progress).
+- **M4** Subtitle/audio track picker + chapter navigation.
+- **M5** Bookmarks (per-lecture + global page, jump-to).
+- **M6** Thumbnails (manual upload/paste + resume-frame grab + content-hash cache + GC).
+- **M7** Search (FTS5 titles + subtitle full-text with jump-to-timestamp).
+- **M8** Settings/config UI, favorites, **theme (dark/light/system)**, missing-file
+  reconciliation, remove-course, thumbnail GC, polish.
+- **Post-v1** Resources UI (open pdfs/zips/code), Tags + filter, Stats dashboard +
+  watch telemetry, Auto-rescan (opt-in), pre-release review + hardening.
+
+---
+
+## Known limitations & deferred work
+
+These are understood, non-blocking, and good starting points for expansion:
+
+- **Auto-rescan probe-under-lock:** re-import probes new files while holding the
+  DB lock, so a large bulk-add can briefly pause the UI. Mitigated by making
+  auto-rescan **opt-in** and skipping the active course; the real fix is a
+  probe-outside-lock (two-phase import) refactor.
+- **Rename ⇒ progress loss:** re-import remaps user data by **file path**, so a
+  renamed file is treated as removed+new (its progress/bookmarks drop).
+  `content_hash` exists in the schema but is not populated — hash-based rename
+  detection is the fix.
+- **Player teardown:** the mpv instance/child window aren't destroyed on app exit
+  (benign; OS reclaims). No leak on repeated opens.
+- **Durations imported pre-mpv:** courses imported before mpv was available have
+  null durations; a rescan/re-import backfills them (reuse re-probes null-duration
+  files).
+- **Stats not yet built** (need new instrumentation, intentionally not faked):
+  session tracking (avg/longest session, focus %), average playback speed, notes/
+  highlights counts, transcript-search counts.
+- **No CI type-check yet:** `svelte-check`/`tsc` isn't wired into a build gate.
+
+---
+
+## Future work / expansion candidates
+
+- Two-phase import (probe outside the DB lock) → make auto-rescan freeze-free.
+- Content-hash change/move detection → carry progress across renames; smarter
+  incremental sync instead of delete+reinsert.
+- Session-level telemetry → the deferred stats (sessions, focus %, avg speed).
+- **Notes/highlights** (timestamped) and search history → richer study data.
+- More scanners behind the `Scanner` trait (`ZipScanner`, `CloudScanner`).
+- `FfprobeProber` alternative behind `MediaProber`.
+- True HTML-over-video compositing (DirectComposition) if floating overlays are
+  wanted (see the compositing decision memo).
 - Android / LAN sync (UUIDv7 keys already make this safe).
+- Packaged installer (`tauri build`) + a `svelte-check` CI gate.
 
 ## Prerequisites
 
-- Node 22 / npm — installed.
-- WebView2 runtime (Windows) — installed.
-- MSVC C++ Build Tools (VS 2022) — installed.
-- Rust toolchain (rustup) — **installing** (user-managed).
-- libmpv dev build (`libmpv-2.dll` + import lib on Windows; `libmpv` package on
-  Linux) — to acquire at M3.
+- Node 22 / npm, WebView2 runtime (Windows), MSVC C++ Build Tools (VS 2022),
+  Rust toolchain — all installed.
+- **libmpv runtime** (`libmpv-2.dll` on Windows via an mpv install; `libmpv`
+  package on Linux) — user-provided, discovered at runtime (not bundled).
