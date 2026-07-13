@@ -15,6 +15,7 @@
     Clipboard,
     ImagePlus,
     X,
+    Pencil,
   } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { api, pickImage } from "$lib/api";
@@ -29,6 +30,7 @@
   let expanded = $state<Set<string>>(new Set());
   let thumbBusy = $state(false);
   let thumbError = $state<string | null>(null);
+  let showThumbModal = $state(false);
 
   const thumbSrc = $derived(course?.thumbnail_path ? convertFileSrc(course.thumbnail_path) : "");
 
@@ -177,7 +179,10 @@
   }
 </script>
 
-<svelte:window onpaste={onPaste} />
+<svelte:window
+  onpaste={onPaste}
+  onkeydown={(e) => e.key === "Escape" && showThumbModal && (showThumbModal = false)}
+/>
 
 {#if loading}
   <div class="flex items-center justify-center py-32 text-on-surface-variant">
@@ -191,55 +196,34 @@
   <div class="p-6 max-w-5xl mx-auto space-y-6">
     <!-- Header -->
     <div class="flex gap-6 bg-surface-container-low border border-outline-variant rounded-xl p-4">
-      <div class="w-64 shrink-0 space-y-2">
-        <div
-          class="aspect-video rounded-lg overflow-hidden border border-outline-variant bg-surface-container-highest relative"
-        >
-          {#if course.thumbnail_path}
-            <img src={thumbSrc} alt={course.title} class="w-full h-full object-cover" />
-          {:else}
-            <div
-              class="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-surface-container-high to-surface-container-lowest text-outline-variant"
-            >
-              <ImagePlus size={32} />
-              <span class="text-label-sm">No thumbnail</span>
-            </div>
-          {/if}
-          {#if thumbBusy}
-            <div class="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <LoaderCircle size={24} class="animate-spin text-on-surface" />
-            </div>
-          {/if}
-        </div>
-
-        <div class="flex items-center gap-2">
-          <button
-            onclick={setFromFile}
-            disabled={thumbBusy}
-            class="flex-1 inline-flex items-center justify-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-2 py-1.5 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+      <button
+        onclick={() => (showThumbModal = true)}
+        class="group/thumb w-64 shrink-0 aspect-video rounded-lg overflow-hidden border border-outline-variant bg-surface-container-highest relative"
+        title="Edit thumbnail"
+        aria-label="Edit thumbnail"
+      >
+        {#if course.thumbnail_path}
+          <img src={thumbSrc} alt={course.title} class="w-full h-full object-cover" />
+        {:else}
+          <div
+            class="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-surface-container-high to-surface-container-lowest text-outline-variant"
           >
-            <Upload size={14} /> Upload
-          </button>
-          {#if course.thumbnail_path}
-            <button
-              onclick={removeThumb}
-              disabled={thumbBusy}
-              class="p-1.5 rounded text-on-surface-variant hover:text-error hover:bg-surface-container-highest transition-colors disabled:opacity-60"
-              title="Remove thumbnail"
-              aria-label="Remove thumbnail"
-            >
-              <X size={16} />
-            </button>
-          {/if}
-        </div>
-
-        <p class="text-label-sm text-on-surface-variant flex items-center gap-1.5">
-          <Clipboard size={12} class="shrink-0" /> or paste an image (Ctrl+V)
-        </p>
-        {#if thumbError}
-          <p class="text-label-sm text-error">{thumbError}</p>
+            <ImagePlus size={32} />
+            <span class="text-label-sm">No thumbnail</span>
+          </div>
         {/if}
-      </div>
+        <!-- Hover-reveal edit affordance -->
+        <div
+          class="absolute inset-0 bg-black/45 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-on-surface text-label-md"
+        >
+          <Pencil size={16} /> Edit
+        </div>
+        {#if thumbBusy}
+          <div class="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <LoaderCircle size={24} class="animate-spin text-on-surface" />
+          </div>
+        {/if}
+      </button>
       <div class="flex-1 min-w-0 flex flex-col">
         <div class="flex items-start justify-between gap-4">
           <h1 class="text-display-sm text-on-surface">{course.title}</h1>
@@ -381,4 +365,79 @@
       </div>
     </div>
   </div>
+
+  <!-- Thumbnail editor modal -->
+  {#if showThumbModal}
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      role="presentation"
+      onclick={() => (showThumbModal = false)}
+    >
+      <div
+        class="w-full max-w-md bg-surface-container rounded-xl border border-outline-variant p-5 space-y-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Course thumbnail"
+        tabindex="-1"
+        onclick={(e) => e.stopPropagation()}
+      >
+        <div class="flex items-center justify-between">
+          <h3 class="text-headline-sm text-on-surface">Course thumbnail</h3>
+          <button
+            onclick={() => (showThumbModal = false)}
+            class="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div
+          class="aspect-video rounded-lg overflow-hidden border border-outline-variant bg-surface-container-highest relative"
+        >
+          {#if course.thumbnail_path}
+            <img src={thumbSrc} alt={course.title} class="w-full h-full object-cover" />
+          {:else}
+            <div
+              class="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-surface-container-high to-surface-container-lowest text-outline-variant"
+            >
+              <ImagePlus size={36} />
+              <span class="text-label-sm">No thumbnail</span>
+            </div>
+          {/if}
+          {#if thumbBusy}
+            <div class="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <LoaderCircle size={24} class="animate-spin text-on-surface" />
+            </div>
+          {/if}
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            onclick={setFromFile}
+            disabled={thumbBusy}
+            class="flex-1 inline-flex items-center justify-center gap-1.5 text-label-md bg-primary-container text-on-primary-container px-3 py-2 rounded hover:bg-inverse-primary transition-colors disabled:opacity-60"
+          >
+            <Upload size={15} /> Upload image
+          </button>
+          {#if course.thumbnail_path}
+            <button
+              onclick={removeThumb}
+              disabled={thumbBusy}
+              class="inline-flex items-center gap-1.5 text-label-md text-on-surface-variant px-3 py-2 rounded hover:text-error hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+            >
+              <X size={15} /> Remove
+            </button>
+          {/if}
+        </div>
+
+        <p class="text-label-sm text-on-surface-variant flex items-center gap-1.5">
+          <Clipboard size={13} class="shrink-0" /> Tip: copy any image and press Ctrl+V to paste it here.
+        </p>
+        {#if thumbError}
+          <p class="text-label-sm text-error">{thumbError}</p>
+        {/if}
+      </div>
+    </div>
+  {/if}
 {/if}
