@@ -469,7 +469,6 @@
     api.playerSeek(seekValue).catch(() => {});
     seeking = false;
   }
-  let wasMaximized = false;
   async function toggleImmersive() {
     const on = !ui.immersive;
     const win = getCurrentWindow();
@@ -480,20 +479,7 @@
     await tick();
     reportRect();
     try {
-      if (on) {
-        // Going fullscreen straight from a maximized window leaves it sized to
-        // the work area (the taskbar stays visible). Un-maximize first, then take
-        // the whole display; restore the maximized state on the way out.
-        wasMaximized = await win.isMaximized();
-        if (wasMaximized) await win.unmaximize();
-        await win.setFullscreen(true);
-      } else {
-        await win.setFullscreen(false);
-        if (wasMaximized) {
-          await win.maximize();
-          wasMaximized = false;
-        }
-      }
+      await win.setFullscreen(on); // + take the whole display
     } catch {
       /* window may not support it; immersive still applies */
     }

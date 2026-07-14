@@ -100,6 +100,18 @@ pub fn run() {
         // during fullscreen / edge-drag resizes without the JS round-trip lag.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Resized(size) = event {
+                match window.current_monitor() {
+                    Ok(Some(m)) => tracing::debug!(
+                        win_w = size.width,
+                        win_h = size.height,
+                        mon_w = m.size().width,
+                        mon_h = m.size().height,
+                        fs = window.is_fullscreen().unwrap_or(false),
+                        max = window.is_maximized().unwrap_or(false),
+                        "window resized"
+                    ),
+                    _ => tracing::debug!(win_w = size.width, win_h = size.height, "window resized"),
+                }
                 if let Some(state) = window.try_state::<AppState>() {
                     if let Ok(guard) = state.player.lock() {
                         if let Some(p) = guard.as_ref() {
