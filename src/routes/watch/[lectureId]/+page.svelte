@@ -469,21 +469,41 @@
     api.playerSeek(seekValue).catch(() => {});
     seeking = false;
   }
+  // Whether we entered immersive from a maximized window, so we can restore that
+  // on exit (fullscreen is entered from the *unmaximized* state — see below).
+  let cameFromMaximized = false;
   async function toggleImmersive() {
     const on = !ui.immersive;
     const win = getCurrentWindow();
     setImmersive(on); // hide sidebar/titlebar so the video fills the window
-    // Report the pane once the sidebar/titlebar reflow lands but BEFORE the OS
-    // fullscreen resize — this hands the backend the correct pane margins, so its
-    // native resize handler can track the window as it animates (no JS lag).
-    await tick();
-    reportRect();
     try {
-      await win.setFullscreen(on); // + take the whole display
+      if (on && (await win.isMaximized())) {
+        // tao's setFullscreen is a no-op on a *maximized* window: it still carries
+        // WS_MAXIMIZE, so Windows clamps the SetWindowPos-to-monitor back to the
+        // work area and the taskbar stays visible. Drop maximized first — waiting
+        // for it to actually apply, since the awaited call can return before tao
+        // processes the restore on its event loop — then go fullscreen.
+        cameFromMaximized = true;
+        await win.unmaximize();
+        for (let i = 0; i < 25 && (await win.isMaximized()); i++) {
+          await new Promise((r) => setTimeout(r, 16));
+        }
+      }
+      // Report the pane once the (immersive) reflow lands but BEFORE the OS
+      // resize, so the backend's native resize handler tracks the window.
+      await tick();
+      reportRect();
+      await win.setFullscreen(on);
+      if (!on && cameFromMaximized) {
+        // Fullscreen was entered from the unmaximized state, so tao restored to
+        // the normal window — re-maximize to match where we started.
+        cameFromMaximized = false;
+        await win.maximize();
+      }
     } catch {
-      /* window may not support it; immersive still applies */
+      /* window API may reject; immersive layout still applies */
     }
-    // Belt-and-suspenders re-sync as the animation settles (also covers the wid
+    // Belt-and-suspenders re-sync as the layout settles (also covers the wid
     // path, which has no native resize hook).
     reportRectSoon();
     later(reportRect, 80);
