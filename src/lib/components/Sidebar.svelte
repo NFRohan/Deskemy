@@ -13,12 +13,23 @@
     LoaderCircle,
     PanelLeftClose,
     PanelLeftOpen,
+    X,
+    Layers,
+    Video,
+    Paperclip,
+    Captions,
+    TriangleAlert,
   } from "@lucide/svelte";
   import { api, pickFolder } from "$lib/api";
   import { loadLibrary, toggleSidebar, ui } from "$lib/stores/app.svelte";
+  import { formatDuration } from "$lib/format";
+  import type { ImportPreview } from "$lib/types";
 
   let importing = $state(false);
+  let scanning = $state(false);
   let importError = $state<string | null>(null);
+  let preview = $state<ImportPreview | null>(null);
+  let previewPath = $state<string | null>(null);
 
   const nav = [
     { href: "/", label: "Library", icon: Library },
@@ -37,19 +48,42 @@
     return p.startsWith(href);
   }
 
+  // Pick a folder → dry-run preview (probes off the DB lock) → confirm imports
+  // the already-probed plan (no re-probe).
   async function addFolder() {
     const path = await pickFolder();
     if (!path) return;
-    importing = true;
+    scanning = true;
     importError = null;
     try {
-      await api.importCourse(path);
+      preview = await api.previewImport(path);
+      previewPath = path;
+    } catch (e: any) {
+      importError = e?.message ?? String(e);
+    } finally {
+      scanning = false;
+    }
+  }
+
+  async function confirmImport() {
+    if (!previewPath || importing) return;
+    importing = true;
+    try {
+      await api.importCourse(previewPath);
       await loadLibrary(true);
+      preview = null;
+      previewPath = null;
     } catch (e: any) {
       importError = e?.message ?? String(e);
     } finally {
       importing = false;
     }
+  }
+
+  function cancelPreview() {
+    if (importing) return;
+    preview = null;
+    previewPath = null;
   }
 </script>
 
@@ -114,13 +148,13 @@
     {/if}
     <button
       onclick={addFolder}
-      disabled={importing}
+      disabled={scanning || importing}
       title="Add Folder"
       class="w-full py-2 flex items-center justify-center gap-2 bg-primary-container text-on-primary-container text-label-md rounded hover:bg-inverse-primary transition-colors disabled:opacity-60"
     >
-      {#if importing}
+      {#if scanning}
         <LoaderCircle size={18} class="animate-spin shrink-0" />
-        {#if !ui.sidebarCollapsed}Importing…{/if}
+        {#if !ui.sidebarCollapsed}Scanning…{/if}
       {:else}
         <FolderPlus size={18} class="shrink-0" />
         {#if !ui.sidebarCollapsed}Add Folder{/if}
@@ -128,3 +162,85 @@
     </button>
   </div>
 </aside>
+
+<!-- Import preview -->
+{#if preview}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    onclick={(e) => e.target === e.currentTarget && cancelPreview()}
+    role="presentation"
+  >
+    <div class="w-full max-w-md bg-surface-container rounded-xl border border-outline-variant p-5 space-y-4">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-label-sm text-on-surface-variant">Import course</p>
+          <h3 class="text-headline-sm text-on-surface truncate">{preview.title}</h3>
+        </div>
+        <button
+          onclick={cancelPreview}
+          disabled={importing}
+          class="p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest disabled:opacity-50"
+          aria-label="Cancel"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      {#if preview.is_reimport}
+        <p class="text-label-sm text-secondary-container bg-secondary-container/10 border border-secondary-container/25 rounded-lg px-3 py-2">
+          Already in your library — re-importing keeps your progress, bookmarks and tags.
+        </p>
+      {/if}
+
+      <div class="grid grid-cols-2 gap-2">
+        <div class="flex items-center gap-2 bg-surface-container-low rounded-lg px-3 py-2.5">
+          <Layers size={16} class="text-on-surface-variant shrink-0" />
+          <span class="text-body-md text-on-surface"><b class="tabular-nums">{preview.sections}</b> sections</span>
+        </div>
+        <div class="flex items-center gap-2 bg-surface-container-low rounded-lg px-3 py-2.5">
+          <Video size={16} class="text-on-surface-variant shrink-0" />
+          <span class="text-body-md text-on-surface"><b class="tabular-nums">{preview.lectures}</b> lectures</span>
+        </div>
+        <div class="flex items-center gap-2 bg-surface-container-low rounded-lg px-3 py-2.5">
+          <Paperclip size={16} class="text-on-surface-variant shrink-0" />
+          <span class="text-body-md text-on-surface"><b class="tabular-nums">{preview.resources}</b> resources</span>
+        </div>
+        <div class="flex items-center gap-2 bg-surface-container-low rounded-lg px-3 py-2.5">
+          <Captions size={16} class="text-on-surface-variant shrink-0" />
+          <span class="text-body-md text-on-surface"><b class="tabular-nums">{preview.subtitles}</b> subtitles</span>
+        </div>
+      </div>
+
+      {#if preview.total_duration}
+        <p class="text-label-sm text-on-surface-variant">Total runtime · {formatDuration(preview.total_duration)}</p>
+      {/if}
+      {#if preview.unplayable > 0}
+        <p class="flex items-center gap-1.5 text-label-sm text-error">
+          <TriangleAlert size={14} class="shrink-0" />
+          {preview.unplayable} video{preview.unplayable === 1 ? "" : "s"} couldn't be opened — imported but flagged.
+        </p>
+      {/if}
+      {#if importError}
+        <p class="text-label-sm text-error">{importError}</p>
+      {/if}
+
+      <div class="flex justify-end gap-2 pt-1">
+        <button
+          onclick={cancelPreview}
+          disabled={importing}
+          class="text-label-md text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={confirmImport}
+          disabled={importing}
+          class="inline-flex items-center gap-1.5 text-label-md bg-primary-container text-on-primary-container px-4 py-2 rounded hover:bg-inverse-primary transition-colors disabled:opacity-60"
+        >
+          {#if importing}<LoaderCircle size={15} class="animate-spin" />{/if}
+          {preview.is_reimport ? "Re-import" : "Import"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}

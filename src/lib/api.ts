@@ -11,6 +11,7 @@ import type {
   CourseSummary,
   GcReport,
   HistoryEntry,
+  ImportPreview,
   LectureView,
   LibraryStats,
   MediaTracks,
@@ -36,6 +37,7 @@ export const api = {
   listRoots: () => invoke<RootDto[]>("library_list_roots"),
   removeRoot: (id: string) => invoke<void>("library_remove_root", { id }),
   importCourse: (path: string) => invoke<string>("library_import_course", { path }),
+  previewImport: (path: string) => invoke<ImportPreview>("library_preview_import", { path }),
   scanRoot: (rootId: string) => invoke<ScanResult>("library_scan_root", { rootId }),
   listCourses: () => invoke<CourseSummary[]>("library_list_courses"),
 

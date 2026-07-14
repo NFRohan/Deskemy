@@ -93,10 +93,53 @@ pub struct ImportPlan {
     sections: Vec<PlannedSection>,
 }
 
+impl ImportSnapshot {
+    /// The course title (folder name).
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+    /// Whether this folder already exists as a course (re-import keeps user data).
+    pub fn is_reimport(&self) -> bool {
+        self.preserved.is_some()
+    }
+}
+
 impl ImportPlan {
     /// Total lectures across all sections (0 = nothing playable found).
     pub fn lecture_count(&self) -> usize {
         self.sections.iter().map(|s| s.lectures.len()).sum()
+    }
+    /// Sections that contain at least one lecture.
+    pub fn section_count(&self) -> usize {
+        self.sections.iter().filter(|s| !s.lectures.is_empty()).count()
+    }
+    /// Lectures mpv couldn't open (imported but flagged unplayable).
+    pub fn unplayable_count(&self) -> usize {
+        self.sections
+            .iter()
+            .flat_map(|s| &s.lectures)
+            .filter(|l| !l.playable)
+            .count()
+    }
+    /// Summed lecture duration, or None if nothing was probed for duration.
+    pub fn total_duration(&self) -> Option<f64> {
+        let mut any = false;
+        let sum: f64 = self
+            .sections
+            .iter()
+            .flat_map(|s| &s.lectures)
+            .filter_map(|l| l.duration)
+            .inspect(|_| any = true)
+            .sum();
+        any.then_some(sum)
+    }
+    /// Attachment (resource) files detected in the scan.
+    pub fn resource_count(&self) -> usize {
+        self.scan.files.iter().filter(|f| f.kind == FileKind::Attachment).count()
+    }
+    /// Sidecar subtitle files detected in the scan.
+    pub fn subtitle_count(&self) -> usize {
+        self.scan.files.iter().filter(|f| f.kind == FileKind::Subtitle).count()
     }
 }
 

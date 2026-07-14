@@ -1,12 +1,13 @@
 //! Shared application state managed by Tauri.
 
 use crate::config::AppConfig;
-use crate::importer::Importer;
+use crate::importer::{ImportPlan, ImportSnapshot, Importer};
 use crate::media::mpv_prober::MpvProber;
 use crate::media::stub::StubProber;
 use crate::media::MediaProber;
 use crate::player::MpvPlayer;
 use rusqlite::Connection;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -17,6 +18,9 @@ pub struct AppState {
     /// App data directory (holds the db, config, and thumbnails cache).
     pub data_dir: PathBuf,
     pub importer: Importer,
+    /// Probed-but-unpersisted import plans keyed by folder path, staged by
+    /// `library_preview_import` so confirming the import doesn't re-probe.
+    pub pending_imports: Mutex<HashMap<String, (ImportSnapshot, ImportPlan)>>,
     /// Embedded mpv player, created lazily on first playback.
     pub player: Mutex<Option<MpvPlayer>>,
 }
@@ -39,6 +43,7 @@ impl AppState {
             config_path,
             data_dir,
             importer: Importer::new(prober),
+            pending_imports: Mutex::new(HashMap::new()),
             player: Mutex::new(None),
         }
     }

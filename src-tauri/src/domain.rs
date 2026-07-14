@@ -229,6 +229,23 @@ pub struct TrackDetail {
     pub courses: Vec<TrackCourse>,
 }
 
+/// Dry-run summary of what an import would create, shown for confirmation
+/// before the course is written. Built from a fully-probed (but unpersisted)
+/// plan; the plan is staged so confirming doesn't re-probe.
+#[derive(Debug, Clone, Serialize)]
+pub struct ImportPreview {
+    pub title: String,
+    /// The folder already exists as a course — re-importing keeps user data.
+    pub is_reimport: bool,
+    pub sections: i64,
+    pub lectures: i64,
+    pub resources: i64,
+    pub subtitles: i64,
+    /// Videos mpv couldn't open (will import but flagged unplayable).
+    pub unplayable: i64,
+    pub total_duration: Option<f64>,
+}
+
 /// On-disk footprint of the local stores, for the Settings → Storage panel.
 #[derive(Debug, Clone, Serialize)]
 pub struct StorageStats {

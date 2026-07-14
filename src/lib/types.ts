@@ -216,6 +216,17 @@ export interface StorageStats {
   subtitle_cues: number;
 }
 
+export interface ImportPreview {
+  title: string;
+  is_reimport: boolean;
+  sections: number;
+  lectures: number;
+  resources: number;
+  subtitles: number;
+  unplayable: number;
+  total_duration: number | null;
+}
+
 export interface TrackSummary {
   id: string;
   name: string;

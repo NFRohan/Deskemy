@@ -4,8 +4,8 @@ pub mod player;
 
 use crate::db::queries;
 use crate::domain::{
-    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, HistoryEntry, LibraryStats,
-    SearchHit, StorageStats, SubtitleHit, TrackDetail, TrackSummary,
+    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, HistoryEntry, ImportPreview,
+    LibraryStats, SearchHit, StorageStats, SubtitleHit, TrackDetail, TrackSummary,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::Connection;
@@ -85,15 +85,30 @@ fn watch_path(app: &AppHandle, path: &str) {
 
 /// Import a single folder as one course.
 #[tauri::command]
-pub fn library_import_course(app: AppHandle, state: State<AppState>, path: String) -> Result<String> {
+pub async fn library_import_course(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String> {
     let course_dir = Path::new(&path);
-    // Phase 1 (brief lock): snapshot the DB.
-    let snap = {
-        let conn = db(&state)?;
-        state.importer.read_snapshot(&conn, course_dir)?
+    // Reuse a staged preview plan if the user previewed this folder first — the
+    // probe already ran, so don't repeat it. Otherwise probe now (phases 1+2).
+    let staged = state
+        .pending_imports
+        .lock()
+        .ok()
+        .and_then(|mut m| m.remove(&path));
+    let (snap, plan) = match staged {
+        Some(sp) => sp,
+        None => {
+            let snap = {
+                let conn = db(&state)?;
+                state.importer.read_snapshot(&conn, course_dir)?
+            };
+            let plan = state.importer.build(course_dir, &snap)?;
+            (snap, plan)
+        }
     };
-    // Phase 2 (NO lock): scan + probe — the slow part, so the UI stays responsive.
-    let plan = state.importer.build(course_dir, &snap)?;
     // Phase 3 (brief lock): persist.
     let id = {
         let mut guard = db(&state)?;
@@ -104,11 +119,48 @@ pub fn library_import_course(app: AppHandle, state: State<AppState>, path: Strin
     Ok(id)
 }
 
+/// Dry-run an import: probe the folder and return what it would create, staging
+/// the probed plan so a following `library_import_course` doesn't re-probe.
+///
+/// `async` so Tauri runs it on the async runtime rather than the main thread —
+/// the probe is slow (one mpv open per video) and would otherwise freeze the UI.
+#[tauri::command]
+pub async fn library_preview_import(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<ImportPreview> {
+    let course_dir = Path::new(&path);
+    // Phases 1+2 (probe is lock-free).
+    let snap = {
+        let conn = db(&state)?;
+        state.importer.read_snapshot(&conn, course_dir)?
+    };
+    let plan = state.importer.build(course_dir, &snap)?;
+
+    let preview = ImportPreview {
+        title: snap.title().to_string(),
+        is_reimport: snap.is_reimport(),
+        sections: plan.section_count() as i64,
+        lectures: plan.lecture_count() as i64,
+        resources: plan.resource_count() as i64,
+        subtitles: plan.subtitle_count() as i64,
+        unplayable: plan.unplayable_count() as i64,
+        total_duration: plan.total_duration(),
+    };
+
+    // Stage this plan (only the latest preview is kept) for confirm-without-reprobe.
+    if let Ok(mut pending) = state.pending_imports.lock() {
+        pending.clear();
+        pending.insert(path, (snap, plan));
+    }
+    Ok(preview)
+}
+
 /// Scan a registered root: each immediate subfolder becomes a course.
 #[tauri::command]
-pub fn library_scan_root(
+pub async fn library_scan_root(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     root_id: String,
 ) -> Result<ScanResult> {
     let root_path = {
