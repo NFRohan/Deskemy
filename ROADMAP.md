@@ -35,11 +35,17 @@ Legend: ✅ done · 🔜 next · ⏳ planned · 🔑 key enabler · ❌ cut (wit
   additions (N/⇧N, P content, R resources, B bookmark). Cheat sheet is a docked
   push-up panel (airspace).
 - ✅ **Up Next** — next lecture (title + duration) in the control bar; click to skip.
-- ✅ **True 100% fullscreen** — `F` / Esc toggle real OS fullscreen with the
-  sidebar/topbar hidden and the video edge-to-edge. The control bar stays docked
-  and visible, including in fullscreen. (Auto-hide/vanishing-controls was built
-  then **cut**: docked chrome reflows the native window — airspace, can't overlay
-  — so hiding it made the video rubberband. Not worth it, and the bar looks good.)
+- ✅ **Fullscreen** — `F` / Esc toggle real OS fullscreen with the sidebar/topbar
+  hidden. The watch page pins to the viewport (`fixed inset-0`) so the themed body
+  never leaks as a bar. The control bar stays docked and visible, including in
+  fullscreen. (Auto-hide/vanishing-controls was built then **cut**: docked chrome
+  reflows the native window — airspace, can't overlay — so hiding it made the
+  video rubberband. Not worth it, and the bar looks good.)
+  - **Accepted tradeoff — don't "fix" it:** a permanent docked bar makes the video
+    pane wider than 16:9, so a 16:9 video letterboxes (~80px black side bars).
+    That's mpv keeping aspect, not a bug. We keep the letterbox (true pixels) over
+    zoom-to-fill (crops edges). Bars would only vanish if the bar could overlay
+    the video, which airspace forbids.
 - ✅ **Remember playback prefs per course** — speed / subtitle selection +
   visibility / audio track (schema v6 `course_prefs`).
 - ⏳ **Sleep timer** — pause after N minutes / at end of lecture. (Small; not built yet.)
