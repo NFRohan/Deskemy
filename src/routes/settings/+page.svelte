@@ -1,9 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Settings, RefreshCw, Trash2, FileSearch, Captions, LoaderCircle } from "@lucide/svelte";
+  import {
+    Settings,
+    RefreshCw,
+    Trash2,
+    FileSearch,
+    Captions,
+    Minimize2,
+    LoaderCircle,
+  } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs, loadLibrary, applyTheme } from "$lib/stores/app.svelte";
-  import type { AppConfig } from "$lib/types";
+  import type { AppConfig, StorageStats } from "$lib/types";
 
   const THEMES = [
     { value: "dark", label: "Dark" },
@@ -16,11 +24,17 @@
   let config = $state<AppConfig | null>(null);
   let busy = $state<string | null>(null);
   let results = $state<Record<string, string>>({});
+  let storage = $state<StorageStats | null>(null);
 
   onMount(async () => {
     setCrumbs([{ label: "Settings" }]);
     config = await api.getConfig().catch(() => null);
+    storage = await api.storageStats().catch(() => null);
   });
+
+  async function refreshStorage() {
+    storage = await api.storageStats().catch(() => null);
+  }
 
   async function save() {
     if (config) await api.setConfig($state.snapshot(config)).catch(() => {});
@@ -94,9 +108,24 @@
   const cleanThumbs = () =>
     run("gc", async () => {
       const r = await api.gcThumbnails();
+      await refreshStorage();
       return r.removed === 0
         ? "Cache already clean."
         : `Removed ${plural(r.removed, "file")} (${fmtBytes(r.freed_bytes)}).`;
+    });
+  const compactDb = () =>
+    run("compact", async () => {
+      const bytes = await api.compactDb();
+      await refreshStorage();
+      return `Database compacted — now ${fmtBytes(bytes)}.`;
+    });
+  const clearSubs = () =>
+    run("clearsubs", async () => {
+      const n = await api.clearSubtitleIndex();
+      await refreshStorage();
+      return n === 0
+        ? "Subtitle index already empty."
+        : `Cleared ${plural(n, "cue")}. Compact the database to reclaim the space.`;
     });
 </script>
 
@@ -275,23 +304,88 @@
           </button>
         </div>
 
+      </div>
+    </section>
+
+    <!-- Storage -->
+    <section class="space-y-3">
+      <h3 class="text-label-md text-on-surface-variant uppercase tracking-wide">Storage</h3>
+      <div
+        class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant"
+      >
         <div class="flex items-center justify-between gap-4 p-4">
           <div class="min-w-0">
-            <p class="text-body-md text-on-surface">Clean up thumbnail cache</p>
+            <p class="text-body-md text-on-surface">Database</p>
             <p class="text-label-sm text-on-surface-variant">
-              Delete cached images no longer used by any course.
+              Course metadata, progress, bookmarks and search indexes — videos are never stored here.
+              Compact reclaims space freed by removed courses or cleared indexes.
+            </p>
+            {#if results.compact}<p class="text-label-sm text-primary mt-1">{results.compact}</p>{/if}
+          </div>
+          <div class="shrink-0 flex flex-col items-end gap-2">
+            <span class="text-label-md text-on-surface tabular-nums">
+              {storage ? fmtBytes(storage.db_bytes) : "—"}
+            </span>
+            <button
+              onclick={compactDb}
+              disabled={busy !== null}
+              class="inline-flex items-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+            >
+              {#if busy === "compact"}<LoaderCircle size={15} class="animate-spin" />{:else}<Minimize2
+                  size={15}
+                />{/if} Compact
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Subtitle search index</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Indexed subtitle text — the main database growth. Clearing frees the most space;
+              re-index anytime with "Index subtitle text" above.
+            </p>
+            {#if results.clearsubs}<p class="text-label-sm text-primary mt-1">{results.clearsubs}</p>{/if}
+          </div>
+          <div class="shrink-0 flex flex-col items-end gap-2">
+            <span class="text-label-md text-on-surface tabular-nums">
+              {storage ? `${storage.subtitle_cues.toLocaleString()} cues` : "—"}
+            </span>
+            <button
+              onclick={clearSubs}
+              disabled={busy !== null || storage?.subtitle_cues === 0}
+              class="inline-flex items-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+            >
+              {#if busy === "clearsubs"}<LoaderCircle size={15} class="animate-spin" />{:else}<Trash2
+                  size={15}
+                />{/if} Clear
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Thumbnail cache</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Cached course covers and resume frames (stored on disk, not in the database). Clean
+              deletes images no longer used by any course.
             </p>
             {#if results.gc}<p class="text-label-sm text-primary mt-1">{results.gc}</p>{/if}
           </div>
-          <button
-            onclick={cleanThumbs}
-            disabled={busy !== null}
-            class="shrink-0 inline-flex items-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
-          >
-            {#if busy === "gc"}<LoaderCircle size={15} class="animate-spin" />{:else}<Trash2
-                size={15}
-              />{/if} Clean
-          </button>
+          <div class="shrink-0 flex flex-col items-end gap-2">
+            <span class="text-label-md text-on-surface tabular-nums">
+              {storage ? fmtBytes(storage.thumbnail_bytes) : "—"}
+            </span>
+            <button
+              onclick={cleanThumbs}
+              disabled={busy !== null}
+              class="inline-flex items-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+            >
+              {#if busy === "gc"}<LoaderCircle size={15} class="animate-spin" />{:else}<Trash2
+                  size={15}
+                />{/if} Clean
+            </button>
+          </div>
         </div>
       </div>
     </section>

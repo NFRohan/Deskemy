@@ -197,3 +197,21 @@ export interface BookmarkDetail {
   label: string | null;
   created_at: number;
 }
+
+export interface HistoryEntry {
+  lecture_id: string;
+  lecture_title: string;
+  section_title: string;
+  course_id: string;
+  course_title: string;
+  position_seconds: number;
+  duration: number | null;
+  completed: boolean;
+  last_watched_at: number;
+}
+
+export interface StorageStats {
+  db_bytes: number;
+  thumbnail_bytes: number;
+  subtitle_cues: number;
+}

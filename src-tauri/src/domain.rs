@@ -181,3 +181,30 @@ pub struct BookmarkDetail {
     pub label: Option<String>,
     pub created_at: i64,
 }
+
+/// A recently-watched lecture (a progress row + its lecture/course context) for
+/// the playback-history page — grouped by day and deep-linked back into the
+/// player to resume where you left off.
+#[derive(Debug, Clone, Serialize)]
+pub struct HistoryEntry {
+    pub lecture_id: String,
+    pub lecture_title: String,
+    pub section_title: String,
+    pub course_id: String,
+    pub course_title: String,
+    pub position_seconds: f64,
+    pub duration: Option<f64>,
+    pub completed: bool,
+    pub last_watched_at: i64,
+}
+
+/// On-disk footprint of the local stores, for the Settings → Storage panel.
+#[derive(Debug, Clone, Serialize)]
+pub struct StorageStats {
+    /// SQLite database files (main + WAL + shared-memory).
+    pub db_bytes: u64,
+    /// Content-addressed thumbnail cache directory.
+    pub thumbnail_bytes: u64,
+    /// Rows in the subtitle full-text index (the main DB growth vector).
+    pub subtitle_cues: i64,
+}

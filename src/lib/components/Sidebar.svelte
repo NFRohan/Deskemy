@@ -2,6 +2,7 @@
   import { page } from "$app/stores";
   import {
     Library,
+    History,
     Bookmark,
     Star,
     Search,
@@ -20,6 +21,7 @@
 
   const nav = [
     { href: "/", label: "Library", icon: Library },
+    { href: "/history", label: "History", icon: History },
     { href: "/bookmarks", label: "Bookmarks", icon: Bookmark },
     { href: "/favorites", label: "Favorites", icon: Star },
     { href: "/search", label: "Search", icon: Search },

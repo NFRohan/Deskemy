@@ -3,8 +3,8 @@
 
 use crate::db::{new_id, now};
 use crate::domain::{
-    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, DayActivity, Lecture,
-    LibraryStats, Section, SearchHit, SubtitleHit,
+    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, DayActivity, HistoryEntry,
+    Lecture, LibraryStats, Section, SearchHit, SubtitleHit,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -1198,6 +1198,39 @@ pub fn list_all_bookmarks(conn: &Connection) -> Result<Vec<BookmarkDetail>> {
                 position_seconds: r.get(6)?,
                 label: r.get(7)?,
                 created_at: r.get(8)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Recently-watched lectures (one row per lecture that has a progress entry),
+/// newest first, for the playback-history page. Capped to keep the payload
+/// bounded; the frontend groups by day.
+pub fn list_history(conn: &Connection, limit: i64) -> Result<Vec<HistoryEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.id, l.title, s.title, c.id, c.title,
+                p.position_seconds, l.duration, p.completed, p.last_watched_at
+           FROM progress p
+           JOIN lectures l ON l.id = p.lecture_id
+           JOIN sections s ON s.id = l.section_id
+           JOIN courses  c ON c.id = l.course_id
+          WHERE p.last_watched_at IS NOT NULL
+          ORDER BY p.last_watched_at DESC
+          LIMIT ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![limit], |r| {
+            Ok(HistoryEntry {
+                lecture_id: r.get(0)?,
+                lecture_title: r.get(1)?,
+                section_title: r.get(2)?,
+                course_id: r.get(3)?,
+                course_title: r.get(4)?,
+                position_seconds: r.get(5)?,
+                duration: r.get(6)?,
+                completed: r.get::<_, i64>(7)? != 0,
+                last_watched_at: r.get(8)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;

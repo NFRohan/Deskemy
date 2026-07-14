@@ -24,3 +24,26 @@ export function pct(done: number, total: number): number {
   if (total <= 0) return 0;
   return Math.round((done / total) * 100);
 }
+
+/** "Today" / "Yesterday" / "Mon, 3 Feb 2026" for a unix-seconds timestamp. */
+export function formatDayGroup(unixSeconds: number): string {
+  const d = new Date(unixSeconds * 1000);
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86_400_000);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** "12:20" local wall-clock time for a unix-seconds timestamp. */
+export function formatTimeOfDay(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

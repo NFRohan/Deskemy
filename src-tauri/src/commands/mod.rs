@@ -4,8 +4,8 @@ pub mod player;
 
 use crate::db::queries;
 use crate::domain::{
-    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, LibraryStats, SearchHit,
-    SubtitleHit,
+    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, HistoryEntry, LibraryStats,
+    SearchHit, StorageStats, SubtitleHit,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::Connection;
@@ -310,6 +310,13 @@ pub fn bookmark_list_all(state: State<AppState>) -> Result<Vec<BookmarkDetail>> 
     queries::list_all_bookmarks(&conn)
 }
 
+/// Recently-watched lectures (newest first) for the playback-history page.
+#[tauri::command]
+pub fn history_list(state: State<AppState>) -> Result<Vec<HistoryEntry>> {
+    let conn = db(&state)?;
+    queries::list_history(&conn, 500)
+}
+
 // ---------------------------------------------------------------------------
 // search_*
 // ---------------------------------------------------------------------------
@@ -450,6 +457,67 @@ pub fn thumbnails_gc(state: State<AppState>) -> Result<GcReport> {
         }
     }
     Ok(GcReport { removed, freed_bytes })
+}
+
+// ---------------------------------------------------------------------------
+// storage_* — Settings → Storage panel (sizes + reclaim actions)
+// ---------------------------------------------------------------------------
+
+/// Total size of the SQLite database files (main + WAL + shared-memory).
+fn db_file_bytes(data_dir: &Path) -> u64 {
+    ["deskemy.db", "deskemy.db-wal", "deskemy.db-shm"]
+        .iter()
+        .filter_map(|f| std::fs::metadata(data_dir.join(f)).ok())
+        .map(|m| m.len())
+        .sum()
+}
+
+/// Total size of the (flat, content-addressed) files directly under `dir`.
+fn dir_file_bytes(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.metadata().ok())
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+        .sum()
+}
+
+/// On-disk footprint of the local stores, for the Settings → Storage panel.
+#[tauri::command]
+pub fn storage_stats(state: State<AppState>) -> Result<StorageStats> {
+    let subtitle_cues = {
+        let conn = db(&state)?;
+        queries::subtitle_index_count(&conn)?
+    };
+    Ok(StorageStats {
+        db_bytes: db_file_bytes(&state.data_dir),
+        thumbnail_bytes: dir_file_bytes(&state.thumbnails_dir()),
+        subtitle_cues,
+    })
+}
+
+/// VACUUM the database to reclaim pages freed by removed courses or cleared
+/// indexes (SQLite never shrinks the file on its own). Returns the new size.
+#[tauri::command]
+pub fn db_compact(state: State<AppState>) -> Result<u64> {
+    {
+        let conn = db(&state)?;
+        conn.execute_batch("VACUUM;")?;
+    }
+    Ok(db_file_bytes(&state.data_dir))
+}
+
+/// Drop the subtitle full-text index — the largest reclaimable chunk. Returns
+/// the number of cues removed; the file only shrinks after a compact.
+#[tauri::command]
+pub fn subtitle_index_clear(state: State<AppState>) -> Result<i64> {
+    let conn = db(&state)?;
+    let n = queries::subtitle_index_count(&conn)?;
+    queries::clear_subtitle_index(&conn)?;
+    Ok(n)
 }
 
 // ---------------------------------------------------------------------------

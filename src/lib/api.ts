@@ -10,6 +10,7 @@ import type {
   CourseDetail,
   CourseSummary,
   GcReport,
+  HistoryEntry,
   LectureView,
   LibraryStats,
   MediaTracks,
@@ -18,6 +19,7 @@ import type {
   RootDto,
   ScanResult,
   SearchHit,
+  StorageStats,
   SubtitleHit,
 } from "./types";
 
@@ -64,6 +66,9 @@ export const api = {
   deleteBookmark: (id: string) => invoke<void>("bookmark_delete", { id }),
   listAllBookmarks: () => invoke<BookmarkDetail[]>("bookmark_list_all"),
 
+  // history
+  history: () => invoke<HistoryEntry[]>("history_list"),
+
   // search_*
   search: (query: string) => invoke<SearchHit[]>("search_query", { query }),
   reindexSearch: () => invoke<number>("search_reindex"),
@@ -76,6 +81,11 @@ export const api = {
   // maintenance
   reconcileLibrary: () => invoke<ReconcileReport>("library_reconcile"),
   gcThumbnails: () => invoke<GcReport>("thumbnails_gc"),
+
+  // storage
+  storageStats: () => invoke<StorageStats>("storage_stats"),
+  compactDb: () => invoke<number>("db_compact"),
+  clearSubtitleIndex: () => invoke<number>("subtitle_index_clear"),
 
   // config_*
   getConfig: () => invoke<AppConfig>("config_get"),
