@@ -4,6 +4,10 @@ Forward-looking plan. For the shipped **baseline** (features, schema, commands,
 known limitations) see [PLAN.md](PLAN.md). Theme through v1.x: **"the best
 offline course player"** — deepen the core watch/learn loop, don't expand scope.
 
+**1.0.0 shipped** (first public release). The next feature release — backup &
+restore plus daily-use quick wins — is planned in
+[docs/v1.1-plan.md](docs/v1.1-plan.md).
+
 Visual / theming work (custom themes from a color palette, etc.) is tracked
 separately in [docs/visual-overhaul.md](docs/visual-overhaul.md) — **deferred**
 until the core features land; the palette→semantic-role mapping is already proven.
