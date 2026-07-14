@@ -68,24 +68,18 @@ everything Deskemy records lives in a single local SQLite database.
 ## Requirements
 
 - **Windows 10 or 11.**
-- **[libmpv](https://mpv.io/)** — Deskemy plays through `libmpv-2.dll`, mpv's
-  shared library, rather than bundling a media engine (so format support matches
-  mpv exactly). Note that the mpv **player** by itself usually does *not* include
-  `libmpv-2.dll` — you need the **libmpv** build:
-  - Download it from [mpv.io](https://mpv.io/) (Windows builds) or the
-    [libmpv releases](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/)
-    (`mpv-dev-x86_64-…`), and extract `libmpv-2.dll`.
-  - Put that DLL next to Deskemy's executable, anywhere on your `PATH`, or set
-    `DESKEMY_LIBMPV` to its full path.
+- The **WebView2** runtime — installed by the setup program if it's missing, and
+  already present on most Windows 10/11 systems.
 
-  Deskemy searches its own folder, your `PATH`, and common install locations
-  automatically, and prompts you if it still can't find the library.
-- The **WebView2** runtime — installed by the setup program if it's missing.
+Everything else is bundled. Deskemy plays through **libmpv** (mpv's media
+library, `libmpv-2.dll`), which ships inside both the installer and the portable
+zip — no separate mpv install needed. If you'd rather use your own build, Deskemy
+also picks up `libmpv-2.dll` from your `PATH` or from `DESKEMY_LIBMPV`.
 
 ## Install
 
 1. Download the latest installer (`.exe` or `.msi`) from the releases page.
-2. Run it. If mpv isn't already installed, add it (see above).
+2. Run it.
 3. Launch Deskemy → **Add Folder** → pick a course folder.
 
 It's a per-user install (no admin required). Uninstalling from **Settings → Apps**
@@ -96,10 +90,11 @@ reinstall resumes where you left off — delete that folder for a clean slate.
 ### Portable (no install)
 
 To run without installing, download the **portable zip**, extract it, and run
-`Deskemy.exe`. A `.portable` marker beside the executable keeps all data
-(library, settings, thumbnails) in a `data/` folder next to it, so nothing is
-written to `%APPDATA%` or the registry. Delete the folder to remove it entirely.
-(mpv and the WebView2 runtime still need to be present on the system.)
+`Deskemy.exe`. The bundled `libmpv-2.dll` sits right beside it, so playback works
+immediately. A `.portable` marker beside the executable keeps all data (library,
+settings, thumbnails) in a `data/` folder next to it, so nothing is written to
+`%APPDATA%` or the registry. Delete the folder to remove it entirely. (The
+WebView2 runtime still needs to be present on the system, as it is by default.)
 
 ## Build from source
 
@@ -116,7 +111,7 @@ npm run tauri build    # build an installer in src-tauri/target/release/bundle/
 |---|---|
 | **Frontend** | SvelteKit (`adapter-static` SPA) · Svelte 5 runes · TypeScript · Tailwind v4 |
 | **Backend** | Rust · Tauri v2 · SQLite + FTS5 via `rusqlite` (bundled) |
-| **Playback** | libmpv, loaded at runtime through FFI (`libloading`) — discovered from the system, not bundled |
+| **Playback** | libmpv, loaded at runtime through FFI (`libloading`) — bundled with the app, with system/`DESKEMY_LIBMPV` fallback |
 | **Storage** | Local SQLite database + a content-addressed thumbnail cache under the app data directory |
 
 Import runs in two phases — probe, then persist — so media probing happens off

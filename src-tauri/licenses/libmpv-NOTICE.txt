@@ -1,0 +1,30 @@
+Third-party component bundled with Deskemy
+==========================================
+
+libmpv-2.dll
+------------
+Deskemy plays media through libmpv, the client library of the mpv media player,
+which statically includes FFmpeg. This binary is bundled with Deskemy so it
+works out of the box; Deskemy loads it dynamically at runtime.
+
+Projects:
+  * mpv     - https://github.com/mpv-player/mpv   (LGPL-2.1-or-later, with GPL parts)
+  * FFmpeg  - https://ffmpeg.org                  (LGPL-2.1-or-later / GPL-2.0-or-later)
+
+The bundled libmpv-2.dll is an unmodified prebuilt Windows binary from:
+  https://github.com/zhongfly/mpv-winbuild
+  Release: 2026-07-14-e5486b96d7
+  File:    mpv-dev-x86_64-20260714-git-e5486b96d7.7z
+
+Because it is built with GPL-licensed components, this binary is distributed
+under the GNU General Public License, version 2 or later. The full license text
+is in GPL-2.0.txt.
+
+Corresponding source is available from the upstream mpv and FFmpeg projects and
+from the mpv-winbuild build scripts linked above.
+
+----------------------------------------------------------------------------
+
+Deskemy itself is licensed under the MIT License (see the LICENSE file in the
+installation directory or at the project repository). It links to libmpv only
+at runtime, through mpv's public C API, and is a separate and independent work.

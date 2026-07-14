@@ -95,9 +95,10 @@ unsafe impl Sync for Fns {}
 
 static FNS: OnceLock<Option<Fns>> = OnceLock::new();
 
-/// libmpv DLL is not bundled (it exceeds GitHub's file size limit). We discover
-/// it from the user's system instead: an explicit override, next to our exe (if
-/// an installer placed one), on PATH, or in common mpv install locations.
+/// Release builds bundle libmpv-2.dll next to the exe (it's too large to commit
+/// to git, so it lives in src-tauri/vendor/ and is copied in as a bundle
+/// resource). We still discover it robustly at runtime: an explicit override,
+/// next to our exe, on PATH, or in common mpv install locations.
 const DLL_NAMES: &[&str] = &["libmpv-2.dll", "mpv-2.dll", "libmpv.dll"];
 
 fn candidate_dirs() -> Vec<PathBuf> {

@@ -1,21 +1,15 @@
 ; Custom NSIS installer hooks for Deskemy.
 ;
-; WebView2 is already checked and installed by Tauri's own bootstrapper, so the
-; only runtime dependency we need to flag ourselves is mpv: Deskemy plays video
-; through the user's installed mpv (libmpv) rather than bundling a media engine.
+; Deskemy bundles libmpv-2.dll (mpv's shared library) next to the executable, so
+; video playback works out of the box with no separate mpv install. WebView2 is
+; checked and installed by Tauri's own bootstrapper. There are therefore no
+; runtime dependencies left for us to verify here; the hooks are kept as
+; extension points in case that changes.
 
 !macro NSIS_HOOK_PREINSTALL
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Look for mpv on the DLL/exe search path (covers PATH and Scoop shims).
-  SearchPath $0 "libmpv-2.dll"
-  StrCmp $0 "" 0 deskemy_mpv_ok
-  SearchPath $0 "mpv.exe"
-  StrCmp $0 "" 0 deskemy_mpv_ok
-    MessageBox MB_YESNO|MB_ICONINFORMATION "Deskemy plays video through libmpv-2.dll (mpv's shared library), which was not found.$\n$\nDownload the 'libmpv' build from mpv.io - the mpv player alone usually does not include it - and put libmpv-2.dll next to Deskemy or on your PATH. The app will also prompt you if it can't find it.$\n$\nOpen the mpv download page now?" IDNO deskemy_mpv_ok
-    ExecShell "open" "https://mpv.io/installation/"
-  deskemy_mpv_ok:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
