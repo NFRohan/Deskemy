@@ -125,8 +125,6 @@
     html: FileCode,
     text: FileText,
   };
-  let controlsHidden = $state(false);
-  let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let expandedSections = $state<Set<string>>(new Set());
   let bookmarks = $state<Bookmark[]>([]);
   let bookmarksFor = $state<string | null>(null);
@@ -449,7 +447,6 @@
     unlisten.forEach((u) => u());
     observer?.disconnect();
     timers.forEach(clearTimeout);
-    clearTimeout(hideTimer);
     setImmersive(false);
     getCurrentWindow().setFullscreen(false).catch(() => {});
     // Grab a resume frame for the Continue Watching entry, then stop. The
@@ -489,31 +486,6 @@
   function relativeSeek(delta: number) {
     api.playerSeek(Math.max(0, state.position + delta)).catch(() => {});
   }
-
-  // In fullscreen the control bar docks *below* the video, so revealing it
-  // shrinks the video (airspace — it can't overlay the native surface). To keep
-  // the video from rubberbanding on every shortcut, playback keys no longer
-  // reveal it: pause state drives it instead. Paused → controls stay up so you
-  // can scrub; playing → they auto-hide ~2.5s later. Windowed always shows them.
-  function armAutoHide() {
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => (controlsHidden = true), 2500);
-  }
-  function revealControls() {
-    controlsHidden = false;
-    if (ui.immersive && !state.paused) armAutoHide();
-  }
-  $effect(() => {
-    if (!ui.immersive) {
-      controlsHidden = false; // windowed: always visible
-      clearTimeout(hideTimer);
-    } else if (state.paused) {
-      controlsHidden = false; // paused in fullscreen: bring them up and keep them
-      clearTimeout(hideTimer);
-    } else if (!controlsHidden) {
-      armAutoHide(); // resumed while visible: fade the chrome back out
-    }
-  });
 
   function goBack() {
     // Esc / back button: leave immersive first if active, else return to the
@@ -813,12 +785,9 @@
     {/if}
 
     <!-- Control bar (docked below the video — never overlaps the native surface).
-         Auto-hides in fullscreen so the video is truly full-height. -->
-    {#if !controlsHidden}
+         Always visible, including in fullscreen. -->
       <div
         class="shrink-0 bg-surface border-t border-outline-variant px-4 py-3 flex flex-col gap-2"
-        role="presentation"
-        onmousemove={revealControls}
       >
       <div class="flex items-center gap-3">
         <span class="text-label-sm text-on-surface-variant tabular-nums w-12 text-right">
@@ -1016,7 +985,6 @@
         </div>
       </div>
       </div>
-    {/if}
       </div>
       <!-- Course content sidebar (Udemy-style: jump around the course here).
            Always rendered; width toggles so the flex row reliably reflows. -->

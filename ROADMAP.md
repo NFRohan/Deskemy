@@ -35,12 +35,11 @@ Legend: ✅ done · 🔜 next · ⏳ planned · 🔑 key enabler · ❌ cut (wit
   additions (N/⇧N, P content, R resources, B bookmark). Cheat sheet is a docked
   push-up panel (airspace).
 - ✅ **Up Next** — next lecture (title + duration) in the control bar; click to skip.
-- ✅ **Vanishing controls / Focus Mode** — in fullscreen the controls auto-hide
-  ~2.5s after playback resumes and the video reflows to true 100% height (no
-  leftover strip). Pause state drives them: pausing brings them up and keeps
-  them (scrub freely), resuming fades them out. Playback shortcuts stay silent
-  so the video never rubberbands; Esc exits fullscreen. (Reflow, not fade-over —
-  airspace means chrome can't overlay the native surface.)
+- ✅ **True 100% fullscreen** — `F` / Esc toggle real OS fullscreen with the
+  sidebar/topbar hidden and the video edge-to-edge. The control bar stays docked
+  and visible, including in fullscreen. (Auto-hide/vanishing-controls was built
+  then **cut**: docked chrome reflows the native window — airspace, can't overlay
+  — so hiding it made the video rubberband. Not worth it, and the bar looks good.)
 - ✅ **Remember playback prefs per course** — speed / subtitle selection +
   visibility / audio track (schema v6 `course_prefs`).
 - ⏳ **Sleep timer** — pause after N minutes / at end of lecture. (Small; not built yet.)
