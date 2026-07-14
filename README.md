@@ -90,10 +90,24 @@ a single SQLite database on your machine.
 2. Run it. If mpv isn't already installed, grab it (see above).
 3. Launch Deskemy → **Add Folder** → pick a course folder.
 
-Deskemy keeps its library index, settings, and thumbnail cache under
-`%APPDATA%\com.spooksy.deskemy`. To move it to another PC, copy that folder —
-your course files themselves are referenced by path, so keep them in the same
-location (or re-point via the library).
+The installer is a per-user install (no admin needed). Uninstalling from
+**Settings → Apps** removes the program, its shortcuts, and its registry entry
+cleanly. Your library index and settings under `%APPDATA%\com.spooksy.deskemy`
+are kept on purpose, so a reinstall picks up right where you left off — delete
+that folder yourself if you want a completely fresh start.
+
+### Portable (no install)
+
+Prefer to try it without installing anything? Download the **portable zip**,
+extract it anywhere, and run `Deskemy.exe`. A `.portable` marker next to the
+executable tells Deskemy to keep **everything** — library, settings,
+thumbnails — in a `data/` folder right beside it, so nothing is written to
+`%APPDATA%` or the registry. Delete the folder and it's gone without a trace.
+(You still need mpv and the WebView2 runtime available on the system.)
+
+> Moving to another PC? Copy the `%APPDATA%\com.spooksy.deskemy` folder (or the
+> portable `data/` folder). Your course files are referenced by path, so keep
+> them where they are — or re-point the library after moving.
 
 ## Build from source
 

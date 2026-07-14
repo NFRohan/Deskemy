@@ -215,6 +215,15 @@ mod imm {
     }
 }
 
+/// Portable mode: a `.portable` marker file next to the executable redirects all
+/// app data into a sibling `data/` folder, so a portable copy writes nothing
+/// outside its own directory. Returns None for a normal install (→ %APPDATA%).
+fn portable_data_dir() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    dir.join(".portable").exists().then(|| dir.join("data"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -230,7 +239,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
+            // Portable copies keep their data in a sibling `data/` folder; a
+            // normal install uses %APPDATA%.
+            let data_dir = match portable_data_dir() {
+                Some(d) => {
+                    tracing::info!(dir = %d.display(), "portable mode");
+                    d
+                }
+                None => app.path().app_data_dir()?,
+            };
             std::fs::create_dir_all(&data_dir)?;
 
             let db_path = data_dir.join("deskemy.db");
