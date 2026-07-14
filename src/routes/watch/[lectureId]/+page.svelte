@@ -199,31 +199,6 @@
     requestAnimationFrame(() => requestAnimationFrame(reportRect));
   }
 
-  // Airspace: the native mpv window is repositioned over IPC and always trails
-  // the DOM by a frame or two, so during a resize (fullscreen, a panel sliding
-  // out) you'd see it chase/bounce. Hide the native surface for the duration of
-  // the resize, keep re-measuring, then reveal it once the pane has settled at
-  // its final size — the pane's own black shows meanwhile, so it just fades out
-  // and back rather than ping-ponging. Audio keeps playing throughout.
-  let revealId: ReturnType<typeof setTimeout> | undefined;
-  function scheduleReveal(settleMs: number, ...measureAt: number[]) {
-    reportRectSoon();
-    for (const ms of measureAt) later(reportRect, ms);
-    clearTimeout(revealId);
-    const id = setTimeout(() => {
-      timers.delete(id);
-      api.playerShow(true).catch(() => {});
-    }, settleMs);
-    timers.add(id);
-    revealId = id;
-  }
-  // Hide the video, then reveal at `settleMs`. Call right after the state change
-  // that triggers the pane resize.
-  function maskResize(settleMs: number) {
-    api.playerShow(false).catch(() => {});
-    scheduleReveal(settleMs, 80, Math.max(80, settleMs - 60));
-  }
-
   function updateCrumbs() {
     if (!lecture) return;
     setCrumbs([
@@ -405,8 +380,10 @@
 
   function togglePlaylist() {
     showPlaylist = !showPlaylist;
-    // The sidebar animates its width (150ms); mask the video so it doesn't chase.
-    maskResize(240);
+    // Re-sync the mpv window to the resized pane a few times as the layout settles.
+    reportRectSoon();
+    later(reportRect, 80);
+    later(reportRect, 250);
   }
   function showSidebar(tab: "content" | "resources") {
     if (showPlaylist && sidebarTab === tab) {
@@ -423,7 +400,9 @@
   // so toggling it resizes the pane — re-sync the mpv window as it settles.
   function toggleShortcuts() {
     showShortcuts = !showShortcuts;
-    maskResize(200);
+    reportRectSoon();
+    later(reportRect, 80);
+    later(reportRect, 250);
   }
   function closeShortcuts() {
     if (!showShortcuts) return;
@@ -460,8 +439,8 @@
   }
   function toggleMenu(m: "sub" | "audio" | "chapters" | "bookmarks") {
     openMenu = openMenu === m ? null : m;
-    // The panel resizes the video pane; mask the video while it re-syncs.
-    maskResize(200);
+    // The panel resizes the video pane; re-sync the mpv window to it.
+    reportRectSoon();
   }
 
   onDestroy(() => {
@@ -490,17 +469,19 @@
   }
   async function toggleImmersive() {
     const on = !ui.immersive;
-    // Hide the video up front: this is the biggest resize (sidebar/titlebar
-    // reflow + the async OS fullscreen animation), so without masking it visibly
-    // stretches one axis then the other. Reveal once the window has settled.
-    api.playerShow(false).catch(() => {});
     setImmersive(on); // hide sidebar/titlebar so the video fills the window
     try {
       await getCurrentWindow().setFullscreen(on); // + take the whole display
     } catch {
       /* window may not support it; immersive still applies */
     }
-    scheduleReveal(400, 120, 320);
+    // The OS fullscreen resize is async and can land after the first measure,
+    // leaving the mpv window sized to the old (smaller) rect — the pane's black
+    // then shows around the video. Re-sync a couple of times as it settles.
+    reportRectSoon();
+    later(reportRect, 80);
+    later(reportRect, 250);
+    later(reportRect, 500);
   }
   function relativeSeek(delta: number) {
     api.playerSeek(Math.max(0, state.position + delta)).catch(() => {});

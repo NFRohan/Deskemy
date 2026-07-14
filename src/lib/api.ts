@@ -89,7 +89,6 @@ export const api = {
   playerPrev: () => invoke<void>("player_prev"),
   playerSetRect: (x: number, y: number, w: number, h: number) =>
     invoke<void>("player_set_rect", { x, y, w, h }),
-  playerShow: (visible: boolean) => invoke<void>("player_show", { visible }),
   playerStop: () => invoke<void>("player_stop"),
   playerGrabResumeFrame: (courseId: string) =>
     invoke<string | null>("player_grab_resume_frame", { courseId }),

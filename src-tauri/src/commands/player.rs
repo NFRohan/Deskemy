@@ -126,13 +126,6 @@ pub fn player_stop(state: State<AppState>) -> Result<()> {
     existing(&state, |p| p.stop())
 }
 
-/// Show/hide the native video window so the UI can mask resize lag (hide before
-/// a fullscreen/panel resize, reveal once the pane settles).
-#[tauri::command]
-pub fn player_show(state: State<AppState>, visible: bool) -> Result<()> {
-    existing(&state, |p| p.show(visible))
-}
-
 /// Grab the current video frame from the active player and store it as the
 /// course's Continue-Watching resume thumbnail. No-op (returns None) if no
 /// player is running. Returns the stored path on success.

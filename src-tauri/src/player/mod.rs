@@ -113,9 +113,6 @@ pub trait PlayerService: Send + Sync {
     fn set_muted(&self, muted: bool) -> Result<()>;
     /// Write the current video frame (no OSD/subs) to `path`.
     fn screenshot(&self, path: &str) -> Result<()>;
-    /// Show/hide the native video window. Used to mask the resize lag: hide
-    /// before a pane resize, then reveal once it has settled at its final size.
-    fn show(&self, visible: bool) -> Result<()>;
 }
 
 pub struct MpvPlayer {
@@ -214,10 +211,6 @@ impl PlayerService for MpvPlayer {
     }
     fn set_rect(&self, x: f64, y: f64, w: f64, h: f64) -> Result<()> {
         self.inner.set_rect(x, y, w, h);
-        Ok(())
-    }
-    fn show(&self, visible: bool) -> Result<()> {
-        self.inner.show(visible);
         Ok(())
     }
     fn stop(&self) -> Result<()> {
