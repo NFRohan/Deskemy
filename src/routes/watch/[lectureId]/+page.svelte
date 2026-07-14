@@ -647,7 +647,10 @@
     </a>
   </div>
 {:else}
-  <div class="flex flex-col h-full bg-black">
+  <!-- In fullscreen, pin to the whole viewport (fixed inset-0) so the layout can
+       never fall short of the window and leak the themed body background as a
+       black/white bar. Windowed stays in normal flow (h-full). -->
+  <div class="flex flex-col bg-black {ui.immersive ? 'fixed inset-0 z-30' : 'h-full'}">
     {#if error}
       <div class="bg-error/10 border-b border-error/30 text-error text-body-sm px-4 py-2">{error}</div>
     {/if}
