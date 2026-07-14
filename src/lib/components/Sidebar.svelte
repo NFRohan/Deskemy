@@ -113,11 +113,7 @@
         <PanelLeftOpen size={20} />
       </button>
     {:else}
-      <div
-        class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center font-bold text-on-primary-container shrink-0"
-      >
-        D
-      </div>
+      <img src="/logo.png" alt="Deskemy" class="w-8 h-8 rounded-lg shrink-0" />
       <div class="min-w-0 flex-1">
         <h1 class="text-headline-md text-primary">Deskemy</h1>
       </div>

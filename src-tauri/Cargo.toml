@@ -3,6 +3,7 @@ name = "deskemy"
 version = "1.0.0"
 description = "Deskemy — offline course player"
 authors = ["Spooksy"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
