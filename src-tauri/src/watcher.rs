@@ -103,19 +103,20 @@ fn handle_changes(app: &AppHandle, paths: Vec<PathBuf>) {
         .and_then(|g| g.as_ref().and_then(|p| p.state().lecture_id));
 
     tracing::info!(count = paths.len(), "auto-rescan: filesystem change detected");
-    let mut guard = match state.db.lock() {
-        Ok(g) => g,
-        Err(_) => return,
+    // Gather what to re-import under one brief lock (reads only).
+    let (active_course, courses, roots) = {
+        let conn = match state.db.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let active_course = active_lecture
+            .as_deref()
+            .and_then(|lid| queries::get_lecture_playback(&conn, lid).ok().flatten())
+            .map(|(_, course_id, _)| course_id);
+        let courses = queries::all_course_folders(&conn).unwrap_or_default();
+        let roots = queries::list_library_roots(&conn).unwrap_or_default();
+        (active_course, courses, roots)
     };
-    let conn: &mut Connection = &mut guard;
-
-    let active_course = active_lecture
-        .as_deref()
-        .and_then(|lid| queries::get_lecture_playback(conn, lid).ok().flatten())
-        .map(|(_, course_id, _)| course_id);
-
-    let courses = queries::all_course_folders(conn).unwrap_or_default();
-    let roots = queries::list_library_roots(conn).unwrap_or_default();
 
     // Dedup to the set of course folders that need re-importing.
     let mut to_import: HashMap<PathBuf, Option<String>> = HashMap::new();
@@ -136,12 +137,36 @@ fn handle_changes(app: &AppHandle, paths: Vec<PathBuf>) {
         }
     }
 
+    // Re-import each folder in three phases so the probe (phase 2) runs without
+    // the DB lock — a background rescan no longer freezes the UI.
     let mut changed = false;
     for (folder, root_id) in &to_import {
-        match state
-            .importer
-            .import_course(conn, root_id.as_deref(), folder)
-        {
+        let snap = {
+            let conn = match state.db.lock() {
+                Ok(g) => g,
+                Err(_) => continue,
+            };
+            match state.importer.read_snapshot(&conn, folder) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(folder = %folder.display(), error = %e, "auto-rescan snapshot failed");
+                    continue;
+                }
+            }
+        };
+        let plan = match state.importer.build(folder, &snap) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(folder = %folder.display(), error = %e, "auto-rescan build failed");
+                continue;
+            }
+        };
+        let mut guard = match state.db.lock() {
+            Ok(g) => g,
+            Err(_) => continue,
+        };
+        let conn: &mut Connection = &mut guard;
+        match state.importer.persist(conn, root_id.as_deref(), &snap, &plan) {
             Ok(_) => {
                 changed = true;
                 tracing::info!(folder = %folder.display(), "auto-rescan re-imported course");
@@ -152,7 +177,6 @@ fn handle_changes(app: &AppHandle, paths: Vec<PathBuf>) {
         }
     }
 
-    drop(guard);
     if changed {
         let _ = app.emit("library:changed", ());
     }

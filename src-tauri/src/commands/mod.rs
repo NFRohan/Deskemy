@@ -86,10 +86,19 @@ fn watch_path(app: &AppHandle, path: &str) {
 /// Import a single folder as one course.
 #[tauri::command]
 pub fn library_import_course(app: AppHandle, state: State<AppState>, path: String) -> Result<String> {
+    let course_dir = Path::new(&path);
+    // Phase 1 (brief lock): snapshot the DB.
+    let snap = {
+        let conn = db(&state)?;
+        state.importer.read_snapshot(&conn, course_dir)?
+    };
+    // Phase 2 (NO lock): scan + probe — the slow part, so the UI stays responsive.
+    let plan = state.importer.build(course_dir, &snap)?;
+    // Phase 3 (brief lock): persist.
     let id = {
         let mut guard = db(&state)?;
         let conn: &mut Connection = &mut guard;
-        state.importer.import_course(conn, None, Path::new(&path))?
+        state.importer.persist(conn, None, &snap, &plan)?
     };
     watch_path(&app, &path);
     Ok(id)
@@ -127,10 +136,21 @@ pub fn library_scan_root(
         if !path.is_dir() {
             continue;
         }
-        let mut guard = db(&state)?;
-        let conn: &mut Connection = &mut guard;
-        match state.importer.import_course(conn, Some(&root_id), &path) {
-            Ok(_) => imported += 1,
+        // Three-phase per course so each probe (phase 2) runs lock-free — a big
+        // root scan no longer freezes the UI for its whole duration.
+        let result = (|| -> Result<()> {
+            let snap = {
+                let conn = db(&state)?;
+                state.importer.read_snapshot(&conn, &path)?
+            };
+            let plan = state.importer.build(&path, &snap)?;
+            let mut guard = db(&state)?;
+            let conn: &mut Connection = &mut guard;
+            state.importer.persist(conn, Some(&root_id), &snap, &plan)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => imported += 1,
             Err(e) => errors.push(format!("{}: {e}", path.display())),
         }
     }

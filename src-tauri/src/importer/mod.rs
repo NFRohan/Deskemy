@@ -76,29 +76,60 @@ struct PlannedSection {
     lectures: Vec<PlannedLecture>,
 }
 
+/// Phase-1 snapshot (the DB reads an import needs) carried from `read_snapshot`
+/// to `build`/`persist`, so the slow probe between them holds no DB lock. Opaque
+/// to callers.
+pub struct ImportSnapshot {
+    folder_path: String,
+    title: String,
+    prior: HashMap<String, PriorMeta>,
+    preserved: Option<Preserved>,
+}
+
+/// Phase-2 output: the fully-probed, in-memory plan for a course, ready to
+/// persist. Opaque to callers.
+pub struct ImportPlan {
+    scan: ScannedTree,
+    sections: Vec<PlannedSection>,
+}
+
+impl ImportPlan {
+    /// Total lectures across all sections (0 = nothing playable found).
+    pub fn lecture_count(&self) -> usize {
+        self.sections.iter().map(|s| s.lectures.len()).sum()
+    }
+}
+
 impl Importer {
     pub fn new(prober: Box<dyn MediaProber>) -> Self {
         Self { prober }
     }
 
-    /// Import a single folder as one course. Re-importing an already-known
-    /// folder replaces it (simple reconcile for now).
+    /// Import a single folder as one course, all three phases under the caller's
+    /// lock. Commands instead call `read_snapshot` / `build` / `persist`
+    /// separately so the slow probe in `build` runs without the DB lock; this
+    /// wrapper is for tests and simple callers.
     pub fn import_course(
         &self,
         conn: &mut Connection,
         root_id: Option<&str>,
         course_dir: &Path,
     ) -> Result<String> {
+        let snap = self.read_snapshot(conn, course_dir)?;
+        let plan = self.build(course_dir, &snap)?;
+        self.persist(conn, root_id, &snap, &plan)
+    }
+
+    /// Phase 1 (brief lock): snapshot what the DB knows about this folder — prior
+    /// media (to skip re-probing unchanged files) and user data (to survive the
+    /// delete + reinsert in `persist`).
+    pub fn read_snapshot(&self, conn: &Connection, course_dir: &Path) -> Result<ImportSnapshot> {
         let folder_path = course_dir.to_string_lossy().to_string();
         let title = course_dir
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| folder_path.clone());
 
-        let scan = FilesystemScanner.scan(course_dir)?;
-
-        // Snapshot the prior import: media (to skip re-probing unchanged files)
-        // and user data (to survive the delete + reinsert below).
         let existing = queries::find_course_by_path(conn, &folder_path)?;
         let prior = match &existing {
             Some(id) => Self::snapshot_prior(conn, id)?,
@@ -108,38 +139,65 @@ impl Importer {
             Some(id) => Some(Self::snapshot_preserved(conn, id)?),
             None => None,
         };
+        Ok(ImportSnapshot {
+            folder_path,
+            title,
+            prior,
+            preserved,
+        })
+    }
 
-        let sections = self.plan_sections(&scan, &prior)?;
-        if sections.iter().all(|s| s.lectures.is_empty()) {
+    /// Phase 2 (no lock): scan the folder and build the fully-probed plan. This
+    /// is the slow part (mpv probing) — deliberately holds no DB lock.
+    pub fn build(&self, course_dir: &Path, snap: &ImportSnapshot) -> Result<ImportPlan> {
+        let scan = FilesystemScanner.scan(course_dir)?;
+        let sections = self.plan_sections(&scan, &snap.prior)?;
+        Ok(ImportPlan { scan, sections })
+    }
+
+    /// Phase 3 (brief lock): persist the plan — replace any prior import of the
+    /// same folder and restore preserved user data. Fast (writes only).
+    pub fn persist(
+        &self,
+        conn: &mut Connection,
+        root_id: Option<&str>,
+        snap: &ImportSnapshot,
+        plan: &ImportPlan,
+    ) -> Result<String> {
+        if plan.lecture_count() == 0 {
             return Err(DeskemyError::Import(format!(
-                "no playable video files found in {folder_path}"
+                "no playable video files found in {}",
+                snap.folder_path
             )));
         }
+        let sections = &plan.sections;
+        let scan = &plan.scan;
 
         let course_id = new_id();
-        let thumbnail = detect_thumbnail(&scan);
+        let thumbnail = detect_thumbnail(scan);
 
         let tx = conn.transaction()?;
-        // Replace any previous import of the same folder — atomic with the
-        // re-insert, so a mid-import failure can't destroy the old course.
-        if let Some(existing) = &existing {
-            queries::delete_course(&tx, existing)?;
+        // Replace any previous import of the same folder. Re-read inside the tx:
+        // the DB was unlocked during the probe, and folder_path is UNIQUE, so
+        // replace whatever occupies it now (atomic with the re-insert).
+        if let Some(existing) = queries::find_course_by_path(&tx, &snap.folder_path)? {
+            queries::delete_course(&tx, &existing)?;
         }
         queries::insert_course(
             &tx,
             &course_id,
             root_id,
-            &title,
-            &folder_path,
+            &snap.title,
+            &snap.folder_path,
             crate::domain::ScanStatus::Scanning.as_str(),
         )?;
-        queries::fts_insert(&tx, "course", &course_id, &course_id, &title)?;
+        queries::fts_insert(&tx, "course", &course_id, &course_id, &snap.title)?;
 
         let mut lecture_count: i64 = 0;
         let mut total_secs: f64 = 0.0;
         let mut any_duration = false;
 
-        for section in &sections {
+        for section in sections {
             queries::insert_section(
                 &tx,
                 &section.id,
@@ -191,7 +249,7 @@ impl Importer {
         }
 
         // Second pass: subtitles + attachments, now that lecture ids exist.
-        self.associate_resources(&tx, &course_id, &scan, &sections)?;
+        self.associate_resources(&tx, &course_id, scan, sections)?;
 
         queries::update_course_stats(
             &tx,
@@ -203,9 +261,9 @@ impl Importer {
         )?;
 
         // Restore preserved user data, remapped to new lecture ids by file path.
-        if let Some(p) = &preserved {
+        if let Some(p) = &snap.preserved {
             let mut by_path: HashMap<&str, &str> = HashMap::new();
-            for s in &sections {
+            for s in sections {
                 for l in &s.lectures {
                     by_path.insert(l.path.as_str(), l.id.as_str());
                 }
