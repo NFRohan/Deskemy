@@ -137,6 +137,41 @@
 
   const sliderValue = $derived(seeking ? seekValue : state.position);
 
+  // The section the current lecture is in.
+  const currentSection = $derived.by(() => {
+    if (!course) return null;
+    return course.sections.find((s) => s.lectures.some((l) => l.id === state.lecture_id)) ?? null;
+  });
+
+  // Resources for the current section only (grouped by lecture, then section-
+  // level), so the panel isn't a course-wide dump.
+  const sectionResources = $derived.by(() => {
+    const sec = currentSection;
+    if (!sec) return [];
+    const byLecture = new Map<string, Attachment[]>();
+    const sectionLevel: Attachment[] = [];
+    for (const a of attachments) {
+      if (a.section_id !== sec.id) continue;
+      if (a.lecture_id) {
+        const arr = byLecture.get(a.lecture_id) ?? [];
+        arr.push(a);
+        byLecture.set(a.lecture_id, arr);
+      } else {
+        sectionLevel.push(a);
+      }
+    }
+    const groups: { title: string; items: Attachment[] }[] = [];
+    for (const l of sec.lectures) {
+      const items = byLecture.get(l.id);
+      if (items?.length) groups.push({ title: l.title, items });
+    }
+    if (sectionLevel.length) groups.push({ title: "Section resources", items: sectionLevel });
+    return groups;
+  });
+  const sectionResourceCount = $derived(
+    sectionResources.reduce((n, g) => n + g.items.length, 0),
+  );
+
   // The next playable lecture in the course, for the Up Next control.
   const upNext = $derived.by(() => {
     if (!course) return null;
@@ -945,7 +980,7 @@
                   ? 'bg-surface-container-highest text-on-surface'
                   : 'text-on-surface-variant hover:text-on-surface'}"
               >
-                Resources{#if attachments.length} · {attachments.length}{/if}
+                Resources{#if sectionResourceCount} · {sectionResourceCount}{/if}
               </button>
             </div>
             <button
@@ -958,31 +993,49 @@
           </div>
           <div class="flex-1 overflow-y-auto">
             {#if sidebarTab === "resources"}
-              {#if attachments.length === 0}
+              {#if currentSection}
+                <div class="px-3 py-2 border-b border-outline-variant">
+                  <p class="text-label-sm text-on-surface-variant">
+                    Resources in <span class="text-on-surface">{currentSection.title}</span>
+                  </p>
+                </div>
+              {/if}
+              {#if sectionResources.length === 0}
                 <div class="p-4 text-body-sm text-on-surface-variant">
-                  No resources in this course.
+                  No resources in this section.
                 </div>
               {:else}
-                <ul class="divide-y divide-outline-variant">
-                  {#each attachments as a (a.id)}
-                    {@const Icon = KIND_ICON[a.kind ?? ""] ?? File}
-                    <li>
-                      <button
-                        onclick={() => openResource(a)}
-                        class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface-container transition-colors"
-                        title="Open with default app"
-                      >
-                        <Icon size={16} class="text-on-surface-variant shrink-0" />
-                        <span class="flex-1 min-w-0 truncate text-body-sm text-on-surface">{a.name}</span>
-                        {#if a.kind}
-                          <span class="text-label-sm text-on-surface-variant shrink-0 uppercase">
-                            {a.kind}
-                          </span>
-                        {/if}
-                      </button>
-                    </li>
-                  {/each}
-                </ul>
+                {#each sectionResources as group (group.title)}
+                  <div>
+                    <p
+                      class="px-3 pt-3 pb-1 text-label-sm text-on-surface-variant uppercase tracking-wide truncate"
+                    >
+                      {group.title}
+                    </p>
+                    <ul>
+                      {#each group.items as a (a.id)}
+                        {@const Icon = KIND_ICON[a.kind ?? ""] ?? File}
+                        <li>
+                          <button
+                            onclick={() => openResource(a)}
+                            class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface-container transition-colors"
+                            title="Open with default app"
+                          >
+                            <Icon size={16} class="text-on-surface-variant shrink-0" />
+                            <span class="flex-1 min-w-0 truncate text-body-sm text-on-surface">
+                              {a.name}
+                            </span>
+                            {#if a.kind}
+                              <span class="text-label-sm text-on-surface-variant shrink-0 uppercase">
+                                {a.kind}
+                              </span>
+                            {/if}
+                          </button>
+                        </li>
+                      {/each}
+                    </ul>
+                  </div>
+                {/each}
               {/if}
             {:else if course}
               {#each course.sections as section (section.id)}
