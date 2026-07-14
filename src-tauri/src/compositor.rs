@@ -10,7 +10,7 @@
 use crate::error::{DeskemyError, Result};
 use crate::mpv::MpvRenderContext;
 use std::ffi::CStr;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use tauri::{AppHandle, Manager};
 use windows::core::Interface;
@@ -36,6 +36,94 @@ use windows::Win32::Graphics::Dxgi::{
 
 /// mpv software output format matching a BGRA8 D3D texture (opaque; X byte).
 const SW_FORMAT: &CStr = c"bgr0";
+
+// ─────────────────────────────── Path decision ─────────────────────────────
+// Whether this run uses the compositing player (mpv beneath a transparent
+// WebView, DOM overlays float over the video) or the native `wid` child-window
+// player (video on top, panels dock). Decided once, cached, read by both the UI
+// (`compositor_enabled`) and the lazily-created player so they always agree.
+
+static ACTIVE: OnceLock<bool> = OnceLock::new();
+
+/// Decide once (and cache) whether the compositing player path is active.
+///
+/// Default is **on**: Windows, when a GPU/DirectComposition probe succeeds — so
+/// the video pane can host DOM overlays (the floating cheat sheet, transparent
+/// pane, etc.). Machines where the probe fails (no BGRA-capable D3D11 device or
+/// DirectComposition unavailable — old GPUs, some VMs / RDP sessions) fall back
+/// to the native `wid` child-window player, which always works. Override with
+/// `DESKEMY_COMPOSITOR`: `0`/`off`/`false`/`no` forces the wid player; any other
+/// value (`1`, `force`, …) forces compositing and skips the probe (that's what
+/// `DESKEMY_COMPOSITOR=1 npm run tauri dev` does).
+///
+/// Warmed from `setup()` on the main thread; safe to call again — it's cached.
+pub fn decide() -> bool {
+    *ACTIVE.get_or_init(|| match std::env::var("DESKEMY_COMPOSITOR").ok().as_deref() {
+        Some("0" | "off" | "false" | "no") => {
+            tracing::info!("compositor: forced off via DESKEMY_COMPOSITOR → wid player");
+            false
+        }
+        Some(_) => {
+            tracing::info!("compositor: forced on via DESKEMY_COMPOSITOR (probe skipped)");
+            true
+        }
+        None => match unsafe { probe() } {
+            Ok(()) => {
+                tracing::info!("compositor: GPU/DComp probe passed → compositing player");
+                true
+            }
+            Err(e) => {
+                tracing::info!(error = ?e, "compositor: probe failed → wid player fallback");
+                false
+            }
+        },
+    })
+}
+
+/// The cached decision (false until `decide` has run).
+pub fn is_active() -> bool {
+    ACTIVE.get().copied().unwrap_or(false)
+}
+
+/// Side-effect-free feasibility probe: build the same D3D11 + DirectComposition
+/// objects the compositor needs, then drop them. Unlike `feasibility_test` it
+/// attaches nothing to the window and leaks nothing — it only answers "would the
+/// GPU path work here?". These three calls are what actually fail on unsupported
+/// setups; the mpv render context is guaranteed by our bundled libmpv.
+unsafe fn probe() -> windows::core::Result<()> {
+    let mut device: Option<ID3D11Device> = None;
+    D3D11CreateDevice(
+        None,
+        D3D_DRIVER_TYPE_HARDWARE,
+        HMODULE::default(),
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+        None,
+        D3D11_SDK_VERSION,
+        Some(&mut device),
+        None,
+        None,
+    )?;
+    let device = device.unwrap();
+    let dxgi_device: IDXGIDevice = device.cast()?;
+    let adapter = dxgi_device.GetAdapter()?;
+    let factory: IDXGIFactory2 = adapter.GetParent()?;
+    let desc = DXGI_SWAP_CHAIN_DESC1 {
+        Width: 16,
+        Height: 16,
+        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+        BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+        BufferCount: 2,
+        SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+        AlphaMode: DXGI_ALPHA_MODE_PREMULTIPLIED,
+        Scaling: DXGI_SCALING_STRETCH,
+        ..Default::default()
+    };
+    let _swapchain: IDXGISwapChain1 =
+        factory.CreateSwapChainForComposition(&device, &desc, None)?;
+    let _dcomp: IDCompositionDevice = DCompositionCreateDevice(&dxgi_device)?;
+    Ok(())
+}
 
 /// Run the solid-color compositing test against the main window.
 pub fn feasibility_test(app: &AppHandle) -> Result<()> {

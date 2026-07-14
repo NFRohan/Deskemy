@@ -144,10 +144,12 @@ impl MpvPlayer {
     pub fn new(app: AppHandle) -> Result<Self> {
         let main_hwnd = main_window_hwnd(&app)?;
 
-        // Opt-in compositing path (Windows): mpv renders into a DirectComposition
-        // visual instead of a child window, so DOM + video resize atomically.
+        // Default compositing path (Windows): mpv renders into a DirectComposition
+        // visual instead of a child window, so DOM + video resize atomically. The
+        // decision was made and cached at startup (probe-gated, wid fallback); we
+        // just read it so the player matches what the UI was told.
         #[cfg(windows)]
-        let want_compositor = std::env::var_os("DESKEMY_COMPOSITOR").is_some();
+        let want_compositor = crate::compositor::is_active();
         #[cfg(not(windows))]
         let want_compositor = false;
 

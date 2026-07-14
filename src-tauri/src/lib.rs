@@ -45,11 +45,20 @@ fn compositor_test(app: tauri::AppHandle) -> std::result::Result<(), String> {
     }
 }
 
-/// Whether the compositing player path is active (Windows + DESKEMY_COMPOSITOR).
-/// The UI makes the video pane transparent so the composited video shows through.
+/// Whether the compositing player path is active this run (see `compositor::decide`
+/// — default-on on Windows, GPU/DComp probe-gated, with a native `wid` fallback and
+/// a `DESKEMY_COMPOSITOR` override). The UI makes the video pane transparent so the
+/// composited video shows through, and floats overlays over it.
 #[tauri::command]
 fn compositor_enabled() -> bool {
-    cfg!(windows) && std::env::var_os("DESKEMY_COMPOSITOR").is_some()
+    #[cfg(windows)]
+    {
+        compositor::decide()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 /// Enter/exit the player's fullscreen, with a native-feeling transition from a
@@ -270,6 +279,14 @@ pub fn run() {
 
             tracing::info!(db = %db_path.display(), "database ready");
             app.manage(AppState::new(conn, config, data_dir, config_path));
+
+            // Decide the player compositing path once, up front, on the main
+            // thread (DirectComposition is UI-thread bound). Both the UI and the
+            // lazily-created player read this cached decision so their layout and
+            // rendering always agree; the probe falls back to the wid player on
+            // machines whose GPU/DComp can't host the composited video.
+            #[cfg(windows)]
+            tracing::info!(active = compositor::decide(), "player compositing path");
 
             // Filesystem watcher: auto-rescan course folders on change.
             match watcher::LibraryWatcher::start(app.handle().clone()) {

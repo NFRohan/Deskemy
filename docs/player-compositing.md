@@ -6,6 +6,14 @@ lag/bounce for good, and (bonus) unlocking real overlays over the video.
 
 Status legend: ☐ todo · ◐ in progress · ☑ done · ✗ blocked
 
+> **Status (1.0.x):** the compositing path is now the **default on Windows**, not
+> just a dev flag. `compositor::decide()` runs a side-effect-free GPU/DirectComposition
+> probe once at startup and caches it: probe passes → compositing player; probe
+> fails (old GPU, some VMs/RDP) → automatic fallback to the native `wid` player, so
+> video always works. `DESKEMY_COMPOSITOR=0` forces wid; `=1`/any value forces
+> compositing and skips the probe (what `npm run tauri dev` sets). This supersedes
+> the original "keep wid as default until parity" guardrail below.
+
 ---
 
 ## Why we're here
@@ -134,8 +142,10 @@ for a course player (slides/talking-heads) may even be good enough to ship.
 
 ## Guardrails
 
-- Keep the working `wid` player as the default until the new path reaches parity;
-  gate the compositor behind a flag. Never leave `main` (or this branch's tip)
-  with a broken player.
+- ~~Keep the working `wid` player as the default until the new path reaches parity;
+  gate the compositor behind a flag.~~ **Superseded (1.0.x):** compositor is now
+  default-on, but *probe-gated with an automatic `wid` fallback* (see the Status
+  note at the top) — so the guarantee "never ship a broken player" is preserved by
+  the fallback rather than by keeping wid the default.
 - Windows-first. Linux stays on `wid` behind cfg until Phase 4.
 - Each phase must build green and be user-testable in isolation.
