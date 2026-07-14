@@ -12,6 +12,8 @@ export interface CourseSummary {
   last_opened_at: number | null;
   completed_count: number;
   resume_thumbnail_path: string | null;
+  last_lecture_id: string | null;
+  last_lecture_title: string | null;
   tags: string[];
 }
 

@@ -42,6 +42,9 @@ pub struct CourseSummary {
     pub completed_count: i64,
     /// Frame grabbed at the resume point, for the Continue Watching entry.
     pub resume_thumbnail_path: Option<String>,
+    /// The lecture to resume (continue-watching pointer) and its title.
+    pub last_lecture_id: Option<String>,
+    pub last_lecture_title: Option<String>,
     /// User-defined tags (sorted).
     pub tags: Vec<String>,
 }

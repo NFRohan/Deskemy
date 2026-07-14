@@ -33,10 +33,10 @@ struct Preserved {
     thumbnail_path: Option<String>,
     resume_thumbnail_path: Option<String>,
     tags: Vec<String>,
-    /// (file_path, position_seconds, completed, last_watched_at)
-    progress: Vec<(String, f64, bool, Option<i64>)>,
-    /// (file_path, position_seconds, label, created_at)
-    bookmarks: Vec<(String, f64, Option<String>, i64)>,
+    /// (file_path, content_hash, position_seconds, completed, last_watched_at)
+    progress: Vec<(String, Option<String>, f64, bool, Option<i64>)>,
+    /// (file_path, content_hash, position_seconds, label, created_at)
+    bookmarks: Vec<(String, Option<String>, f64, Option<String>, i64)>,
 }
 
 /// Metadata carried over from a previous import so an unchanged file's video
@@ -48,6 +48,7 @@ struct PriorMeta {
     container: Option<String>,
     video_codec: Option<String>,
     playable: bool,
+    content_hash: Option<String>,
     chapters: Vec<crate::media::Chapter>,
 }
 
@@ -65,6 +66,7 @@ struct PlannedLecture {
     video_codec: Option<String>,
     playable: bool,
     duration: Option<f64>,
+    content_hash: Option<String>,
     chapters: Vec<crate::media::Chapter>,
 }
 
@@ -159,7 +161,7 @@ impl Importer {
         course_dir: &Path,
     ) -> Result<String> {
         let snap = self.read_snapshot(conn, course_dir)?;
-        let plan = self.build(course_dir, &snap)?;
+        let plan = self.build(course_dir, &snap, |_, _| {})?;
         self.persist(conn, root_id, &snap, &plan)
     }
 
@@ -191,10 +193,16 @@ impl Importer {
     }
 
     /// Phase 2 (no lock): scan the folder and build the fully-probed plan. This
-    /// is the slow part (mpv probing) — deliberately holds no DB lock.
-    pub fn build(&self, course_dir: &Path, snap: &ImportSnapshot) -> Result<ImportPlan> {
+    /// is the slow part (mpv probing) — deliberately holds no DB lock. `progress`
+    /// is called `(done, total)` as each video is processed, for a live UI.
+    pub fn build(
+        &self,
+        course_dir: &Path,
+        snap: &ImportSnapshot,
+        progress: impl Fn(usize, usize),
+    ) -> Result<ImportPlan> {
         let scan = FilesystemScanner.scan(course_dir)?;
-        let sections = self.plan_sections(&scan, &snap.prior)?;
+        let sections = self.plan_sections(&scan, &snap.prior, &progress)?;
         Ok(ImportPlan { scan, sections })
     }
 
@@ -267,7 +275,7 @@ impl Importer {
                         playable: lec.playable,
                         file_size: Some(lec.size),
                         mtime: Some(lec.mtime),
-                        content_hash: None,
+                        content_hash: lec.content_hash.as_deref(),
                     },
                 )?;
                 queries::fts_insert(&tx, "lecture", &lec.id, &course_id, &lec.title)?;
@@ -303,14 +311,27 @@ impl Importer {
             crate::domain::ScanStatus::Ready.as_str(),
         )?;
 
-        // Restore preserved user data, remapped to new lecture ids by file path.
+        // Restore preserved user data, remapped to new lecture ids by file path,
+        // falling back to content hash so a renamed file keeps its data.
         if let Some(p) = &snap.preserved {
             let mut by_path: HashMap<&str, &str> = HashMap::new();
+            let mut by_hash: HashMap<&str, &str> = HashMap::new();
             for s in sections {
                 for l in &s.lectures {
                     by_path.insert(l.path.as_str(), l.id.as_str());
+                    if let Some(h) = &l.content_hash {
+                        by_hash.insert(h.as_str(), l.id.as_str());
+                    }
                 }
             }
+            // Resolve an old (path, hash) to a new lecture id: exact path first,
+            // then hash (the file was renamed/moved).
+            let remap = |path: &str, hash: &Option<String>| -> Option<&str> {
+                by_path
+                    .get(path)
+                    .copied()
+                    .or_else(|| hash.as_deref().and_then(|h| by_hash.get(h).copied()))
+            };
 
             // Only carry over thumbnails whose files still exist, so a dangling
             // path doesn't win over a freshly-detected cover.
@@ -335,13 +356,13 @@ impl Importer {
             for tag in &p.tags {
                 queries::add_tag(&tx, &course_id, tag)?;
             }
-            for (path, pos, completed, watched) in &p.progress {
-                if let Some(&nid) = by_path.get(path.as_str()) {
+            for (path, hash, pos, completed, watched) in &p.progress {
+                if let Some(nid) = remap(path, hash) {
                     queries::restore_progress(&tx, nid, *pos, *completed, *watched)?;
                 }
             }
-            for (path, pos, label, created) in &p.bookmarks {
-                if let Some(&nid) = by_path.get(path.as_str()) {
+            for (path, hash, pos, label, created) in &p.bookmarks {
+                if let Some(nid) = remap(path, hash) {
                     queries::restore_bookmark(
                         &tx,
                         &new_id(),
@@ -395,7 +416,7 @@ impl Importer {
         }
 
         let mut map = HashMap::new();
-        for (file_path, size, mtime, duration, container, video_codec, playable) in
+        for (file_path, size, mtime, duration, container, video_codec, playable, content_hash) in
             queries::course_lecture_media(conn, course_id)?
         {
             let chapters = chapters_by_file.remove(&file_path).unwrap_or_default();
@@ -408,6 +429,7 @@ impl Importer {
                     container,
                     video_codec,
                     playable,
+                    content_hash,
                     chapters,
                 },
             );
@@ -417,10 +439,12 @@ impl Importer {
 
     /// Build the in-memory section/lecture plan (ordered, cleaned, probed).
     /// Files whose path + size + mtime match `prior` reuse its metadata.
+    /// `progress` is called `(done, total)` as each video is processed.
     fn plan_sections(
         &self,
         scan: &ScannedTree,
         prior: &HashMap<String, PriorMeta>,
+        progress: &impl Fn(usize, usize),
     ) -> Result<Vec<PlannedSection>> {
         // Group video files by their top-level section key ("" = course root).
         let mut videos_by_key: HashMap<String, Vec<&ScannedFile>> = HashMap::new();
@@ -429,6 +453,9 @@ impl Importer {
                 videos_by_key.entry(section_key(f)).or_default().push(f);
             }
         }
+
+        let total = scan.files.iter().filter(|f| f.kind == FileKind::Video).count();
+        let mut done = 0usize;
 
         let mut keys: Vec<String> = videos_by_key.keys().cloned().collect();
         keys.sort_by_key(|k| section_sort_key(k));
@@ -475,6 +502,13 @@ impl Importer {
                     }
                 };
 
+                // Content hash (size + bounded head) for move/rename detection:
+                // reuse the stored one for an unchanged file, else compute once.
+                let content_hash = match reuse {
+                    Some(p) if p.content_hash.is_some() => p.content_hash.clone(),
+                    _ => hash_lecture_file(&v.path, v.size),
+                };
+
                 let stem = Path::new(&v.name)
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
@@ -493,8 +527,12 @@ impl Importer {
                     video_codec,
                     playable,
                     duration,
+                    content_hash,
                     chapters,
                 });
+
+                done += 1;
+                progress(done, total);
             }
 
             sections.push(PlannedSection {

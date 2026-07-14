@@ -12,7 +12,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::MutexGuard;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::config::AppConfig;
 use crate::state::AppState;
@@ -105,7 +105,7 @@ pub async fn library_import_course(
                 let conn = db(&state)?;
                 state.importer.read_snapshot(&conn, course_dir)?
             };
-            let plan = state.importer.build(course_dir, &snap)?;
+            let plan = state.importer.build(course_dir, &snap, |_, _| {})?;
             (snap, plan)
         }
     };
@@ -126,16 +126,19 @@ pub async fn library_import_course(
 /// the probe is slow (one mpv open per video) and would otherwise freeze the UI.
 #[tauri::command]
 pub async fn library_preview_import(
+    app: AppHandle,
     state: State<'_, AppState>,
     path: String,
 ) -> Result<ImportPreview> {
     let course_dir = Path::new(&path);
-    // Phases 1+2 (probe is lock-free).
+    // Phases 1+2 (probe is lock-free). Stream per-video progress to the UI.
     let snap = {
         let conn = db(&state)?;
         state.importer.read_snapshot(&conn, course_dir)?
     };
-    let plan = state.importer.build(course_dir, &snap)?;
+    let plan = state.importer.build(course_dir, &snap, |done, total| {
+        let _ = app.emit("import:progress", (done, total));
+    })?;
 
     let preview = ImportPreview {
         title: snap.title().to_string(),
@@ -195,7 +198,7 @@ pub async fn library_scan_root(
                 let conn = db(&state)?;
                 state.importer.read_snapshot(&conn, &path)?
             };
-            let plan = state.importer.build(&path, &snap)?;
+            let plan = state.importer.build(&path, &snap, |_, _| {})?;
             let mut guard = db(&state)?;
             let conn: &mut Connection = &mut guard;
             state.importer.persist(conn, Some(&root_id), &snap, &plan)?;

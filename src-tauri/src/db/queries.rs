@@ -298,13 +298,24 @@ pub fn insert_subtitle(
 /// container, video_codec, playable). Used to reuse metadata for unchanged
 /// files on rescan instead of re-probing them.
 #[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 pub fn course_lecture_media(
     conn: &Connection,
     course_id: &str,
-) -> Result<Vec<(String, Option<i64>, Option<i64>, Option<f64>, Option<String>, Option<String>, bool)>>
-{
+) -> Result<
+    Vec<(
+        String,
+        Option<i64>,
+        Option<i64>,
+        Option<f64>,
+        Option<String>,
+        Option<String>,
+        bool,
+        Option<String>,
+    )>,
+> {
     let mut stmt = conn.prepare(
-        "SELECT file_path, file_size, mtime, duration, container, video_codec, playable
+        "SELECT file_path, file_size, mtime, duration, container, video_codec, playable, content_hash
            FROM lectures WHERE course_id = ?1",
     )?;
     let rows = stmt
@@ -317,6 +328,7 @@ pub fn course_lecture_media(
                 r.get(4)?,
                 r.get(5)?,
                 r.get::<_, i64>(6)? != 0,
+                r.get(7)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -378,36 +390,38 @@ pub fn lecture_file_path(conn: &Connection, lecture_id: &str) -> Result<Option<S
 }
 
 /// (file_path, position_seconds, completed, last_watched_at) per progress row.
+/// (file_path, content_hash, position_seconds, completed, last_watched_at) per
+/// progress row — content_hash lets a renamed file keep its progress.
 pub fn progress_with_files(
     conn: &Connection,
     course_id: &str,
-) -> Result<Vec<(String, f64, bool, Option<i64>)>> {
+) -> Result<Vec<(String, Option<String>, f64, bool, Option<i64>)>> {
     let mut stmt = conn.prepare(
-        "SELECT l.file_path, p.position_seconds, p.completed, p.last_watched_at
+        "SELECT l.file_path, l.content_hash, p.position_seconds, p.completed, p.last_watched_at
            FROM progress p JOIN lectures l ON l.id = p.lecture_id
           WHERE l.course_id = ?1",
     )?;
     let rows = stmt
         .query_map(params![course_id], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, i64>(3)? != 0, r.get(4)?))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
-/// (file_path, position_seconds, label, created_at) per bookmark.
+/// (file_path, content_hash, position_seconds, label, created_at) per bookmark.
 pub fn bookmarks_with_files(
     conn: &Connection,
     course_id: &str,
-) -> Result<Vec<(String, f64, Option<String>, i64)>> {
+) -> Result<Vec<(String, Option<String>, f64, Option<String>, i64)>> {
     let mut stmt = conn.prepare(
-        "SELECT l.file_path, b.position_seconds, b.label, b.created_at
+        "SELECT l.file_path, l.content_hash, b.position_seconds, b.label, b.created_at
            FROM bookmarks b JOIN lectures l ON l.id = b.lecture_id
           WHERE b.course_id = ?1",
     )?;
     let rows = stmt
         .query_map(params![course_id], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
@@ -921,7 +935,9 @@ pub fn list_course_summaries(conn: &Connection) -> Result<Vec<CourseSummary>> {
                 (SELECT COUNT(*) FROM lectures l
                    JOIN progress p ON p.lecture_id = l.id
                   WHERE l.course_id = c.id AND p.completed = 1) AS completed_count,
-                c.resume_thumbnail_path
+                c.resume_thumbnail_path,
+                c.last_lecture_id,
+                (SELECT l2.title FROM lectures l2 WHERE l2.id = c.last_lecture_id) AS last_lecture_title
            FROM courses c
           ORDER BY COALESCE(c.last_opened_at, 0) DESC, c.imported_at DESC",
     )?;
@@ -939,6 +955,8 @@ pub fn list_course_summaries(conn: &Connection) -> Result<Vec<CourseSummary>> {
                 last_opened_at: r.get(8)?,
                 completed_count: r.get(9)?,
                 resume_thumbnail_path: r.get(10)?,
+                last_lecture_id: r.get(11)?,
+                last_lecture_title: r.get(12)?,
                 tags: Vec::new(),
             })
         })?

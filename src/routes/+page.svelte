@@ -114,7 +114,7 @@
       <section>
         <h2 class="text-headline-sm text-on-surface mb-4">Continue Watching</h2>
         <a
-          href={`/course/${hero.id}`}
+          href={hero.last_lecture_id ? `/watch/${hero.last_lecture_id}` : `/course/${hero.id}`}
           class="group relative flex bg-surface-container-low border border-outline-variant rounded-xl overflow-hidden hover:border-primary-container transition-colors"
         >
           <div
@@ -137,8 +137,15 @@
           </div>
           <div class="w-2/3 p-6 flex flex-col justify-between">
             <div>
-              <p class="text-label-sm text-on-surface-variant mb-2">Continue where you left off</p>
-              <h3 class="text-display-sm text-on-surface mb-2 line-clamp-2">{hero.title}</h3>
+              <p class="text-label-sm text-on-surface-variant mb-2 truncate">
+                {hero.title}
+              </p>
+              <h3 class="text-display-sm text-on-surface mb-1 line-clamp-2">
+                {hero.last_lecture_title ?? hero.title}
+              </h3>
+              {#if hero.last_lecture_title}
+                <p class="text-label-sm text-primary">Continue where you left off</p>
+              {/if}
             </div>
             <div class="mt-6">
               <div class="flex justify-between items-end mb-2">

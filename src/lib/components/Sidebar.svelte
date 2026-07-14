@@ -21,12 +21,14 @@
     TriangleAlert,
   } from "@lucide/svelte";
   import { api, pickFolder } from "$lib/api";
+  import { listen } from "@tauri-apps/api/event";
   import { loadLibrary, toggleSidebar, ui } from "$lib/stores/app.svelte";
   import { formatDuration } from "$lib/format";
   import type { ImportPreview } from "$lib/types";
 
   let importing = $state(false);
   let scanning = $state(false);
+  let scanProgress = $state<{ done: number; total: number } | null>(null);
   let importError = $state<string | null>(null);
   let preview = $state<ImportPreview | null>(null);
   let previewPath = $state<string | null>(null);
@@ -54,14 +56,21 @@
     const path = await pickFolder();
     if (!path) return;
     scanning = true;
+    scanProgress = null;
     importError = null;
+    // Live per-video probe progress while previewing.
+    const un = await listen<[number, number]>("import:progress", (e) => {
+      scanProgress = { done: e.payload[0], total: e.payload[1] };
+    });
     try {
       preview = await api.previewImport(path);
       previewPath = path;
     } catch (e: any) {
       importError = e?.message ?? String(e);
     } finally {
+      un();
       scanning = false;
+      scanProgress = null;
     }
   }
 
@@ -154,7 +163,9 @@
     >
       {#if scanning}
         <LoaderCircle size={18} class="animate-spin shrink-0" />
-        {#if !ui.sidebarCollapsed}Scanning…{/if}
+        {#if !ui.sidebarCollapsed}
+          {scanProgress ? `Probing ${scanProgress.done}/${scanProgress.total}` : "Scanning…"}
+        {/if}
       {:else}
         <FolderPlus size={18} class="shrink-0" />
         {#if !ui.sidebarCollapsed}Add Folder{/if}

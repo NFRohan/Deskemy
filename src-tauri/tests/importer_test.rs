@@ -145,3 +145,54 @@ fn reimport_preserves_user_data() {
     assert_eq!(db::queries::tags_for_course(&conn, &cid2).unwrap(), vec!["sql".to_string()]);
     assert!(detail2.is_favorite);
 }
+
+#[test]
+fn reimport_keeps_progress_across_a_rename() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Rename Course");
+    let sec = course.join("01 - Intro");
+    fs::create_dir_all(&sec).unwrap();
+    // Distinct content → distinct content hashes (empty/identical files would
+    // collide and defeat hash matching).
+    let first = sec.join("001 Original Name.mp4");
+    fs::write(&first, b"the-actual-video-bytes-of-lecture-one").unwrap();
+    fs::write(sec.join("002 Second.mp4"), b"different-bytes-for-lecture-two").unwrap();
+
+    let mut conn = db::open_in_memory().unwrap();
+    let importer = Importer::new(Box::new(StubProber));
+    let cid1 = importer.import_course(&mut conn, None, &course).unwrap();
+
+    let detail = db::queries::get_course_detail(&conn, &cid1).unwrap().unwrap();
+    let lec = detail
+        .sections
+        .iter()
+        .flat_map(|s| &s.lectures)
+        .find(|l| l.title == "Original Name")
+        .unwrap();
+    let old_id = lec.id.clone();
+    db::queries::save_progress(&conn, &old_id, 200.0, true).unwrap();
+    db::queries::add_bookmark(&conn, &old_id, 55.0, Some("bm")).unwrap();
+
+    // Rename the file on disk (same content) — its path changes, hash doesn't.
+    let renamed = sec.join("001 Renamed Lecture.mp4");
+    fs::rename(&first, &renamed).unwrap();
+
+    let cid2 = importer.import_course(&mut conn, None, &course).unwrap();
+    let detail2 = db::queries::get_course_detail(&conn, &cid2).unwrap().unwrap();
+    let lec2 = detail2
+        .sections
+        .iter()
+        .flat_map(|s| &s.lectures)
+        .find(|l| l.title == "Renamed Lecture")
+        .expect("renamed lecture present under its new title");
+
+    // Progress + bookmark carried over by content hash despite the new path/id.
+    assert_ne!(lec2.id, old_id);
+    let (pos, completed) = db::queries::get_progress(&conn, &lec2.id).unwrap();
+    assert!(completed && (pos - 200.0).abs() < 0.01, "progress survived the rename");
+    assert_eq!(
+        db::queries::list_bookmarks(&conn, &lec2.id).unwrap().len(),
+        1,
+        "bookmark survived the rename"
+    );
+}
