@@ -147,6 +147,44 @@ fn reimport_preserves_user_data() {
 }
 
 #[test]
+fn imports_nested_folders_and_numbering_variants() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Variants");
+
+    // A section with a nested subfolder: deeper files collapse to the top-level
+    // section, and numbering variants (`1 -`, `2.`, none) sort correctly.
+    let adv = course.join("02 - Advanced");
+    let nested = adv.join("Deep Dive");
+    fs::create_dir_all(&nested).unwrap();
+    touch(&adv.join("1 - Basics.mp4"));
+    touch(&nested.join("2. Internals.mp4")); // nested → still "Advanced"
+    touch(&adv.join("Wrapup.mp4")); // unnumbered → sorts after numbered
+    fs::write(adv.join("cheatsheet.pdf"), b"pdf").unwrap(); // section-level resource
+
+    let mut conn = db::open_in_memory().unwrap();
+    let importer = Importer::new(Box::new(StubProber));
+    let cid = importer.import_course(&mut conn, None, &course).unwrap();
+    let detail = db::queries::get_course_detail(&conn, &cid).unwrap().unwrap();
+
+    // Nested files collapse into the single top-level "Advanced" section.
+    assert_eq!(detail.sections.len(), 1);
+    let sec = &detail.sections[0];
+    assert_eq!(sec.title, "Advanced");
+    let titles: Vec<&str> = sec.lectures.iter().map(|l| l.title.as_str()).collect();
+    assert_eq!(titles, vec!["Basics", "Internals", "Wrapup"]);
+
+    // The .pdf is classified as a resource attachment.
+    let att: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM attachments WHERE name LIKE '%cheatsheet.pdf'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(att, 1, "pdf classified as an attachment");
+}
+
+#[test]
 fn reimport_keeps_progress_across_a_rename() {
     let tmp = tempfile::tempdir().unwrap();
     let course = tmp.path().join("Rename Course");
