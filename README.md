@@ -26,7 +26,7 @@ everything Deskemy records lives in a single local SQLite database.
 **Library & import**
 - Structures a course folder into sections and ordered lectures, cleaning
   numeric prefixes and extensions out of the titles.
-- Attaches sidecar subtitles and resource files (PDFs, code, archives) to the
+- Attaches Subtitles and resource files (PDFs, code, archives) to the
   lecture or section they belong to.
 - Shows a preview of what will be imported — sections, lectures, resources,
   subtitles, total runtime — with live progress during the scan.
@@ -36,7 +36,7 @@ everything Deskemy records lives in a single local SQLite database.
 - Resume from your last position, autoplay-next, adjustable speed, and per-course
   preferences (speed, subtitle, audio track) that are remembered.
 - Chapter navigation, and subtitle / audio-track selection.
-- Fullscreen (including from a maximized window) and keyboard shortcuts.
+- Extensive Youtube-style keyboard shortcuts.
 
 **Organize & revisit**
 - Continue Watching on the home screen, resuming the exact lecture you were on.
@@ -90,8 +90,7 @@ reinstall resumes where you left off — delete that folder for a clean slate.
 ### Portable (no install)
 
 To run without installing, download the **portable zip**, extract it, and run
-`Deskemy.exe`. The bundled `libmpv-2.dll` sits right beside it, so playback works
-immediately. A `.portable` marker beside the executable keeps all data (library,
+`Deskemy.exe`. A `.portable` marker beside the executable keeps all data (library,
 settings, thumbnails) in a `data/` folder next to it, so nothing is written to
 `%APPDATA%` or the registry. Delete the folder to remove it entirely. (The
 WebView2 runtime still needs to be present on the system, as it is by default.)
@@ -125,4 +124,4 @@ works fully offline.
 
 ## License
 
-[MIT](LICENSE) © 2026 Spooksy.
+[MIT](LICENSE) © 2026 Nayeem Fardin.
