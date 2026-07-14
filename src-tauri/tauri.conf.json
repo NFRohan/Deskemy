@@ -33,7 +33,7 @@
     "active": true,
     "targets": "all",
     "publisher": "Spooksy",
-    "copyright": "© 2026 Spooksy",
+    "copyright": "© 2026 Nayeem Fardin",
     "category": "Education",
     "shortDescription": "Offline player for your downloaded video courses.",
     "longDescription": "Deskemy turns folders of downloaded video courses into an offline, Udemy-style library — resume, chapters, subtitles, bookmarks, tags, full-text and subtitle search, career tracks, and a study-stats dashboard. Playback uses your own installed mpv; nothing leaves your machine.",
