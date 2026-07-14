@@ -77,7 +77,6 @@
       </div>
       <div class="min-w-0 flex-1">
         <h1 class="text-headline-md text-primary">Deskemy</h1>
-        <p class="text-label-sm text-on-surface-variant">Power Learner</p>
       </div>
       <button
         onclick={toggleSidebar}

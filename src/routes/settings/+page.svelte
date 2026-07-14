@@ -149,7 +149,7 @@
           <select
             value={config.theme}
             onchange={onTheme}
-            class="bg-background border border-outline-variant rounded text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
+            class="bg-background border border-outline-variant rounded-lg text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
           >
             {#each THEMES as t (t.value)}
               <option value={t.value}>{t.label}</option>
@@ -173,7 +173,7 @@
           <select
             value={config.default_speed}
             onchange={onSpeed}
-            class="bg-background border border-outline-variant rounded text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
+            class="bg-background border border-outline-variant rounded-lg text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
           >
             {#each SPEEDS as s (s)}
               <option value={s}>{s}×</option>
@@ -207,7 +207,7 @@
           <select
             value={config.daily_goal_minutes}
             onchange={onGoal}
-            class="bg-background border border-outline-variant rounded text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
+            class="bg-background border border-outline-variant rounded-lg text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
           >
             {#each [15, 30, 45, 60, 90, 120] as m (m)}
               <option value={m}>{m} min</option>

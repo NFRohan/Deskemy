@@ -1,21 +1,62 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { Filter, Play, LoaderCircle, FolderOpen } from "@lucide/svelte";
+  import { Search, Play, LoaderCircle, FolderOpen } from "@lucide/svelte";
   import CourseCard from "$lib/components/CourseCard.svelte";
   import ProgressBar from "$lib/components/ProgressBar.svelte";
   import { library, loadLibrary, setCrumbs } from "$lib/stores/app.svelte";
+  import { api } from "$lib/api";
   import { formatDuration, pct } from "$lib/format";
+  import type { CourseSummary, TrackSummary } from "$lib/types";
+
+  type Status = "all" | "progress" | "finished" | "new" | "favorites";
+  const STATUS: { value: Status; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "progress", label: "In progress" },
+    { value: "finished", label: "Finished" },
+    { value: "new", label: "Not started" },
+    { value: "favorites", label: "Favorites" },
+  ];
 
   let filter = $state("");
   let sort = $state<"recent" | "alpha" | "progress">("recent");
   let tagFilter = $state<string | null>(null);
+  let status = $state<Status>("all");
+  let trackFilter = $state<string | null>(null);
+  let tracks = $state<TrackSummary[]>([]);
+  // Course ids in the selected track (null = no track filter / not yet loaded).
+  let trackCourseIds = $state<Set<string> | null>(null);
 
   onMount(() => {
     setCrumbs([{ label: "Library" }]);
     // Force so "Continue Watching" reflects recently opened courses.
     loadLibrary(true);
+    api.listTracks().then((t) => (tracks = t)).catch(() => {});
   });
+
+  // Resolve the selected track's course membership (one fetch per selection).
+  $effect(() => {
+    const id = trackFilter;
+    if (!id) {
+      trackCourseIds = null;
+      return;
+    }
+    let cancelled = false;
+    api
+      .getTrack(id)
+      .then((t) => {
+        if (!cancelled) trackCourseIds = new Set((t?.courses ?? []).map((c) => c.id));
+      })
+      .catch(() => !cancelled && (trackCourseIds = new Set()));
+    return () => (cancelled = true);
+  });
+
+  function statusOf(c: CourseSummary): Exclude<Status, "all" | "favorites"> {
+    const finished = c.lecture_count > 0 && c.completed_count >= c.lecture_count;
+    if (finished) return "finished";
+    const started = c.completed_count > 0 || c.last_opened_at != null;
+    return started ? "progress" : "new";
+  }
 
   // Most recently opened, started course → "Continue Watching" hero.
   const hero = $derived(
@@ -28,7 +69,10 @@
     let list = library.courses.filter((c) =>
       c.title.toLowerCase().includes(filter.toLowerCase()),
     );
-    if (tagFilter) list = list.filter((c) => c.tags.includes(tagFilter));
+    if (tagFilter) list = list.filter((c) => c.tags.includes(tagFilter!));
+    if (trackFilter && trackCourseIds) list = list.filter((c) => trackCourseIds!.has(c.id));
+    if (status === "favorites") list = list.filter((c) => c.is_favorite);
+    else if (status !== "all") list = list.filter((c) => statusOf(c) === status);
     if (sort === "alpha") {
       list = [...list].sort((a, b) => a.title.localeCompare(b.title));
     } else if (sort === "progress") {
@@ -118,20 +162,47 @@
           <div class="relative">
             <input
               bind:value={filter}
-              placeholder="Filter courses…"
-              class="w-48 bg-background border border-outline-variant rounded text-body-sm text-on-surface pl-3 pr-8 py-1.5 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue outline-none transition-all placeholder:text-on-surface-variant"
+              placeholder="Search courses…"
+              class="w-48 bg-background border border-outline-variant rounded-lg text-body-sm text-on-surface pl-3 pr-8 py-1.5 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue outline-none transition-all placeholder:text-on-surface-variant"
             />
-            <Filter size={16} class="absolute right-2 top-2 text-on-surface-variant pointer-events-none" />
+            <Search size={16} class="absolute right-2 top-2 text-on-surface-variant pointer-events-none" />
           </div>
+          {#if tracks.length > 0}
+            <select
+              bind:value={trackFilter}
+              title="Filter by career track"
+              class="bg-background border border-outline-variant rounded-lg text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
+            >
+              <option value={null}>All tracks</option>
+              {#each tracks as t (t.id)}
+                <option value={t.id}>{t.name}</option>
+              {/each}
+            </select>
+          {/if}
           <select
             bind:value={sort}
-            class="bg-background border border-outline-variant rounded text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
+            class="bg-background border border-outline-variant rounded-lg text-body-sm text-on-surface px-3 py-1.5 outline-none focus:border-accent-blue"
           >
             <option value="recent">Recent</option>
             <option value="alpha">Alphabetical</option>
             <option value="progress">Progress</option>
           </select>
         </div>
+      </div>
+
+      <!-- Status filter -->
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        {#each STATUS as opt (opt.value)}
+          <button
+            onclick={() => (status = opt.value)}
+            class="px-2.5 py-1 rounded-full text-label-md transition-colors
+              {status === opt.value
+              ? 'bg-primary-container text-on-primary-container'
+              : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'}"
+          >
+            {opt.label}
+          </button>
+        {/each}
       </div>
 
       {#if allTags.length > 0}
@@ -159,7 +230,7 @@
       {/if}
 
       {#if filtered.length === 0}
-        <p class="text-body-sm text-on-surface-variant py-8 text-center">No courses match “{filter}”.</p>
+        <p class="text-body-sm text-on-surface-variant py-8 text-center">No courses match your filters.</p>
       {:else}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {#each filtered as course (course.id)}
