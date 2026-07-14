@@ -215,3 +215,27 @@ export interface StorageStats {
   thumbnail_bytes: number;
   subtitle_cues: number;
 }
+
+export interface TrackSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  course_count: number;
+  total_lectures: number;
+  completed_lectures: number;
+}
+
+export interface TrackCourse {
+  id: string;
+  title: string;
+  thumbnail_path: string | null;
+  lecture_count: number;
+  completed_lectures: number;
+}
+
+export interface TrackDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  courses: TrackCourse[];
+}

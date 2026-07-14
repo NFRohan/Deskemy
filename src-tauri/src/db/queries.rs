@@ -4,7 +4,7 @@
 use crate::db::{new_id, now};
 use crate::domain::{
     Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, DayActivity, HistoryEntry,
-    Lecture, LibraryStats, Section, SearchHit, SubtitleHit,
+    Lecture, LibraryStats, Section, SearchHit, SubtitleHit, TrackCourse, TrackDetail, TrackSummary,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -1235,6 +1235,155 @@ pub fn list_history(conn: &Connection, limit: i64) -> Result<Vec<HistoryEntry>> 
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// Career tracks — ordered groupings of courses (organizational layer only).
+// ---------------------------------------------------------------------------
+
+/// All tracks with aggregate completion (over every lecture in their courses).
+pub fn list_tracks(conn: &Connection) -> Result<Vec<TrackSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.name, t.description,
+                COUNT(tc.course_id) AS course_count,
+                COALESCE(SUM(c.lecture_count), 0) AS total_lectures,
+                COALESCE(SUM(
+                    (SELECT COUNT(*) FROM lectures l JOIN progress p ON p.lecture_id = l.id
+                      WHERE l.course_id = c.id AND p.completed = 1)
+                ), 0) AS completed_lectures
+           FROM tracks t
+           LEFT JOIN track_courses tc ON tc.track_id = t.id
+           LEFT JOIN courses c ON c.id = tc.course_id
+          GROUP BY t.id
+          ORDER BY t.position, t.created_at",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(TrackSummary {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                description: r.get(2)?,
+                course_count: r.get(3)?,
+                total_lectures: r.get(4)?,
+                completed_lectures: r.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// A track plus its ordered courses (each with completion), or None if missing.
+pub fn get_track(conn: &Connection, id: &str) -> Result<Option<TrackDetail>> {
+    let base = conn
+        .query_row(
+            "SELECT id, name, description FROM tracks WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((tid, name, description)) = base else {
+        return Ok(None);
+    };
+
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.title, c.thumbnail_path, c.lecture_count,
+                (SELECT COUNT(*) FROM lectures l JOIN progress p ON p.lecture_id = l.id
+                  WHERE l.course_id = c.id AND p.completed = 1) AS completed_lectures
+           FROM track_courses tc
+           JOIN courses c ON c.id = tc.course_id
+          WHERE tc.track_id = ?1
+          ORDER BY tc.position",
+    )?;
+    let courses = stmt
+        .query_map(params![tid], |r| {
+            Ok(TrackCourse {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                thumbnail_path: r.get(2)?,
+                lecture_count: r.get(3)?,
+                completed_lectures: r.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(Some(TrackDetail {
+        id: tid,
+        name,
+        description,
+        courses,
+    }))
+}
+
+/// Create a track (appended to the end); returns its id.
+pub fn create_track(conn: &Connection, name: &str, description: Option<&str>) -> Result<String> {
+    let id = new_id();
+    let position: i64 =
+        conn.query_row("SELECT COALESCE(MAX(position), -1) + 1 FROM tracks", [], |r| r.get(0))?;
+    conn.execute(
+        "INSERT INTO tracks (id, name, description, position, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, name, description, position, now()],
+    )?;
+    Ok(id)
+}
+
+/// Rename / re-describe a track.
+pub fn update_track(conn: &Connection, id: &str, name: &str, description: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET name = ?2, description = ?3 WHERE id = ?1",
+        params![id, name, description],
+    )?;
+    Ok(())
+}
+
+/// Delete a track (its course memberships cascade; the courses are untouched).
+pub fn delete_track(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM tracks WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// Append a course to a track (no-op if already a member).
+pub fn add_course_to_track(conn: &Connection, track_id: &str, course_id: &str) -> Result<()> {
+    let position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM track_courses WHERE track_id = ?1",
+        params![track_id],
+        |r| r.get(0),
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO track_courses (track_id, course_id, position)
+         VALUES (?1, ?2, ?3)",
+        params![track_id, course_id, position],
+    )?;
+    Ok(())
+}
+
+/// Remove a course from a track.
+pub fn remove_course_from_track(conn: &Connection, track_id: &str, course_id: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM track_courses WHERE track_id = ?1 AND course_id = ?2",
+        params![track_id, course_id],
+    )?;
+    Ok(())
+}
+
+/// Rewrite the course order within a track from the given full ordering. Ids not
+/// currently in the track are ignored; missing ones keep their prior position.
+pub fn reorder_track_courses(conn: &Connection, track_id: &str, course_ids: &[String]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    for (i, course_id) in course_ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE track_courses SET position = ?3 WHERE track_id = ?1 AND course_id = ?2",
+            params![track_id, course_id, i as i64],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn get_course_detail(conn: &Connection, id: &str) -> Result<Option<CourseDetail>> {

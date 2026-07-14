@@ -5,7 +5,7 @@ pub mod player;
 use crate::db::queries;
 use crate::domain::{
     Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, HistoryEntry, LibraryStats,
-    SearchHit, StorageStats, SubtitleHit,
+    SearchHit, StorageStats, SubtitleHit, TrackDetail, TrackSummary,
 };
 use crate::error::{DeskemyError, Result};
 use rusqlite::Connection;
@@ -457,6 +457,75 @@ pub fn thumbnails_gc(state: State<AppState>) -> Result<GcReport> {
         }
     }
     Ok(GcReport { removed, freed_bytes })
+}
+
+// ---------------------------------------------------------------------------
+// track_* — career tracks (ordered course groupings)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn track_list(state: State<AppState>) -> Result<Vec<TrackSummary>> {
+    let conn = db(&state)?;
+    queries::list_tracks(&conn)
+}
+
+#[tauri::command]
+pub fn track_get(state: State<AppState>, id: String) -> Result<Option<TrackDetail>> {
+    let conn = db(&state)?;
+    queries::get_track(&conn, &id)
+}
+
+#[tauri::command]
+pub fn track_create(
+    state: State<AppState>,
+    name: String,
+    description: Option<String>,
+) -> Result<String> {
+    let conn = db(&state)?;
+    queries::create_track(&conn, name.trim(), description.as_deref())
+}
+
+#[tauri::command]
+pub fn track_update(
+    state: State<AppState>,
+    id: String,
+    name: String,
+    description: Option<String>,
+) -> Result<()> {
+    let conn = db(&state)?;
+    queries::update_track(&conn, &id, name.trim(), description.as_deref())
+}
+
+#[tauri::command]
+pub fn track_delete(state: State<AppState>, id: String) -> Result<()> {
+    let conn = db(&state)?;
+    queries::delete_track(&conn, &id)
+}
+
+#[tauri::command]
+pub fn track_add_course(state: State<AppState>, track_id: String, course_id: String) -> Result<()> {
+    let conn = db(&state)?;
+    queries::add_course_to_track(&conn, &track_id, &course_id)
+}
+
+#[tauri::command]
+pub fn track_remove_course(
+    state: State<AppState>,
+    track_id: String,
+    course_id: String,
+) -> Result<()> {
+    let conn = db(&state)?;
+    queries::remove_course_from_track(&conn, &track_id, &course_id)
+}
+
+#[tauri::command]
+pub fn track_reorder_courses(
+    state: State<AppState>,
+    track_id: String,
+    course_ids: Vec<String>,
+) -> Result<()> {
+    let conn = db(&state)?;
+    queries::reorder_track_courses(&conn, &track_id, &course_ids)
 }
 
 // ---------------------------------------------------------------------------

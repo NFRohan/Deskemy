@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -216,6 +216,27 @@ fn migrate(conn: &Connection) -> Result<()> {
                  subtitles_on INTEGER NOT NULL DEFAULT 0,
                  audio_id     INTEGER
              );",
+        )?;
+    }
+    if version < 7 {
+        // Career tracks: user-created ordered groupings of courses. Purely an
+        // organizational layer — playback is unchanged. FK cascades so removing a
+        // course from the library drops it from any track.
+        tx.execute_batch(
+            "CREATE TABLE tracks (
+                 id          TEXT PRIMARY KEY,
+                 name        TEXT NOT NULL,
+                 description TEXT,
+                 position    INTEGER NOT NULL,
+                 created_at  INTEGER NOT NULL
+             );
+             CREATE TABLE track_courses (
+                 track_id  TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                 course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                 position  INTEGER NOT NULL,
+                 PRIMARY KEY (track_id, course_id)
+             );
+             CREATE INDEX idx_track_courses_track ON track_courses(track_id);",
         )?;
     }
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;

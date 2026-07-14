@@ -4,6 +4,10 @@ Forward-looking plan. For the shipped **baseline** (features, schema, commands,
 known limitations) see [PLAN.md](PLAN.md). Theme through v1.x: **"the best
 offline course player"** — deepen the core watch/learn loop, don't expand scope.
 
+Visual / theming work (custom themes from a color palette, etc.) is tracked
+separately in [docs/visual-overhaul.md](docs/visual-overhaul.md) — **deferred**
+until the core features land; the palette→semantic-role mapping is already proven.
+
 Legend: ✅ done · 🔜 next · ⏳ planned · 🔑 key enabler · ❌ cut (with reason)
 
 ---
@@ -56,12 +60,13 @@ Legend: ✅ done · 🔜 next · ⏳ planned · 🔑 key enabler · ❌ cut (wit
 
 - ✅ **Resources panel (right sidebar)** — in-player, **scoped to the current
   lecture's section**, grouped by lecture (avoids course-wide overload). `R`.
-- ⏳ **Playback history** — YouTube-style history page (grouped by day, resume
-  where you left off). Buildable from existing `progress.last_watched_at` — no
-  new schema for a v1.
-- ⏳ **Career Tracks** — user-created ordered course checklists (e.g. "Platform
-  Engineering": ✓ Linux ▶ Docker □ K8s …). New `tracks` + `track_courses` tables,
-  a page + sidebar entry. Self-contained; high UX/effort ratio.
+- ✅ **Playback history** — `/history` page grouped by day (Today / Yesterday /
+  date), resume where you left off. Built from `progress.last_watched_at`, no new
+  schema. (shipped)
+- ✅ **Career Tracks** — user-created ordered course groupings with aggregate
+  completion (Σ completed / Σ total lectures) and per-course ✓ / ◉ / ○ status.
+  New `tracks` + `track_courses` tables (schema v7), `/tracks` + `/tracks/[id]`,
+  sidebar entry. Player is unchanged — pure grouping. (shipped)
 - ⏳ **Import preview** — dry-run shows detected counts (videos/sections/resources/
   subtitles/duration) → confirm, instead of a blocking "Importing…". 🔑 needs
   two-phase import.

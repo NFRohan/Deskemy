@@ -21,6 +21,8 @@ import type {
   SearchHit,
   StorageStats,
   SubtitleHit,
+  TrackDetail,
+  TrackSummary,
 } from "./types";
 
 export const api = {
@@ -68,6 +70,21 @@ export const api = {
 
   // history
   history: () => invoke<HistoryEntry[]>("history_list"),
+
+  // track_* (career tracks)
+  listTracks: () => invoke<TrackSummary[]>("track_list"),
+  getTrack: (id: string) => invoke<TrackDetail | null>("track_get", { id }),
+  createTrack: (name: string, description: string | null) =>
+    invoke<string>("track_create", { name, description }),
+  updateTrack: (id: string, name: string, description: string | null) =>
+    invoke<void>("track_update", { id, name, description }),
+  deleteTrack: (id: string) => invoke<void>("track_delete", { id }),
+  trackAddCourse: (trackId: string, courseId: string) =>
+    invoke<void>("track_add_course", { trackId, courseId }),
+  trackRemoveCourse: (trackId: string, courseId: string) =>
+    invoke<void>("track_remove_course", { trackId, courseId }),
+  trackReorderCourses: (trackId: string, courseIds: string[]) =>
+    invoke<void>("track_reorder_courses", { trackId, courseIds }),
 
   // search_*
   search: (query: string) => invoke<SearchHit[]>("search_query", { query }),

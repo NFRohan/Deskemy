@@ -198,6 +198,37 @@ pub struct HistoryEntry {
     pub last_watched_at: i64,
 }
 
+/// A career track (ordered grouping of courses) with aggregate completion, for
+/// the tracks list. Completion is over every lecture in the track's courses.
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackSummary {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub course_count: i64,
+    pub total_lectures: i64,
+    pub completed_lectures: i64,
+}
+
+/// A course as it appears inside a track: enough to render its card + progress.
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackCourse {
+    pub id: String,
+    pub title: String,
+    pub thumbnail_path: Option<String>,
+    pub lecture_count: i64,
+    pub completed_lectures: i64,
+}
+
+/// A track plus its ordered courses, for the track detail page.
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackDetail {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub courses: Vec<TrackCourse>,
+}
+
 /// On-disk footprint of the local stores, for the Settings → Storage panel.
 #[derive(Debug, Clone, Serialize)]
 pub struct StorageStats {
