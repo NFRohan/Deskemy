@@ -250,6 +250,13 @@ pub fn run() {
             };
             std::fs::create_dir_all(&data_dir)?;
 
+            // Thumbnails are handed to the WebView via the asset protocol, whose
+            // static config scope only covers %APPDATA%. In portable mode the
+            // data dir sits next to the exe, outside that scope, so every
+            // thumbnail request 403s and renders broken. Grant the chosen data
+            // dir explicitly — a no-op for installs (already under %APPDATA%).
+            app.asset_protocol_scope().allow_directory(&data_dir, true)?;
+
             let db_path = data_dir.join("deskemy.db");
             let config_path = data_dir.join("config.json");
 
