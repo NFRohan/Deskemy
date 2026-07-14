@@ -30,11 +30,17 @@
     BookmarkPlus,
     Trash2,
     Keyboard,
+    Paperclip,
+    FileText,
+    FileArchive,
+    FileCode,
+    File,
   } from "@lucide/svelte";
   import { api } from "$lib/api";
   import { setCrumbs, setImmersive, ui } from "$lib/stores/app.svelte";
   import { formatClock } from "$lib/format";
   import type {
+    Attachment,
     Bookmark,
     CourseDetail,
     Lecture,
@@ -108,8 +114,17 @@
   let tracksFor = $state<string | null>(null);
   let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | null>(null);
   let course = $state<CourseDetail | null>(null);
+  let attachments = $state<Attachment[]>([]);
+  let sidebarTab = $state<"content" | "resources">("content");
   let showPlaylist = $state(false);
   let showShortcuts = $state(false);
+  const KIND_ICON: Record<string, any> = {
+    pdf: FileText,
+    archive: FileArchive,
+    code: FileCode,
+    html: FileCode,
+    text: FileText,
+  };
   let controlsHidden = $state(false);
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let expandedSections = $state<Set<string>>(new Set());
@@ -308,6 +323,15 @@
     api.getCourse(cid).then((c) => (course = c)).catch(() => {});
   });
 
+  // Course resources for the sidebar's Resources tab (per course).
+  let attachFetchKey = "";
+  $effect(() => {
+    const cid = lecture?.course_id;
+    if (!cid || cid === attachFetchKey) return;
+    attachFetchKey = cid;
+    api.getCourseAttachments(cid).then((a) => (attachments = a)).catch(() => {});
+  });
+
   function sectionProgress(lectures: Lecture[]): { done: number; total: number } {
     return { done: lectures.filter((l) => l.completed).length, total: lectures.length };
   }
@@ -327,6 +351,17 @@
     reportRectSoon();
     later(reportRect, 80);
     later(reportRect, 250);
+  }
+  function showSidebar(tab: "content" | "resources") {
+    if (showPlaylist && sidebarTab === tab) {
+      togglePlaylist(); // same tab already open → close
+      return;
+    }
+    sidebarTab = tab;
+    if (!showPlaylist) togglePlaylist();
+  }
+  function openResource(a: Attachment) {
+    api.openResource(a.file_path).catch(() => {});
   }
   function toggleSection(id: string) {
     const next = new Set(expandedSections);
@@ -521,10 +556,10 @@
         seekFraction(0.999);
         break;
       case "p":
-        togglePlaylist();
+        showSidebar("content");
         break;
       case "r":
-        togglePlaylist(); // dedicated resources tab lands with the resources panel
+        showSidebar("resources");
         break;
       case "b":
         quickBookmark();
@@ -857,10 +892,10 @@
             <Keyboard size={18} />
           </button>
           <button
-            onclick={togglePlaylist}
+            onclick={() => showSidebar("content")}
             class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
               {showPlaylist ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
-            title="Course content (P)"
+            title="Course content (P) · Resources (R)"
             aria-label="Course content"
           >
             <PanelRight size={18} />
@@ -891,21 +926,65 @@
             {showPlaylist ? 'w-80 border-l border-outline-variant' : 'w-0'}"
         >
           <div
-            class="h-12 shrink-0 flex items-center justify-between px-4 border-b border-outline-variant"
+            class="h-12 shrink-0 flex items-center justify-between pl-2 pr-2 border-b border-outline-variant"
           >
-            <span class="text-headline-sm text-on-surface truncate">
-              {course?.title ?? "Course content"}
-            </span>
+            <div class="flex items-center gap-1">
+              <button
+                onclick={() => (sidebarTab = "content")}
+                class="px-3 py-1.5 rounded text-label-md transition-colors
+                  {sidebarTab === 'content'
+                  ? 'bg-surface-container-highest text-on-surface'
+                  : 'text-on-surface-variant hover:text-on-surface'}"
+              >
+                Content
+              </button>
+              <button
+                onclick={() => (sidebarTab = "resources")}
+                class="px-3 py-1.5 rounded text-label-md transition-colors
+                  {sidebarTab === 'resources'
+                  ? 'bg-surface-container-highest text-on-surface'
+                  : 'text-on-surface-variant hover:text-on-surface'}"
+              >
+                Resources{#if attachments.length} · {attachments.length}{/if}
+              </button>
+            </div>
             <button
               onclick={togglePlaylist}
               class="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
-              aria-label="Close course content"
+              aria-label="Close panel"
             >
               <X size={16} />
             </button>
           </div>
           <div class="flex-1 overflow-y-auto">
-            {#if course}
+            {#if sidebarTab === "resources"}
+              {#if attachments.length === 0}
+                <div class="p-4 text-body-sm text-on-surface-variant">
+                  No resources in this course.
+                </div>
+              {:else}
+                <ul class="divide-y divide-outline-variant">
+                  {#each attachments as a (a.id)}
+                    {@const Icon = KIND_ICON[a.kind ?? ""] ?? File}
+                    <li>
+                      <button
+                        onclick={() => openResource(a)}
+                        class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface-container transition-colors"
+                        title="Open with default app"
+                      >
+                        <Icon size={16} class="text-on-surface-variant shrink-0" />
+                        <span class="flex-1 min-w-0 truncate text-body-sm text-on-surface">{a.name}</span>
+                        {#if a.kind}
+                          <span class="text-label-sm text-on-surface-variant shrink-0 uppercase">
+                            {a.kind}
+                          </span>
+                        {/if}
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            {:else if course}
               {#each course.sections as section (section.id)}
                 {@const prog = sectionProgress(section.lectures)}
                 <div>
