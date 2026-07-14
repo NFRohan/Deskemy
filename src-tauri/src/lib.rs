@@ -122,6 +122,7 @@ pub fn run() {
             commands::player::player_set_muted,
             commands::player::player_set_rect,
             commands::player::player_stop,
+            commands::player::player_show,
             commands::player::player_grab_resume_frame,
             commands::player::player_state,
             commands::player::lecture_get,
