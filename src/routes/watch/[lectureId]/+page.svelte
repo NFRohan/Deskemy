@@ -621,7 +621,9 @@
         toggleShortcuts();
         break;
       case "Escape":
+        // Peel back one layer at a time: cheat sheet → fullscreen → leave.
         if (showShortcuts) closeShortcuts();
+        else if (ui.immersive) toggleImmersive();
         else goBack();
         break;
       default:
@@ -1004,9 +1006,6 @@
         </div>
       </div>
       </div>
-    {:else if ui.immersive}
-      <!-- Thin hover strip to bring the auto-hidden controls back in fullscreen -->
-      <div class="shrink-0 h-2" role="presentation" onmousemove={revealControls}></div>
     {/if}
       </div>
       <!-- Course content sidebar (Udemy-style: jump around the course here).
