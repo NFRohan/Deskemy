@@ -396,13 +396,15 @@
   function openResource(a: Attachment) {
     api.openResource(a.file_path).catch(() => {});
   }
-  // The cheat sheet docks below the video (can't overlay the native surface),
-  // so toggling it resizes the pane — re-sync the mpv window as it settles.
+  // Compositor mode floats the cheat sheet over the video (no pane resize). The
+  // wid fallback docks it below the video, which resizes the pane — re-sync then.
   function toggleShortcuts() {
     showShortcuts = !showShortcuts;
-    reportRectSoon();
-    later(reportRect, 80);
-    later(reportRect, 250);
+    if (!ui.compositor) {
+      reportRectSoon();
+      later(reportRect, 80);
+      later(reportRect, 250);
+    }
   }
   function closeShortcuts() {
     if (!showShortcuts) return;
@@ -757,46 +759,75 @@
       </div>
     {/if}
 
-    <!-- Keyboard cheat sheet: docks below the video (pushes it up) rather than
-         overlapping the native surface. -->
-    {#if showShortcuts}
-      <div class="shrink-0 bg-surface border-t border-outline-variant">
-        <div class="max-h-72 overflow-y-auto px-4 py-3">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="flex items-center gap-2 text-headline-sm text-on-surface">
-              <Keyboard size={16} /> Keyboard shortcuts
-            </h3>
-            <button
-              onclick={closeShortcuts}
-              class="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
-              aria-label="Close"
+    <!-- Keyboard cheat sheet. Compositor mode floats it over the video (airspace
+         is gone — HTML overlays the composited video, which keeps playing behind
+         a dimmed backdrop). The wid fallback docks it below, pushing the video up. -->
+    {#snippet cheatSheet(floating: boolean)}
+      <div class="flex items-center justify-between {floating ? 'mb-4' : 'mb-3'}">
+        <h3 class="flex items-center gap-2 text-headline-sm text-on-surface">
+          <Keyboard size={floating ? 18 : 16} /> Keyboard shortcuts
+        </h3>
+        <button
+          onclick={closeShortcuts}
+          class="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
+          aria-label="Close"
+        >
+          <X size={floating ? 18 : 16} />
+        </button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 {floating ? 'gap-x-6 gap-y-4' : 'gap-x-8 gap-y-2'}">
+        {#each SHORTCUTS as col (col.group)}
+          <div>
+            <p
+              class="text-label-sm text-on-surface-variant uppercase tracking-wide {floating
+                ? 'mb-2'
+                : 'mb-1.5'}"
             >
-              <X size={16} />
-            </button>
+              {col.group}
+            </p>
+            <ul class={floating ? "space-y-1.5" : "space-y-1"}>
+              {#each col.items as [key, desc] (key)}
+                <li class="flex items-center justify-between gap-3">
+                  <span class="text-body-sm text-on-surface-variant truncate">{desc}</span>
+                  <kbd
+                    class="shrink-0 text-label-sm text-on-surface bg-surface-container-highest border border-outline-variant rounded px-1.5 py-0.5"
+                  >
+                    {key}
+                  </kbd>
+                </li>
+              {/each}
+            </ul>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-2">
-            {#each SHORTCUTS as col (col.group)}
-              <div>
-                <p class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1.5">
-                  {col.group}
-                </p>
-                <ul class="space-y-1">
-                  {#each col.items as [key, desc] (key)}
-                    <li class="flex items-center justify-between gap-3">
-                      <span class="text-body-sm text-on-surface-variant truncate">{desc}</span>
-                      <kbd
-                        class="shrink-0 text-label-sm text-on-surface bg-surface-container-highest border border-outline-variant rounded px-1.5 py-0.5"
-                      >
-                        {key}
-                      </kbd>
-                    </li>
-                  {/each}
-                </ul>
-              </div>
-            {/each}
+        {/each}
+      </div>
+    {/snippet}
+
+    {#if showShortcuts}
+      {#if ui.compositor}
+        <!-- Floating overlay over the live video (dimmed backdrop). -->
+        <div
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="presentation"
+          onclick={closeShortcuts}
+        >
+          <div
+            class="w-full max-w-2xl bg-surface-container rounded-xl border border-outline-variant p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+            onclick={(e) => e.stopPropagation()}
+          >
+            {@render cheatSheet(true)}
           </div>
         </div>
-      </div>
+      {:else}
+        <!-- Docked below the video (wid path). -->
+        <div class="shrink-0 bg-surface border-t border-outline-variant">
+          <div class="max-h-72 overflow-y-auto px-4 py-3">
+            {@render cheatSheet(false)}
+          </div>
+        </div>
+      {/if}
     {/if}
 
     <!-- Control bar (docked below the video — never overlaps the native surface).
