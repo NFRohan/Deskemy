@@ -809,17 +809,21 @@
         </span>
       </div>
 
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-1">
-          <button
-            onclick={goBack}
-            class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
-            aria-label="Back to course"
-            title="Back to course (Esc)"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div class="w-px h-5 bg-outline-variant mx-1"></div>
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-1 shrink-0">
+          {#if !ui.immersive}
+            <!-- Esc / F already exit fullscreen, so drop the back button + divider
+                 there to reclaim width for the Now playing / Up next labels. -->
+            <button
+              onclick={goBack}
+              class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+              aria-label="Back to course"
+              title="Back to course (Esc)"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <div class="w-px h-5 bg-outline-variant mx-1"></div>
+          {/if}
           <button
             onclick={() => api.playerPrev()}
             class="p-2 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
@@ -876,29 +880,32 @@
           </div>
         </div>
 
-        <!-- Up next -->
-        {#if upNext}
-          <button
-            onclick={() => api.playerNext()}
-            class="hidden lg:flex items-center gap-2 min-w-0 flex-1 mx-4 px-3 py-1 rounded hover:bg-surface-container-highest transition-colors text-left"
-            title={`Up next: ${upNext.title}`}
-          >
-            <SkipForward size={14} class="text-on-surface-variant shrink-0" />
-            <span class="min-w-0 flex-1">
+        <!-- Now playing (left) and Up next (right) mirror each other; the whole
+             block collapses below lg so the transport/menu clusters still spread. -->
+        <div class="hidden lg:flex items-center gap-3 flex-1 min-w-0">
+          <div class="min-w-0 flex-1 px-2 py-1 select-none">
+            <span class="block text-label-sm text-on-surface-variant leading-tight">Now playing</span>
+            <span class="block truncate text-body-sm text-on-surface leading-tight">
+              {lecture?.title ?? "—"}
+            </span>
+          </div>
+          {#if upNext}
+            <button
+              onclick={() => api.playerNext()}
+              class="min-w-0 flex-1 px-2 py-1 rounded hover:bg-surface-container-highest transition-colors text-right"
+              title={`Up next: ${upNext.title}`}
+            >
               <span class="block text-label-sm text-on-surface-variant leading-tight">Up next</span>
               <span class="block truncate text-body-sm text-on-surface leading-tight">
                 {upNext.title}
               </span>
-            </span>
-            {#if upNext.duration}
-              <span class="text-label-sm text-on-surface-variant tabular-nums shrink-0">
-                {formatClock(upNext.duration)}
-              </span>
-            {/if}
-          </button>
-        {/if}
+            </button>
+          {:else}
+            <div class="flex-1"></div>
+          {/if}
+        </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
           <button
             onclick={() => toggleMenu("bookmarks")}
             class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
