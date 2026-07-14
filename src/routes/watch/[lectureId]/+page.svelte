@@ -398,6 +398,18 @@
   function openResource(a: Attachment) {
     api.openResource(a.file_path).catch(() => {});
   }
+  // The cheat sheet docks below the video (can't overlay the native surface),
+  // so toggling it resizes the pane — re-sync the mpv window as it settles.
+  function toggleShortcuts() {
+    showShortcuts = !showShortcuts;
+    reportRectSoon();
+    later(reportRect, 80);
+    later(reportRect, 250);
+  }
+  function closeShortcuts() {
+    if (!showShortcuts) return;
+    toggleShortcuts();
+  }
   function toggleSection(id: string) {
     const next = new Set(expandedSections);
     next.has(id) ? next.delete(id) : next.add(id);
@@ -606,10 +618,10 @@
         api.playerPrev().catch(() => {});
         break;
       case "?":
-        showShortcuts = !showShortcuts;
+        toggleShortcuts();
         break;
       case "Escape":
-        if (showShortcuts) showShortcuts = false;
+        if (showShortcuts) closeShortcuts();
         else goBack();
         break;
       default:
@@ -742,6 +754,48 @@
               {/each}
             {/if}
           {/if}
+        </div>
+      </div>
+    {/if}
+
+    <!-- Keyboard cheat sheet: docks below the video (pushes it up) rather than
+         overlapping the native surface. -->
+    {#if showShortcuts}
+      <div class="shrink-0 bg-surface border-t border-outline-variant">
+        <div class="max-h-72 overflow-y-auto px-4 py-3">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2 text-headline-sm text-on-surface">
+              <Keyboard size={16} /> Keyboard shortcuts
+            </h3>
+            <button
+              onclick={closeShortcuts}
+              class="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-2">
+            {#each SHORTCUTS as col (col.group)}
+              <div>
+                <p class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1.5">
+                  {col.group}
+                </p>
+                <ul class="space-y-1">
+                  {#each col.items as [key, desc] (key)}
+                    <li class="flex items-center justify-between gap-3">
+                      <span class="text-body-sm text-on-surface-variant truncate">{desc}</span>
+                      <kbd
+                        class="shrink-0 text-label-sm text-on-surface bg-surface-container-highest border border-outline-variant rounded px-1.5 py-0.5"
+                      >
+                        {key}
+                      </kbd>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/each}
+          </div>
         </div>
       </div>
     {/if}
@@ -919,8 +973,9 @@
             {/each}
           </select>
           <button
-            onclick={() => (showShortcuts = true)}
-            class="p-2 rounded text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface transition-colors"
+            onclick={toggleShortcuts}
+            class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
+              {showShortcuts ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
             title="Keyboard shortcuts (?)"
             aria-label="Keyboard shortcuts"
           >
@@ -1102,56 +1157,5 @@
           </div>
         </aside>
     </div>
-
-    <!-- Keyboard shortcut cheat sheet -->
-    {#if showShortcuts}
-      <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-        role="presentation"
-        onclick={() => (showShortcuts = false)}
-      >
-        <div
-          class="w-full max-w-2xl bg-surface-container rounded-xl border border-outline-variant p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Keyboard shortcuts"
-          onclick={(e) => e.stopPropagation()}
-        >
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="flex items-center gap-2 text-headline-sm text-on-surface">
-              <Keyboard size={18} /> Keyboard shortcuts
-            </h3>
-            <button
-              onclick={() => (showShortcuts = false)}
-              class="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
-              aria-label="Close"
-            >
-              <X size={18} />
-            </button>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
-            {#each SHORTCUTS as col (col.group)}
-              <div>
-                <p class="text-label-md text-on-surface-variant uppercase tracking-wide mb-2">
-                  {col.group}
-                </p>
-                <ul class="space-y-1.5">
-                  {#each col.items as [key, desc] (key)}
-                    <li class="flex items-center justify-between gap-3">
-                      <span class="text-body-sm text-on-surface-variant">{desc}</span>
-                      <kbd
-                        class="shrink-0 text-label-sm text-on-surface bg-surface-container-highest border border-outline-variant rounded px-1.5 py-0.5 tabular-nums"
-                      >
-                        {key}
-                      </kbd>
-                    </li>
-                  {/each}
-                </ul>
-              </div>
-            {/each}
-          </div>
-        </div>
-      </div>
-    {/if}
   </div>
 {/if}
