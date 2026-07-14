@@ -3,64 +3,56 @@
 
   <h1>Deskemy</h1>
 
-  <p><strong>An offline, Udemy-style player for the video courses you already own.</strong></p>
+  <p><strong>An offline player for the video courses you already own.</strong></p>
 
   <p>
     <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0a7bbd" />
     <img alt="Version" src="https://img.shields.io/badge/version-1.0.0-8e10db" />
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-2e7d32" />
     <img alt="Built with" src="https://img.shields.io/badge/Tauri%20v2%20%C2%B7%20Svelte%205%20%C2%B7%20Rust-111317" />
-    <img alt="Offline" src="https://img.shields.io/badge/offline-no%20account%20%C2%B7%20no%20telemetry-2e7d32" />
   </p>
 </div>
 
 ---
 
-Deskemy turns a folder of downloaded course videos into a real learning
-library. Point it at a course, and it auto-detects the sections and lectures,
-cleans up the messy filenames, attaches the subtitles and resource files, and
-gives you a focused player built for *studying* — resume, chapters, bookmarks,
-notes-adjacent tools, search, and progress tracking.
+Deskemy is a local, offline player for downloaded video courses. Point it at a
+folder of course videos and it organizes them into a browsable library with
+playback, progress tracking, search, and study tools. Your video files stay
+where they are — they're referenced in place, never copied or uploaded — and
+everything Deskemy records lives in a single local SQLite database.
 
-It's **local-first by design**: your video files are only ever *referenced* in
-place — never copied, moved, or uploaded — and everything Deskemy knows lives in
-a single SQLite database on your machine.
+## Features
 
-## Highlights
+**Library & import**
+- Structures a course folder into sections and ordered lectures, cleaning
+  numeric prefixes and extensions out of the titles.
+- Attaches sidecar subtitles and resource files (PDFs, code, archives) to the
+  lecture or section they belong to.
+- Shows a preview of what will be imported — sections, lectures, resources,
+  subtitles, total runtime — with live progress during the scan.
+- References files in place; it never copies or moves your videos.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+**Playback**
+- Resume from your last position, autoplay-next, adjustable speed, and per-course
+  preferences (speed, subtitle, audio track) that are remembered.
+- Chapter navigation, and subtitle / audio-track selection.
+- Fullscreen (including from a maximized window) and keyboard shortcuts.
 
-**Library that organizes itself**
-- Import a folder → sections, ordered lectures, cleaned titles
-- Sidecar subtitles and resources attached automatically
-- A **dry-run preview** of what will be imported, before you commit
-- Live progress while it scans (`Probing 42 / 210`)
+**Organize & revisit**
+- Continue Watching on the home screen, resuming the exact lecture you were on.
+- Timestamped bookmarks, tags, favorites, and a watch history.
+- Career Tracks — ordered groups of courses with aggregate completion.
 
-**A player made for learning**
-- Resume where you left off · autoplay-next · playback speed
-- Chapters, subtitle **and** audio-track pickers
-- Per-course playback preferences, remembered
-- Fullscreen that behaves natively — even from a maximized window
+**Search**
+- Full-text search across course, section, and lecture titles.
+- Optional subtitle search over the words spoken in your subtitle files, jumping
+  straight to the matching timestamp.
 
-</td>
-<td width="50%" valign="top">
-
-**Find and revisit anything**
-- Full-text **search** over titles — and, optionally, the *spoken words*
-  in your subtitles, jumping straight to the moment
-- **Bookmarks** with timestamps · **tags** · favorites · **history**
-- **Career Tracks** — ordered course paths with aggregate completion
-
-**Stays out of your way**
-- **Rename-safe**: move or rename a file and its progress/bookmarks follow
-  it (matched by content, not path)
-- Watch-time **stats** — heatmap, streaks, daily goal
-- Optional folder auto-rescan; a Storage panel to reclaim space
-
-</td>
-</tr>
-</table>
+**Progress & maintenance**
+- Watch-time stats: an activity heatmap, streaks, and a daily goal.
+- Rename-safe: a moved or renamed file keeps its progress and bookmarks, matched
+  by content rather than path.
+- Optional folder auto-rescan, and a storage panel for reclaiming disk space.
 
 ## Keyboard shortcuts
 
@@ -75,39 +67,32 @@ a single SQLite database on your machine.
 
 ## Requirements
 
-- **Windows 10 or 11.** The codebase is desktop-first and portable, but the
-  packaged release targets Windows.
-- **[mpv](https://mpv.io/)** — Deskemy plays through your own installed mpv
-  (`libmpv-2.dll`) instead of bundling a media engine, so playback quality and
-  format support match mpv exactly. Install it via [Scoop](https://scoop.sh/)
-  (`scoop install mpv`) or from [mpv.io](https://mpv.io/); Deskemy finds it
-  automatically and prompts you if it can't.
+- **Windows 10 or 11.**
+- **[mpv](https://mpv.io/)** — Deskemy plays through your installed mpv
+  (`libmpv-2.dll`) rather than bundling a media engine, so format support and
+  playback match mpv exactly. Install it via [Scoop](https://scoop.sh/)
+  (`scoop install mpv`) or from [mpv.io](https://mpv.io/); Deskemy discovers it
+  automatically and prompts you if it can't find it.
 - The **WebView2** runtime — installed by the setup program if it's missing.
 
 ## Install
 
 1. Download the latest installer (`.exe` or `.msi`) from the releases page.
-2. Run it. If mpv isn't already installed, grab it (see above).
+2. Run it. If mpv isn't already installed, add it (see above).
 3. Launch Deskemy → **Add Folder** → pick a course folder.
 
-The installer is a per-user install (no admin needed). Uninstalling from
-**Settings → Apps** removes the program, its shortcuts, and its registry entry
-cleanly. Your library index and settings under `%APPDATA%\com.spooksy.deskemy`
-are kept on purpose, so a reinstall picks up right where you left off — delete
-that folder yourself if you want a completely fresh start.
+It's a per-user install (no admin required). Uninstalling from **Settings → Apps**
+removes the program, its shortcuts, and its registry entry. Your library index
+and settings under `%APPDATA%\com.spooksy.deskemy` are left in place so a
+reinstall resumes where you left off — delete that folder for a clean slate.
 
 ### Portable (no install)
 
-Prefer to try it without installing anything? Download the **portable zip**,
-extract it anywhere, and run `Deskemy.exe`. A `.portable` marker next to the
-executable tells Deskemy to keep **everything** — library, settings,
-thumbnails — in a `data/` folder right beside it, so nothing is written to
-`%APPDATA%` or the registry. Delete the folder and it's gone without a trace.
-(You still need mpv and the WebView2 runtime available on the system.)
-
-> Moving to another PC? Copy the `%APPDATA%\com.spooksy.deskemy` folder (or the
-> portable `data/` folder). Your course files are referenced by path, so keep
-> them where they are — or re-point the library after moving.
+To run without installing, download the **portable zip**, extract it, and run
+`Deskemy.exe`. A `.portable` marker beside the executable keeps all data
+(library, settings, thumbnails) in a `data/` folder next to it, so nothing is
+written to `%APPDATA%` or the registry. Delete the folder to remove it entirely.
+(mpv and the WebView2 runtime still need to be present on the system.)
 
 ## Build from source
 
@@ -115,29 +100,27 @@ thumbnails — in a `data/` folder right beside it, so nothing is written to
 # Prerequisites: Node 22+, Rust (stable), MSVC C++ Build Tools, WebView2
 npm install
 npm run tauri dev      # run in development
-npm run tauri build    # produce an optimized installer in
-                       # src-tauri/target/release/bundle/
+npm run tauri build    # build an installer in src-tauri/target/release/bundle/
 ```
 
-## How it's built
+## Tech stack
 
-| Layer | Stack |
+| Layer | |
 |---|---|
 | **Frontend** | SvelteKit (`adapter-static` SPA) · Svelte 5 runes · TypeScript · Tailwind v4 |
-| **Backend** | Rust · Tauri v2 · bundled SQLite + FTS5 (`rusqlite`) · a filesystem scanner/importer and a watcher |
-| **Playback** | **libmpv** loaded at runtime via FFI (`libloading`) — not bundled; discovered from your system |
-| **Identity** | UUIDv7 keys throughout, so data stays sync-safe if multi-device is ever added |
+| **Backend** | Rust · Tauri v2 · SQLite + FTS5 via `rusqlite` (bundled) |
+| **Playback** | libmpv, loaded at runtime through FFI (`libloading`) — discovered from the system, not bundled |
+| **Storage** | Local SQLite database + a content-addressed thumbnail cache under the app data directory |
 
-The import pipeline probes media **off the database lock** (two-phase import), so
-a large course scans without freezing the UI, and re-imports preserve your
-progress, bookmarks, tags, and thumbnails.
+Import runs in two phases — probe, then persist — so media probing happens off
+the database connection and scanning a large course doesn't block the UI.
 
 ## Privacy
 
-There are no accounts, no telemetry, and no network calls for your content.
-Your library, progress, bookmarks, and stats exist only in a local database —
-the app works fully offline.
+No accounts, no telemetry, and no network requests for your content. Your
+library, progress, bookmarks, and stats live only in a local database; the app
+works fully offline.
 
 ## License
 
-Released under the **MIT License**.
+[MIT](LICENSE) © 2026 Spooksy.
