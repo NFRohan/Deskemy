@@ -478,7 +478,13 @@
     } catch {
       /* window may not support it; immersive still applies */
     }
+    // The OS fullscreen resize is async and can land after the first measure,
+    // leaving the mpv window sized to the old (smaller) rect — the pane's black
+    // then shows around the video. Re-sync a couple of times as it settles.
     reportRectSoon();
+    later(reportRect, 80);
+    later(reportRect, 250);
+    later(reportRect, 500);
   }
   function relativeSeek(delta: number) {
     api.playerSeek(Math.max(0, state.position + delta)).catch(() => {});

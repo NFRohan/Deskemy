@@ -27,7 +27,9 @@
   const scrolls = $derived(!$page.url.pathname.startsWith("/watch"));
 </script>
 
-<div class="flex h-screen overflow-hidden">
+<!-- h-full (chained off html/body height:100%) rather than h-screen: 100vh can
+     lag the fullscreen resize and leave a sliver of body background at the edge. -->
+<div class="flex h-full overflow-hidden">
   {#if !ui.immersive}
     <Sidebar />
   {/if}
@@ -35,7 +37,11 @@
     {#if !ui.immersive}
       <TopBar />
     {/if}
-    <main class="flex-1 min-h-0 bg-background {scrolls ? 'overflow-y-auto' : 'overflow-hidden'}">
+    <!-- On /watch the video pane is black, so any uncovered gap must fall back to
+         black too — not the near-white bg-background of the light theme. -->
+    <main
+      class="flex-1 min-h-0 {scrolls ? 'bg-background overflow-y-auto' : 'bg-black overflow-hidden'}"
+    >
       {@render children()}
     </main>
   </div>
