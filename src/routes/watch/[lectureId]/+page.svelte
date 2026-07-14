@@ -635,11 +635,16 @@
     <div class="w-16 h-16 rounded-xl bg-surface-container flex items-center justify-center">
       <MonitorPlay size={30} class="text-outline" />
     </div>
-    <h2 class="text-headline-md text-on-surface">mpv is required to play videos</h2>
+    <h2 class="text-headline-md text-on-surface">libmpv is required to play videos</h2>
     <p class="text-body-sm text-on-surface-variant max-w-md">
-      Deskemy plays media with libmpv. Install <span class="text-primary">mpv</span> (which provides
-      <code>libmpv-2.dll</code>) and make sure it's on your PATH, or set the
-      <code>DESKEMY_LIBMPV</code> environment variable to the DLL path, then reopen this lecture.
+      Deskemy plays through <code>libmpv-2.dll</code>, mpv's shared library. The mpv
+      <span class="text-on-surface">player</span> alone usually doesn't include it — download the
+      <span class="text-primary">libmpv</span> build from mpv.io's Windows downloads and extract
+      <code>libmpv-2.dll</code>.
+    </p>
+    <p class="text-body-sm text-on-surface-variant max-w-md">
+      Then put that DLL next to <code>Deskemy.exe</code>, anywhere on your PATH, or set
+      <code>DESKEMY_LIBMPV</code> to its full path — and reopen this lecture.
     </p>
     <a
       href="/"

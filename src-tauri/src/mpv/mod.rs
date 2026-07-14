@@ -202,8 +202,9 @@ unsafe fn load() -> Result<Fns> {
         });
     }
     Err(DeskemyError::Player(format!(
-        "libmpv not found. Install mpv (it provides libmpv-2.dll), or set the \
-         DESKEMY_LIBMPV environment variable to the DLL path. Last attempt — {last}"
+        "libmpv-2.dll not found. Get mpv's shared library (the 'libmpv' build, not \
+         just the player) and place the DLL next to the executable or on PATH, or \
+         set DESKEMY_LIBMPV to its path. Last attempt — {last}"
     )))
 }
 

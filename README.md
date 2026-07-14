@@ -68,19 +68,18 @@ everything Deskemy records lives in a single local SQLite database.
 ## Requirements
 
 - **Windows 10 or 11.**
-- **[mpv](https://mpv.io/)** — Deskemy plays through your installed mpv
-  (`libmpv-2.dll`) rather than bundling a media engine, so format support and
-  playback match mpv exactly. Install it from [mpv.io](https://mpv.io/), or via
-  [Scoop](https://scoop.sh/):
+- **[libmpv](https://mpv.io/)** — Deskemy plays through `libmpv-2.dll`, mpv's
+  shared library, rather than bundling a media engine (so format support matches
+  mpv exactly). Note that the mpv **player** by itself usually does *not* include
+  `libmpv-2.dll` — you need the **libmpv** build:
+  - Download it from [mpv.io](https://mpv.io/) (Windows builds) or the
+    [libmpv releases](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/)
+    (`mpv-dev-x86_64-…`), and extract `libmpv-2.dll`.
+  - Put that DLL next to Deskemy's executable, anywhere on your `PATH`, or set
+    `DESKEMY_LIBMPV` to its full path.
 
-  ```powershell
-  scoop bucket add extras   # mpv lives in the "extras" bucket
-  scoop install mpv
-  ```
-
-  Deskemy discovers mpv automatically (including Scoop's install location) and
-  prompts you if it can't find it. If needed, point `DESKEMY_LIBMPV` at the
-  full path to `libmpv-2.dll`.
+  Deskemy searches its own folder, your `PATH`, and common install locations
+  automatically, and prompts you if it still can't find the library.
 - The **WebView2** runtime — installed by the setup program if it's missing.
 
 ## Install
