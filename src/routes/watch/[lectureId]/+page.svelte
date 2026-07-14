@@ -470,18 +470,21 @@
   async function toggleImmersive() {
     const on = !ui.immersive;
     setImmersive(on); // hide sidebar/titlebar so the video fills the window
+    // Report the pane once the sidebar/titlebar reflow lands but BEFORE the OS
+    // fullscreen resize — this hands the backend the correct pane margins, so its
+    // native resize handler can track the window as it animates (no JS lag).
+    await tick();
+    reportRect();
     try {
       await getCurrentWindow().setFullscreen(on); // + take the whole display
     } catch {
       /* window may not support it; immersive still applies */
     }
-    // The OS fullscreen resize is async and can land after the first measure,
-    // leaving the mpv window sized to the old (smaller) rect — the pane's black
-    // then shows around the video. Re-sync a couple of times as it settles.
+    // Belt-and-suspenders re-sync as the animation settles (also covers the wid
+    // path, which has no native resize hook).
     reportRectSoon();
     later(reportRect, 80);
     later(reportRect, 250);
-    later(reportRect, 500);
   }
   function relativeSeek(delta: number) {
     api.playerSeek(Math.max(0, state.position + delta)).catch(() => {});

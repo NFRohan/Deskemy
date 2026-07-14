@@ -228,6 +228,16 @@ impl MpvPlayer {
         tracing::info!("mpv player initialized");
         Ok(MpvPlayer { inner })
     }
+
+    /// Native window-resize hook: retarget the compositor visual to the new
+    /// window size (device px) without waiting for a JS rect report. No-op unless
+    /// the compositing path is active.
+    pub fn on_window_resize(&self, _w: i32, _h: i32) {
+        #[cfg(windows)]
+        if let Some(comp) = &self.inner.compositor {
+            comp.resize(_w, _h);
+        }
+    }
 }
 
 impl PlayerService for MpvPlayer {
@@ -662,9 +672,18 @@ impl PlayerInner {
         let ph = ((h * scale).round() as i32).max(1);
         tracing::trace!(?x, ?y, ?w, ?h, scale, px, py, pw, ph, "player set_rect");
         // Compositing path: move a DirectComposition visual (atomic, no airspace).
+        // Also derive the pane's margins from the window so the Rust-side resize
+        // handler can recompute the pane during a fullscreen/edge-drag animation.
         #[cfg(windows)]
         if let Some(comp) = &self.compositor {
-            comp.set_rect(px, py, pw, ph);
+            let (win_w, win_h) = self
+                .app
+                .get_webview_window("main")
+                .and_then(|w| w.inner_size().ok())
+                .map(|s| (s.width as i32, s.height as i32))
+                .unwrap_or((px + pw, py + ph));
+            let insets = (px, py, (win_w - (px + pw)).max(0), (win_h - (py + ph)).max(0));
+            comp.set_rect(px, py, pw, ph, insets);
             return;
         }
         let child = self.child;

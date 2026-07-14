@@ -136,6 +136,7 @@ struct Rect {
 struct State {
     dirty: bool,      // mpv has a new frame to draw
     rect: Rect,       // target pane rect (device px)
+    insets: (i32, i32, i32, i32), // pane margins from the window edges (l,t,r,b)
     rect_dirty: bool, // rect changed → resize/reposition
     running: bool,
 }
@@ -166,6 +167,7 @@ impl Compositor {
                     w: w.max(1),
                     h: h.max(1),
                 },
+                insets: (0, 0, 0, 0),
                 rect_dirty: true,
                 running: true,
             }),
@@ -179,14 +181,32 @@ impl Compositor {
         Compositor { shared, thread }
     }
 
-    /// Update the pane rect (device px); wakes the render thread to resize/move.
-    pub fn set_rect(&self, x: i32, y: i32, w: i32, h: i32) {
+    /// Set the pane rect and its margins from the window edges (all device px);
+    /// wakes the render thread. Reported from JS when the layout changes.
+    pub fn set_rect(&self, x: i32, y: i32, w: i32, h: i32, insets: (i32, i32, i32, i32)) {
         let mut st = self.shared.m.lock().unwrap_or_else(|e| e.into_inner());
         st.rect = Rect {
             x,
             y,
             w: w.max(1),
             h: h.max(1),
+        };
+        st.insets = insets;
+        st.rect_dirty = true;
+        self.shared.cv.notify_one();
+    }
+
+    /// Recompute the pane from the last insets for a new window size (device px).
+    /// Driven natively from `WindowEvent::Resized` so fullscreen/edge-drag resizes
+    /// track the window without the JS round-trip.
+    pub fn resize(&self, win_w: i32, win_h: i32) {
+        let mut st = self.shared.m.lock().unwrap_or_else(|e| e.into_inner());
+        let (il, it, ir, ib) = st.insets;
+        st.rect = Rect {
+            x: il,
+            y: it,
+            w: (win_w - il - ir).max(1),
+            h: (win_h - it - ib).max(1),
         };
         st.rect_dirty = true;
         self.shared.cv.notify_one();

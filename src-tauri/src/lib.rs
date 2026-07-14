@@ -96,6 +96,19 @@ pub fn run() {
             }
             Ok(())
         })
+        // Native window-resize hook: keep the compositor video glued to the pane
+        // during fullscreen / edge-drag resizes without the JS round-trip lag.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Resized(size) = event {
+                if let Some(state) = window.try_state::<AppState>() {
+                    if let Ok(guard) = state.player.lock() {
+                        if let Some(p) = guard.as_ref() {
+                            p.on_window_resize(size.width as i32, size.height as i32);
+                        }
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             app_health,
             compositor_test,
