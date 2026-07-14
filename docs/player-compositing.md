@@ -71,28 +71,39 @@ We answer this with a **dumb solid-color layer** before any mpv work.
 
 ## Phased plan (each phase is a testable gate)
 
-### Phase 1 — Compositing feasibility spike  ◐
-Prove a composited layer can show through the WebView, no mpv involved.
-- ☐ Add `windows` crate dep (Graphics_DirectComposition, Direct3D11, Dxgi,
-  Direct2D/Foundation_Numerics as needed).
-- ☐ `transparent: true` on the window (verify the opaque UI still looks normal;
-  everything has solid bg except where we opt out).
-- ☐ `compositor.rs`: D3D11 device → `DCompositionCreateDevice` → target for the
-  main HWND (`DCompositionCreateTargetForHwnd`, topmost=false) → one visual with a
-  solid-color surface → commit. Behind a `compositor_test` command.
-- ☐ Frontend: make the watch video pane transparent (`bg-transparent`, punch a
-  hole) and trigger the test.
-- **GATE:** does the color show through the pane and stay glued during
-  fullscreen/panel resizes? → decides in-code vs wry-fork.
+### Phase 1 — Compositing feasibility spike  ☑ **GATE PASSED (2026-07-14)**
+Proved a composited layer shows through the WebView, no mpv involved.
+- ☑ `windows` crate dep (DirectComposition, Direct3D11, Dxgi).
+- ☑ `transparent: true` on the window — opaque UI still looks normal.
+- ☑ `compositor.rs`: D3D11 device → composition swapchain (magenta) →
+  `DCompositionCreateDevice` → `CreateTargetForHwnd` → visual → commit. Behind the
+  `compositor_test` command; dev trigger Ctrl+Shift+G (makes page transparent).
+- ☑ **RESULT: magenta shows through the transparent windowed WebView2.**
+  → **C1 is viable entirely in our own code — NO wry fork needed.** Sidebar/topbar
+  (opaque) stayed on top; the transparent rest showed the desktop. Swapchain-for-
+  composition + `IDCompositionVisual::SetContent(swapchain)` is the content path
+  we'll reuse for mpv.
+- Note: the transparent-region "background" is just whatever's behind the window
+  (test punches the *whole* page). In prod only the video pane is a hole, filled
+  opaquely by the mpv texture (incl. black letterbox), so nothing peeks through.
 
 ### Phase 2 — mpv render context → texture  ☐
-Independent of compositing; can develop in parallel once Phase 1 is green.
-- ☐ Load render-API symbols in `mpv/mod.rs` (`mpv_render_context_create`,
-  `_render`, `_set_update_callback`, `_free`, `_report_swap`).
-- ☐ Stand up a GL context (ANGLE → D3D11 so the GL FBO is a shareable D3D
-  texture) or software readback as a fallback.
-- ☐ Render frames into a D3D11 texture; drive the render loop off mpv's update
-  callback + a present cadence.
+Now unblocked (Phase 1 passed). **De-risk with the software render path first** —
+it proves the whole pipeline end-to-end with none of the GL/D3D interop risk, and
+for a course player (slides/talking-heads) may even be good enough to ship.
+- ☐ Load render-API symbols in `mpv/mod.rs`: `mpv_render_context_create`,
+  `mpv_render_context_render`, `mpv_render_context_set_update_callback`,
+  `mpv_render_context_free`, `mpv_render_context_report_swap`.
+- ☐ **2a (software, first):** create the render context with
+  `MPV_RENDER_API_TYPE_SW`. Each frame: give mpv a CPU buffer (`sw_size`,
+  `sw_format`=`0bgr`/`rgba`, `sw_stride`, `sw_pointer`); `UpdateSubresource` it
+  into a D3D11 texture that backs the composition swapchain; `Present`. Drive off
+  the update callback + a paint tick. Retire `--wid`; mpv owns no window.
+- ☐ **2b (GPU, optimize later):** swap SW for OpenGL via **ANGLE** (WebView2 ships
+  `libEGL`/`libGLESv2`), rendering into an EGL-wrapped D3D11 texture — no CPU
+  readback. Only if SW perf/power isn't acceptable.
+- ☐ Position/size the DComp visual from the pane rect. Resize is now atomic; the
+  JS still reports the rect but it only moves a compositor visual.
 
 ### Phase 3 — Wire texture → DComp visual  ☐
 - ☐ Feed the mpv texture as the DComp visual content (swapchain or surface).
