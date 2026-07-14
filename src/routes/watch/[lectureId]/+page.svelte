@@ -490,23 +490,28 @@
     api.playerSeek(Math.max(0, state.position + delta)).catch(() => {});
   }
 
-  // Auto-hide the control bar in fullscreen so the video is truly full-height;
-  // hiding it reflows the pane (ResizeObserver re-syncs the mpv window). Mouse
-  // over the video goes to the native window, so we reveal via a bottom hover
-  // strip and any keypress.
+  // In fullscreen the control bar docks *below* the video, so revealing it
+  // shrinks the video (airspace — it can't overlay the native surface). To keep
+  // the video from rubberbanding on every shortcut, playback keys no longer
+  // reveal it: pause state drives it instead. Paused → controls stay up so you
+  // can scrub; playing → they auto-hide ~2.5s later. Windowed always shows them.
+  function armAutoHide() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => (controlsHidden = true), 2500);
+  }
   function revealControls() {
     controlsHidden = false;
-    clearTimeout(hideTimer);
-    if (ui.immersive) {
-      hideTimer = setTimeout(() => (controlsHidden = true), 2500);
-    }
+    if (ui.immersive && !state.paused) armAutoHide();
   }
   $effect(() => {
-    if (ui.immersive) {
-      revealControls();
-    } else {
-      controlsHidden = false;
+    if (!ui.immersive) {
+      controlsHidden = false; // windowed: always visible
       clearTimeout(hideTimer);
+    } else if (state.paused) {
+      controlsHidden = false; // paused in fullscreen: bring them up and keep them
+      clearTimeout(hideTimer);
+    } else if (!controlsHidden) {
+      armAutoHide(); // resumed while visible: fade the chrome back out
     }
   });
 
@@ -558,7 +563,6 @@
       !!el?.isContentEditable ||
       (tag === "INPUT" && !["range", "checkbox", "radio", "button"].includes(type ?? ""));
     if (typing) return;
-    revealControls(); // any shortcut brings the controls back in fullscreen
 
     let handled = true;
     switch (e.key) {
