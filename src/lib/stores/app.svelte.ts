@@ -35,10 +35,18 @@ export interface Crumb {
   href?: string;
 }
 
-export const ui = $state<{ crumbs: Crumb[]; immersive: boolean; sidebarCollapsed: boolean }>({
+export const ui = $state<{
+  crumbs: Crumb[];
+  immersive: boolean;
+  sidebarCollapsed: boolean;
+  /** Compositing player active: the video renders behind a transparent webview,
+   *  so the watch route's backgrounds must stay transparent to reveal it. */
+  compositor: boolean;
+}>({
   crumbs: [{ label: "Library" }],
   immersive: false,
   sidebarCollapsed: false,
+  compositor: false,
 });
 
 export function setCrumbs(crumbs: Crumb[]): void {

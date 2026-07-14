@@ -649,8 +649,13 @@
 {:else}
   <!-- In fullscreen, pin to the whole viewport (fixed inset-0) so the layout can
        never fall short of the window and leak the themed body background as a
-       black/white bar. Windowed stays in normal flow (h-full). -->
-  <div class="flex flex-col bg-black {ui.immersive ? 'fixed inset-0 z-30' : 'h-full'}">
+       black/white bar. Windowed stays in normal flow (h-full). Compositing mode
+       keeps the background transparent so the video (behind the webview) shows. -->
+  <div
+    class="flex flex-col {ui.compositor ? '' : 'bg-black'} {ui.immersive
+      ? 'fixed inset-0 z-30'
+      : 'h-full'}"
+  >
     {#if error}
       <div class="bg-error/10 border-b border-error/30 text-error text-body-sm px-4 py-2">{error}</div>
     {/if}
@@ -658,8 +663,12 @@
     <div class="flex-1 flex min-h-0">
       <!-- Video area (shrinks when the course-content sidebar opens) -->
       <div class="flex-1 flex flex-col min-w-0">
-        <!-- mpv renders into a native child window positioned over this pane -->
-        <div bind:this={paneEl} class="flex-1 min-h-0 relative bg-black"></div>
+        <!-- Video pane. wid path: mpv child window sits on top. Compositor path:
+             the pane is a transparent hole the composited video shows through. -->
+        <div
+          bind:this={paneEl}
+          class="flex-1 min-h-0 relative {ui.compositor ? '' : 'bg-black'}"
+        ></div>
 
     <!-- Track/chapter panel: pushes the video up rather than overlapping the
          native surface, so playback continues uninterrupted (just resized). -->

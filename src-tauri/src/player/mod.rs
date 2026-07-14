@@ -122,7 +122,11 @@ pub struct MpvPlayer {
 struct PlayerInner {
     app: AppHandle,
     mpv: Mpv,
-    child: isize, // native child HWND (as isize)
+    child: isize, // native child HWND (as isize); 0 in compositor mode
+    // When present, mpv renders into a DirectComposition visual instead of the
+    // child window — the video shares the webview surface (no airspace lag).
+    #[cfg(windows)]
+    compositor: Option<crate::compositor::Compositor>,
     state: Mutex<PlayerState>,
     playlist: Mutex<Playlist>,
     last_emit: Mutex<Instant>,
@@ -139,10 +143,27 @@ impl MpvPlayer {
     /// initialize mpv into it, and start the event pump.
     pub fn new(app: AppHandle) -> Result<Self> {
         let main_hwnd = main_window_hwnd(&app)?;
-        let child = create_child_on_main(&app, main_hwnd)?;
+
+        // Opt-in compositing path (Windows): mpv renders into a DirectComposition
+        // visual instead of a child window, so DOM + video resize atomically.
+        #[cfg(windows)]
+        let want_compositor = std::env::var_os("DESKEMY_COMPOSITOR").is_some();
+        #[cfg(not(windows))]
+        let want_compositor = false;
+
+        // No child window in compositor mode; mpv uses the render API (vo=libmpv).
+        let child = if want_compositor {
+            0
+        } else {
+            create_child_on_main(&app, main_hwnd)?
+        };
 
         let mpv = Mpv::new()?;
-        mpv.set_option("wid", &child.to_string())?;
+        if want_compositor {
+            mpv.set_option("vo", "libmpv")?;
+        } else {
+            mpv.set_option("wid", &child.to_string())?;
+        }
         mpv.set_option("hwdec", "no")?; // rule out hw decode issues in embedded window
         mpv.set_option("keep-open", "no")?;
         mpv.set_option("osc", "no")?;
@@ -156,6 +177,32 @@ impl MpvPlayer {
         mpv.set_option("sub-auto", "fuzzy")?;
         mpv.initialize()?;
 
+        // The render context needs an initialized handle. If it can't be built,
+        // the compositor path just shows nothing (opt-in flag; log and continue).
+        #[cfg(windows)]
+        let compositor = if want_compositor {
+            match mpv.has_render_api() {
+                true => match crate::mpv::MpvRenderContext::new_sw(&mpv) {
+                    Ok(rctx) => {
+                        tracing::info!("compositor: render context ready");
+                        Some(crate::compositor::Compositor::new(
+                            main_hwnd, rctx, 0, 0, 1280, 720,
+                        ))
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "compositor render context failed");
+                        None
+                    }
+                },
+                false => {
+                    tracing::warn!("compositor requested but libmpv lacks the render API");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         mpv.observe_property(1, "time-pos", MPV_FORMAT_DOUBLE)?;
         mpv.observe_property(2, "pause", MPV_FORMAT_FLAG)?;
         mpv.observe_property(3, "duration", MPV_FORMAT_DOUBLE)?;
@@ -166,6 +213,8 @@ impl MpvPlayer {
             app,
             mpv,
             child,
+            #[cfg(windows)]
+            compositor,
             state: Mutex::new(PlayerState::default()),
             playlist: Mutex::new(Playlist::default()),
             last_emit: Mutex::new(now),
@@ -612,6 +661,12 @@ impl PlayerInner {
         let pw = ((w * scale).round() as i32).max(1);
         let ph = ((h * scale).round() as i32).max(1);
         tracing::trace!(?x, ?y, ?w, ?h, scale, px, py, pw, ph, "player set_rect");
+        // Compositing path: move a DirectComposition visual (atomic, no airspace).
+        #[cfg(windows)]
+        if let Some(comp) = &self.compositor {
+            comp.set_rect(px, py, pw, ph);
+            return;
+        }
         let child = self.child;
         let _ = self
             .app

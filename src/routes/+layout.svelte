@@ -15,6 +15,14 @@
     (async () => {
       const cfg = await api.getConfig().catch(() => null);
       applyTheme(cfg?.theme ?? "dark");
+      // Compositing mode: mpv renders behind the webview, so the window (body)
+      // must be transparent for the video to show through the watch pane. Other
+      // pages stay opaque via their own bg-background, covering the video layer.
+      ui.compositor = await api.compositorEnabled().catch(() => false);
+      if (ui.compositor) {
+        document.documentElement.style.background = "transparent";
+        document.body.style.background = "transparent";
+      }
     })();
     // Auto-rescan pushes this when a watched course folder changes.
     const unlisten = listen("library:changed", () => loadLibrary(true));
@@ -53,10 +61,15 @@
     {#if !ui.immersive}
       <TopBar />
     {/if}
-    <!-- On /watch the video pane is black, so any uncovered gap must fall back to
-         black too — not the near-white bg-background of the light theme. -->
+    <!-- On /watch the video pane is black, so any uncovered gap falls back to
+         black (not the light theme's bg-background) — unless we're compositing,
+         where the pane must stay transparent to reveal the video behind it. -->
     <main
-      class="flex-1 min-h-0 {scrolls ? 'bg-background overflow-y-auto' : 'bg-black overflow-hidden'}"
+      class="flex-1 min-h-0 {scrolls
+        ? 'bg-background overflow-y-auto'
+        : ui.compositor
+          ? 'overflow-hidden'
+          : 'bg-black overflow-hidden'}"
     >
       {@render children()}
     </main>

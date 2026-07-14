@@ -45,6 +45,13 @@ fn compositor_test(app: tauri::AppHandle) -> std::result::Result<(), String> {
     }
 }
 
+/// Whether the compositing player path is active (Windows + DESKEMY_COMPOSITOR).
+/// The UI makes the video pane transparent so the composited video shows through.
+#[tauri::command]
+fn compositor_enabled() -> bool {
+    cfg!(windows) && std::env::var_os("DESKEMY_COMPOSITOR").is_some()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -92,6 +99,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_health,
             compositor_test,
+            compositor_enabled,
             commands::library_add_root,
             commands::library_list_roots,
             commands::library_remove_root,
