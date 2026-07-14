@@ -52,6 +52,169 @@ fn compositor_enabled() -> bool {
     cfg!(windows) && std::env::var_os("DESKEMY_COMPOSITOR").is_some()
 }
 
+/// Enter/exit the player's fullscreen, with a native-feeling transition from a
+/// maximized window: exactly one visible snap in each direction (like a
+/// browser's F11). The maximized state is staged around tao's own fullscreen
+/// with metadata-only edits — see the `imm` module for the mechanism.
+///
+/// Deliberately `async`: it runs off the main thread, so the staging closures
+/// and tao's fullscreen message queue behind one another (FIFO) on the event
+/// loop instead of interleaving, and there are no IPC-length gaps between the
+/// visual states like the previous JS-driven sequence had.
+#[tauri::command]
+async fn window_set_immersive(
+    window: tauri::WebviewWindow,
+    on: bool,
+) -> std::result::Result<(), String> {
+    #[cfg(windows)]
+    {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
+        if on {
+            if window.is_maximized().unwrap_or(false) {
+                window
+                    .run_on_main_thread(move || unsafe { imm::stage_enter_from_maximized(hwnd) })
+                    .map_err(|e| e.to_string())?;
+                window.set_fullscreen(true).map_err(|e| e.to_string())?;
+                // Re-enable DWM transition animations once the (queued)
+                // fullscreen transition has been applied.
+                window
+                    .run_on_main_thread(move || unsafe {
+                        imm::transitions_suppressed(hwnd, false)
+                    })
+                    .map_err(|e| e.to_string())
+            } else {
+                imm::clear_saved();
+                window.set_fullscreen(true).map_err(|e| e.to_string())
+            }
+        } else {
+            // Suppress animations across tao's exit-restore and the re-maximize
+            // (stage_exit_to_maximized re-enables them when done).
+            window
+                .run_on_main_thread(move || unsafe { imm::transitions_suppressed(hwnd, true) })
+                .map_err(|e| e.to_string())?;
+            window.set_fullscreen(false).map_err(|e| e.to_string())?;
+            window
+                .run_on_main_thread(move || unsafe { imm::stage_exit_to_maximized(hwnd) })
+                .map_err(|e| e.to_string())
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        window.set_fullscreen(on).map_err(|e| e.to_string())
+    }
+}
+
+/// Maximized-state staging for `window_set_immersive`.
+///
+/// Two hard-won constraints shape this (see tao 0.35 sources):
+/// 1. tao's fullscreen enter is `save placement → SetWindowPos(monitor rect)`,
+///    and Windows clamps that resize to the work area iff the window is zoomed
+///    — so the maximized state must be left *before* entering fullscreen.
+/// 2. tao syncs its internal MAXIMIZED flag from WM_SIZE, and re-asserts both
+///    the WS_MAXIMIZE style and ShowWindow(SW_MAXIMIZE) from that flag on any
+///    style recompute (set_fullscreen does one). So the state change MUST be a
+///    real transition that fires WM_SIZE — silently editing the style bit
+///    desyncs tao and it re-maximizes mid-set_fullscreen.
+///
+/// The jank is then removed by making the real transitions invisible:
+/// geometrically, by pre-widening the placement's restore rect to the monitor
+/// so leaving the maximized state never shrinks the window; and temporally, by
+/// suppressing DWM's state-transition animations (the restore/maximize zoom
+/// effects) for the duration of the swap via DWMWA_TRANSITIONS_FORCEDISABLED.
+#[cfg(windows)]
+mod imm {
+    use std::ffi::c_void;
+    use std::mem::size_of;
+    use std::sync::Mutex;
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowPlacement, SetWindowPlacement, SW_RESTORE, SW_SHOWMAXIMIZED, WINDOWPLACEMENT,
+    };
+
+    /// The maximized window's original restore rect, stashed on enter so exit
+    /// can put it back. None = fullscreen wasn't entered from a maximized state.
+    static SAVED: Mutex<Option<RECT>> = Mutex::new(None);
+
+    pub fn clear_saved() {
+        *SAVED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// Suppress (or restore) DWM's state-transition animations for this window.
+    pub unsafe fn transitions_suppressed(hwnd: isize, suppressed: bool) {
+        let hwnd = HWND(hwnd as *mut _);
+        let v: i32 = suppressed as i32; // Win32 BOOL
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &v as *const i32 as *const c_void,
+            size_of::<i32>() as u32,
+        );
+    }
+
+    /// Before tao enters fullscreen from a maximized window: stash the real
+    /// restore rect, widen it to the monitor bounds, and leave the maximized
+    /// state through a real (WM_SIZE-firing, tao-visible) restore — which now
+    /// lands at full-monitor size, so nothing on screen shrinks. Animations are
+    /// suppressed until after the fullscreen transition completes.
+    pub unsafe fn stage_enter_from_maximized(hwnd_raw: isize) {
+        transitions_suppressed(hwnd_raw, true);
+        let hwnd = HWND(hwnd_raw as *mut _);
+        let mut wp = WINDOWPLACEMENT {
+            length: size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        if GetWindowPlacement(hwnd, &mut wp).is_err() {
+            return;
+        }
+        *SAVED.lock().unwrap_or_else(|e| e.into_inner()) = Some(wp.rcNormalPosition);
+
+        let mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        let mut mi = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(mon, &mut mi).ok().is_err() {
+            return;
+        }
+        wp.rcNormalPosition = mi.rcMonitor;
+        wp.showCmd = SW_RESTORE.0 as u32;
+        let _ = SetWindowPlacement(hwnd, &wp);
+    }
+
+    /// After tao exits fullscreen (its saved placement restores the monitor-
+    /// sized normal window — a geometric no-op): re-maximize with the animation
+    /// suppressed (a single instant snap to the work area), then put the
+    /// original restore rect back as pure metadata so a later manual
+    /// un-maximize returns the window to its real pre-fullscreen size.
+    pub unsafe fn stage_exit_to_maximized(hwnd_raw: isize) {
+        let taken = SAVED.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let Some(saved) = taken else {
+            transitions_suppressed(hwnd_raw, false);
+            return;
+        };
+        let hwnd = HWND(hwnd_raw as *mut _);
+        let mut wp = WINDOWPLACEMENT {
+            length: size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        if GetWindowPlacement(hwnd, &mut wp).is_err() {
+            transitions_suppressed(hwnd_raw, false);
+            return;
+        }
+        wp.showCmd = SW_SHOWMAXIMIZED.0 as u32;
+        if SetWindowPlacement(hwnd, &wp).is_ok() {
+            // Metadata-only while maximized: nothing repaints.
+            wp.rcNormalPosition = saved;
+            let _ = SetWindowPlacement(hwnd, &wp);
+        }
+        transitions_suppressed(hwnd_raw, false);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -113,6 +276,7 @@ pub fn run() {
             app_health,
             compositor_test,
             compositor_enabled,
+            window_set_immersive,
             commands::library_add_root,
             commands::library_list_roots,
             commands::library_remove_root,

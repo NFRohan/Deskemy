@@ -3,7 +3,6 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
   import {
     Play,
     Pause,
@@ -450,7 +449,7 @@
     observer?.disconnect();
     timers.forEach(clearTimeout);
     setImmersive(false);
-    getCurrentWindow().setFullscreen(false).catch(() => {});
+    api.windowSetImmersive(false).catch(() => {});
     // Grab a resume frame for the Continue Watching entry, then stop. The
     // backend player persists past this component, so the awaited grab still
     // captures the current frame before playback is torn down.
@@ -469,40 +468,17 @@
     api.playerSeek(seekValue).catch(() => {});
     seeking = false;
   }
-  // Whether we entered immersive from a maximized window, so we can restore that
-  // on exit (fullscreen is entered from the *unmaximized* state — see below).
-  let cameFromMaximized = false;
   async function toggleImmersive() {
     const on = !ui.immersive;
-    const win = getCurrentWindow();
     setImmersive(on); // hide sidebar/titlebar so the video fills the window
-    try {
-      if (on && (await win.isMaximized())) {
-        // tao's setFullscreen is a no-op on a *maximized* window: it still carries
-        // WS_MAXIMIZE, so Windows clamps the SetWindowPos-to-monitor back to the
-        // work area and the taskbar stays visible. Drop maximized first — waiting
-        // for it to actually apply, since the awaited call can return before tao
-        // processes the restore on its event loop — then go fullscreen.
-        cameFromMaximized = true;
-        await win.unmaximize();
-        for (let i = 0; i < 25 && (await win.isMaximized()); i++) {
-          await new Promise((r) => setTimeout(r, 16));
-        }
-      }
-      // Report the pane once the (immersive) reflow lands but BEFORE the OS
-      // resize, so the backend's native resize handler tracks the window.
-      await tick();
-      reportRect();
-      await win.setFullscreen(on);
-      if (!on && cameFromMaximized) {
-        // Fullscreen was entered from the unmaximized state, so tao restored to
-        // the normal window — re-maximize to match where we started.
-        cameFromMaximized = false;
-        await win.maximize();
-      }
-    } catch {
-      /* window API may reject; immersive layout still applies */
-    }
+    // Report the pane once the (immersive) reflow lands but BEFORE the OS
+    // resize, so the backend's native resize handler tracks the window.
+    await tick();
+    reportRect();
+    // One native-side command: from a maximized window the transition is staged
+    // (restore-at-monitor-size → fullscreen) so nothing on screen ever shrinks,
+    // and exit re-maximizes — no IPC-length gaps between the visual states.
+    await api.windowSetImmersive(on).catch(() => {});
     // Belt-and-suspenders re-sync as the layout settles (also covers the wid
     // path, which has no native resize hook).
     reportRectSoon();

@@ -31,6 +31,9 @@ export const api = {
   // Phase-1 compositing spike (see docs/player-compositing.md).
   compositorTest: () => invoke<void>("compositor_test"),
   compositorEnabled: () => invoke<boolean>("compositor_enabled"),
+  // Player fullscreen with a native-feeling maximized→fullscreen transition
+  // (staged native-side so the window never visibly shrinks).
+  windowSetImmersive: (on: boolean) => invoke<void>("window_set_immersive", { on }),
 
   // library_*
   addRoot: (path: string) => invoke<string>("library_add_root", { path }),
