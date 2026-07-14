@@ -70,9 +70,17 @@ everything Deskemy records lives in a single local SQLite database.
 - **Windows 10 or 11.**
 - **[mpv](https://mpv.io/)** — Deskemy plays through your installed mpv
   (`libmpv-2.dll`) rather than bundling a media engine, so format support and
-  playback match mpv exactly. Install it via [Scoop](https://scoop.sh/)
-  (`scoop install mpv`) or from [mpv.io](https://mpv.io/); Deskemy discovers it
-  automatically and prompts you if it can't find it.
+  playback match mpv exactly. Install it from [mpv.io](https://mpv.io/), or via
+  [Scoop](https://scoop.sh/):
+
+  ```powershell
+  scoop bucket add extras   # mpv lives in the "extras" bucket
+  scoop install mpv
+  ```
+
+  Deskemy discovers mpv automatically (including Scoop's install location) and
+  prompts you if it can't find it. If needed, point `DESKEMY_LIBMPV` at the
+  full path to `libmpv-2.dll`.
 - The **WebView2** runtime — installed by the setup program if it's missing.
 
 ## Install

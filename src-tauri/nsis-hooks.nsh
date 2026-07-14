@@ -13,7 +13,7 @@
   StrCmp $0 "" 0 deskemy_mpv_ok
   SearchPath $0 "mpv.exe"
   StrCmp $0 "" 0 deskemy_mpv_ok
-    MessageBox MB_YESNO|MB_ICONINFORMATION "Deskemy plays video through mpv, which does not appear to be installed yet.$\n$\nInstall mpv from mpv.io (or run 'scoop install mpv'), then start Deskemy. The app will also prompt you if it can't find mpv.$\n$\nOpen the mpv download page now?" IDNO deskemy_mpv_ok
+    MessageBox MB_YESNO|MB_ICONINFORMATION "Deskemy plays video through mpv, which does not appear to be installed yet.$\n$\nInstall mpv from mpv.io (or with Scoop: 'scoop bucket add extras' then 'scoop install mpv'), then start Deskemy. The app will also prompt you if it can't find mpv.$\n$\nOpen the mpv download page now?" IDNO deskemy_mpv_ok
     ExecShell "open" "https://mpv.io/installation/"
   deskemy_mpv_ok:
 !macroend
