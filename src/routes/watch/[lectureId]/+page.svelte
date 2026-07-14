@@ -469,8 +469,10 @@
     api.playerSeek(seekValue).catch(() => {});
     seeking = false;
   }
+  let wasMaximized = false;
   async function toggleImmersive() {
     const on = !ui.immersive;
+    const win = getCurrentWindow();
     setImmersive(on); // hide sidebar/titlebar so the video fills the window
     // Report the pane once the sidebar/titlebar reflow lands but BEFORE the OS
     // fullscreen resize — this hands the backend the correct pane margins, so its
@@ -478,7 +480,20 @@
     await tick();
     reportRect();
     try {
-      await getCurrentWindow().setFullscreen(on); // + take the whole display
+      if (on) {
+        // Going fullscreen straight from a maximized window leaves it sized to
+        // the work area (the taskbar stays visible). Un-maximize first, then take
+        // the whole display; restore the maximized state on the way out.
+        wasMaximized = await win.isMaximized();
+        if (wasMaximized) await win.unmaximize();
+        await win.setFullscreen(true);
+      } else {
+        await win.setFullscreen(false);
+        if (wasMaximized) {
+          await win.maximize();
+          wasMaximized = false;
+        }
+      }
     } catch {
       /* window may not support it; immersive still applies */
     }
