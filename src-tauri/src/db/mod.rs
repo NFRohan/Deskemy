@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -203,6 +203,18 @@ fn migrate(conn: &Connection) -> Result<()> {
                  day                TEXT PRIMARY KEY,
                  watch_seconds      REAL NOT NULL DEFAULT 0,
                  lectures_completed INTEGER NOT NULL DEFAULT 0
+             );",
+        )?;
+    }
+    if version < 6 {
+        // Per-course playback preferences (speed / subtitle / audio).
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS course_prefs (
+                 course_id    TEXT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
+                 speed        REAL,
+                 subtitle_id  INTEGER,
+                 subtitles_on INTEGER NOT NULL DEFAULT 0,
+                 audio_id     INTEGER
              );",
         )?;
     }

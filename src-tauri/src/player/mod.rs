@@ -199,7 +199,9 @@ impl PlayerService for MpvPlayer {
             .command(&["seek", &position.to_string(), "absolute"])
     }
     fn set_speed(&self, speed: f64) -> Result<()> {
-        self.inner.mpv.set_property("speed", &speed.to_string())
+        let r = self.inner.mpv.set_property("speed", &speed.to_string());
+        self.inner.remember(|db, cid| queries::set_pref_speed(db, cid, speed));
+        r
     }
     fn next(&self) -> Result<()> {
         self.inner.step(1)
@@ -226,11 +228,15 @@ impl PlayerService for MpvPlayer {
     }
     fn set_subtitle(&self, sid: Option<i64>) -> Result<()> {
         let v = sid.map(|s| s.to_string()).unwrap_or_else(|| "no".into());
-        self.inner.mpv.set_property("sid", &v)
+        let r = self.inner.mpv.set_property("sid", &v);
+        self.inner.remember(|db, cid| queries::set_pref_subtitle(db, cid, sid));
+        r
     }
     fn set_audio(&self, aid: Option<i64>) -> Result<()> {
         let v = aid.map(|s| s.to_string()).unwrap_or_else(|| "no".into());
-        self.inner.mpv.set_property("aid", &v)
+        let r = self.inner.mpv.set_property("aid", &v);
+        self.inner.remember(|db, cid| queries::set_pref_audio(db, cid, aid));
+        r
     }
     fn set_chapter(&self, index: i64) -> Result<()> {
         self.inner.mpv.set_property("chapter", &index.to_string())
@@ -317,11 +323,17 @@ impl PlayerInner {
             queries::get_progress(&db, &lecture_id).unwrap_or((0.0, false))
         };
         let start = if resume && !completed { saved_pos } else { 0.0 };
-        let speed = {
+        // Per-course playback prefs override the global default where present.
+        let prefs = {
+            let st = self.app.state::<AppState>();
+            let db = st.db.lock().unwrap_or_else(|e| e.into_inner());
+            queries::get_course_prefs(&db, &course_id).ok().flatten()
+        };
+        let speed = prefs.as_ref().and_then(|p| p.0).unwrap_or_else(|| {
             let st = self.app.state::<AppState>();
             let cfg = st.config.lock().unwrap_or_else(|e| e.into_inner());
             cfg.default_speed
-        };
+        });
 
         tracing::debug!(path = path.as_str(), start, "loadfile");
         // loadfile <url> [<flags> [<index> [<options>]]] — options is the 4th arg.
@@ -338,6 +350,19 @@ impl PlayerInner {
         }
         self.mpv.set_property("pause", "no").ok();
         self.mpv.set_property("speed", &speed.to_string()).ok();
+        // Apply remembered audio/subtitle selection (mpv defers until tracks load).
+        if let Some((_, sub_id, subs_on, aud_id)) = &prefs {
+            if let Some(a) = aud_id {
+                self.mpv.set_property("aid", &a.to_string()).ok();
+            }
+            if *subs_on {
+                if let Some(s) = sub_id {
+                    self.mpv.set_property("sid", &s.to_string()).ok();
+                }
+            } else {
+                self.mpv.set_property("sid", "no").ok();
+            }
+        }
         self.show(true);
 
         {
@@ -429,6 +454,23 @@ impl PlayerInner {
             self.save_progress(false);
             self.flush_watch();
         }
+    }
+
+    /// Persist a per-course playback preference for the loaded course (best-effort).
+    fn remember<F: FnOnce(&rusqlite::Connection, &str) -> Result<()>>(&self, f: F) {
+        let cid = {
+            let pl = self.playlist.lock().unwrap_or_else(|e| e.into_inner());
+            if pl.items.is_empty() {
+                return;
+            }
+            pl.course_id.clone()
+        };
+        let st = self.app.state::<AppState>();
+        let db = match st.db.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let _ = f(&db, &cid);
     }
 
     /// Persist accumulated watch seconds to today's activity bucket.

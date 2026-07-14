@@ -1015,6 +1015,59 @@ pub fn get_lecture_view(
         .optional()?)
 }
 
+// --- Per-course playback preferences ---
+
+/// (speed, subtitle_id, subtitles_on, audio_id) for a course, if recorded.
+#[allow(clippy::type_complexity)]
+pub fn get_course_prefs(
+    conn: &Connection,
+    course_id: &str,
+) -> Result<Option<(Option<f64>, Option<i64>, bool, Option<i64>)>> {
+    Ok(conn
+        .query_row(
+            "SELECT speed, subtitle_id, subtitles_on, audio_id FROM course_prefs WHERE course_id = ?1",
+            params![course_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?)),
+        )
+        .optional()?)
+}
+
+pub fn set_pref_speed(conn: &Connection, course_id: &str, speed: f64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO course_prefs (course_id, speed) VALUES (?1, ?2)
+         ON CONFLICT(course_id) DO UPDATE SET speed = ?2",
+        params![course_id, speed],
+    )?;
+    Ok(())
+}
+
+/// Remember the subtitle selection: `Some(id)` records the track and marks subs
+/// on; `None` just marks subs off (keeps the last selected track).
+pub fn set_pref_subtitle(conn: &Connection, course_id: &str, sid: Option<i64>) -> Result<()> {
+    match sid {
+        Some(id) => conn.execute(
+            "INSERT INTO course_prefs (course_id, subtitle_id, subtitles_on) VALUES (?1, ?2, 1)
+             ON CONFLICT(course_id) DO UPDATE SET subtitle_id = ?2, subtitles_on = 1",
+            params![course_id, id],
+        )?,
+        None => conn.execute(
+            "INSERT INTO course_prefs (course_id, subtitles_on) VALUES (?1, 0)
+             ON CONFLICT(course_id) DO UPDATE SET subtitles_on = 0",
+            params![course_id],
+        )?,
+    };
+    Ok(())
+}
+
+pub fn set_pref_audio(conn: &Connection, course_id: &str, aid: Option<i64>) -> Result<()> {
+    conn.execute(
+        "INSERT INTO course_prefs (course_id, audio_id) VALUES (?1, ?2)
+         ON CONFLICT(course_id) DO UPDATE SET audio_id = ?2",
+        params![course_id, aid],
+    )?;
+    Ok(())
+}
+
 pub fn get_progress(conn: &Connection, lecture_id: &str) -> Result<(f64, bool)> {
     Ok(conn
         .query_row(
