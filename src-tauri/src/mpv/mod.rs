@@ -52,6 +52,22 @@ pub struct MpvEventEndFile {
     pub playlist_insert_num_entries: c_int,
 }
 
+// mpv_render_param_type (render API — used by the compositing path).
+pub const MPV_RENDER_PARAM_INVALID: c_int = 0;
+pub const MPV_RENDER_PARAM_API_TYPE: c_int = 1;
+pub const MPV_RENDER_PARAM_SW_SIZE: c_int = 17;
+pub const MPV_RENDER_PARAM_SW_FORMAT: c_int = 18;
+pub const MPV_RENDER_PARAM_SW_STRIDE: c_int = 19;
+pub const MPV_RENDER_PARAM_SW_POINTER: c_int = 20;
+
+/// mpv_render_param: `{ int type; void *data; }` (data pointer is 8-aligned, so
+/// this matches the C layout including the 4 bytes of padding after `type_`).
+#[repr(C)]
+pub struct MpvRenderParam {
+    pub type_: c_int,
+    pub data: *mut c_void,
+}
+
 struct Fns {
     _lib: libloading::Library,
     create: unsafe extern "C" fn() -> *mut Handle,
@@ -64,6 +80,15 @@ struct Fns {
     observe_property: unsafe extern "C" fn(*mut Handle, u64, *const c_char, c_int) -> c_int,
     wait_event: unsafe extern "C" fn(*mut Handle, f64) -> *mut MpvEvent,
     free: unsafe extern "C" fn(*mut c_void),
+    // Render API — optional so an older libmpv without it still drives the wid
+    // player (only the compositing path needs these).
+    render_context_create:
+        Option<unsafe extern "C" fn(*mut *mut c_void, *mut Handle, *mut MpvRenderParam) -> c_int>,
+    render_context_render:
+        Option<unsafe extern "C" fn(*mut c_void, *mut MpvRenderParam) -> c_int>,
+    render_context_set_update_callback:
+        Option<unsafe extern "C" fn(*mut c_void, extern "C" fn(*mut c_void), *mut c_void)>,
+    render_context_free: Option<unsafe extern "C" fn(*mut c_void)>,
 }
 unsafe impl Send for Fns {}
 unsafe impl Sync for Fns {}
@@ -145,6 +170,19 @@ unsafe fn load() -> Result<Fns> {
         let observe_property = sym!("mpv_observe_property");
         let wait_event = sym!("mpv_wait_event");
         let free = sym!("mpv_free");
+        // Best-effort: missing render symbols just disable the compositing path.
+        macro_rules! opt_sym {
+            ($n:literal) => {
+                lib.get(concat!($n, "\0").as_bytes())
+                    .map(|s: libloading::Symbol<_>| *s)
+                    .ok()
+            };
+        }
+        let render_context_create = opt_sym!("mpv_render_context_create");
+        let render_context_render = opt_sym!("mpv_render_context_render");
+        let render_context_set_update_callback =
+            opt_sym!("mpv_render_context_set_update_callback");
+        let render_context_free = opt_sym!("mpv_render_context_free");
         return Ok(Fns {
             create,
             initialize,
@@ -156,6 +194,10 @@ unsafe fn load() -> Result<Fns> {
             observe_property,
             wait_event,
             free,
+            render_context_create,
+            render_context_render,
+            render_context_set_update_callback,
+            render_context_free,
             _lib: lib,
         });
     }
@@ -267,6 +309,110 @@ impl Mpv {
         match fns() {
             Ok(f) => unsafe { (f.wait_event)(self.ctx, timeout) },
             Err(_) => std::ptr::null_mut(),
+        }
+    }
+
+    /// Whether this libmpv exposes the render API (needed for the compositor).
+    pub fn has_render_api(&self) -> bool {
+        fns()
+            .map(|f| f.render_context_create.is_some())
+            .unwrap_or(false)
+    }
+}
+
+/// mpv render context (libmpv render API). The render API is thread-safe, so we
+/// drive it from a dedicated compositor thread.
+pub struct MpvRenderContext {
+    ctx: *mut c_void,
+}
+unsafe impl Send for MpvRenderContext {}
+unsafe impl Sync for MpvRenderContext {}
+
+impl MpvRenderContext {
+    /// Create a software (CPU) render context. The mpv handle must have been
+    /// created with `vo=libmpv` (set that option before `initialize`).
+    pub fn new_sw(mpv: &Mpv) -> Result<Self> {
+        let f = fns()?;
+        let create = f
+            .render_context_create
+            .ok_or_else(|| DeskemyError::Player("libmpv render API unavailable".into()))?;
+        let api = cstr("sw")?;
+        let mut params = [
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_API_TYPE,
+                data: api.as_ptr() as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        let mut ctx: *mut c_void = std::ptr::null_mut();
+        check(unsafe { create(&mut ctx, mpv.ctx, params.as_mut_ptr()) })?;
+        if ctx.is_null() {
+            return Err(DeskemyError::Player("mpv render context is null".into()));
+        }
+        Ok(Self { ctx })
+    }
+
+    /// Register a callback invoked (from an arbitrary thread) when a new frame is
+    /// available. Keep it fast — just wake the render loop.
+    pub fn set_update_callback(&self, cb: extern "C" fn(*mut c_void), data: *mut c_void) {
+        if let Ok(f) = fns() {
+            if let Some(set) = f.render_context_set_update_callback {
+                unsafe { set(self.ctx, cb, data) };
+            }
+        }
+    }
+
+    /// Render the current frame into a CPU buffer at `ptr` (`stride` bytes/row),
+    /// `w`×`h`, in the given mpv software format (e.g. `c"bgr0"`).
+    pub fn render_sw(
+        &self,
+        ptr: *mut c_void,
+        stride: usize,
+        w: i32,
+        h: i32,
+        format: &CStr,
+    ) -> Result<()> {
+        let f = fns()?;
+        let render = f
+            .render_context_render
+            .ok_or_else(|| DeskemyError::Player("libmpv render API unavailable".into()))?;
+        let mut size = [w, h];
+        let mut stride = stride;
+        let mut params = [
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_SW_SIZE,
+                data: size.as_mut_ptr() as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_SW_FORMAT,
+                data: format.as_ptr() as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_SW_STRIDE,
+                data: &mut stride as *mut usize as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_SW_POINTER,
+                data: ptr,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        check(unsafe { render(self.ctx, params.as_mut_ptr()) })
+    }
+}
+
+impl Drop for MpvRenderContext {
+    fn drop(&mut self) {
+        if let Ok(f) = fns() {
+            if let Some(free) = f.render_context_free {
+                unsafe { free(self.ctx) };
+            }
         }
     }
 }
