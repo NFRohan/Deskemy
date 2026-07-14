@@ -25,7 +25,23 @@
   // scroll, so the watch route must never scroll — it manages its own fixed
   // layout. Other routes scroll their content normally.
   const scrolls = $derived(!$page.url.pathname.startsWith("/watch"));
+
+  // DEV: Ctrl+Shift+G — Phase-1 compositing spike. Make the whole page
+  // transparent and paint a DirectComposition magenta layer behind the webview.
+  // If magenta shows through (top-left) → compositing works. Run it on a page
+  // with no active player (Library), so the old mpv child window isn't on top.
+  async function onGlobalKey(e: KeyboardEvent) {
+    if (e.ctrlKey && e.shiftKey && (e.key === "G" || e.key === "g")) {
+      e.preventDefault();
+      for (const el of [document.documentElement, document.body, document.querySelector("main")]) {
+        if (el) (el as HTMLElement).style.background = "transparent";
+      }
+      await api.compositorTest().catch((err) => console.error("compositor_test", err));
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onGlobalKey} />
 
 <!-- h-full (chained off html/body height:100%) rather than h-screen: 100vh can
      lag the fullscreen resize and leave a sliver of body background at the edge. -->

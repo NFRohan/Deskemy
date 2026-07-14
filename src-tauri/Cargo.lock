@@ -765,6 +765,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "walkdir",
+ "windows",
  "windows-sys 0.59.0",
 ]
 

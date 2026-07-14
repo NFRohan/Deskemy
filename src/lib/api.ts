@@ -23,6 +23,8 @@ import type {
 
 export const api = {
   health: () => invoke<string>("app_health"),
+  // Phase-1 compositing spike (see docs/player-compositing.md).
+  compositorTest: () => invoke<void>("compositor_test"),
 
   // library_*
   addRoot: (path: string) => invoke<string>("library_add_root", { path }),

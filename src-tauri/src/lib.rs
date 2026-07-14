@@ -1,4 +1,6 @@
 mod commands;
+#[cfg(windows)]
+mod compositor;
 mod state;
 
 // Exposed for integration tests (tests/ is a separate crate).
@@ -26,6 +28,21 @@ use tracing_subscriber::EnvFilter;
 #[tauri::command]
 fn app_health() -> String {
     "ok".to_string()
+}
+
+/// Phase-1 compositing spike: paint a DirectComposition test layer behind the
+/// (transparent) webview. See docs/player-compositing.md.
+#[tauri::command]
+fn compositor_test(app: tauri::AppHandle) -> std::result::Result<(), String> {
+    #[cfg(windows)]
+    {
+        compositor::feasibility_test(&app).map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Ok(())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -74,6 +91,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_health,
+            compositor_test,
             commands::library_add_root,
             commands::library_list_roots,
             commands::library_remove_root,
