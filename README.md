@@ -21,6 +21,10 @@ playback, progress tracking, search, and study tools. Your video files stay
 where they are — they're referenced in place, never copied or uploaded — and
 everything Deskemy records lives in a single local SQLite database.
 
+<div align="center">
+  <img src="Images/Deskemy%20Home.png" alt="Deskemy library — Continue Watching and the course grid" width="100%" />
+</div>
+
 ## Features
 
 **Library & import**
@@ -38,6 +42,10 @@ everything Deskemy records lives in a single local SQLite database.
 - Chapter navigation, and subtitle / audio-track selection.
 - Extensive Youtube-style keyboard shortcuts.
 
+<div align="center">
+  <img src="Images/Deskemy%20Player%20with%20panels.png" alt="The player with the course-contents panel open" width="90%" />
+</div>
+
 **Organize & revisit**
 - Continue Watching on the home screen, resuming the exact lecture you were on.
 - Timestamped bookmarks, tags, favorites, and a watch history.
@@ -53,6 +61,10 @@ everything Deskemy records lives in a single local SQLite database.
 - Rename-safe: a moved or renamed file keeps its progress and bookmarks, matched
   by content rather than path.
 - Optional folder auto-rescan, and a storage panel for reclaiming disk space.
+
+<div align="center">
+  <img src="Images/Deskemy%20Stats.png" alt="The stats dashboard — streaks, watch-time, and an activity heatmap" width="90%" />
+</div>
 
 ## Keyboard shortcuts
 
