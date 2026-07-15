@@ -128,6 +128,39 @@ npm run tauri build    # build an installer in src-tauri/target/release/bundle/
 Import runs in two phases — probe, then persist — so media probing happens off
 the database connection and scanning a large course doesn't block the UI.
 
+**How it fits together**
+
+```mermaid
+flowchart TB
+    subgraph win["Deskemy window · Tauri v2"]
+        ui["SvelteKit UI<br/>Svelte 5 · transparent WebView2"]
+        subgraph core["Rust core"]
+            cmd["Commands + events"]
+            imp["Two-phase importer<br/>scan → probe → persist"]
+            ply["Player control (FFI)"]
+        end
+        dcomp["DirectComposition<br/>video surface"]
+    end
+
+    mpv["libmpv-2.dll<br/>bundled"]
+    db[("SQLite + FTS5<br/>rusqlite, bundled")]
+    thumb[("Thumbnail cache")]
+    files[/"Your course folders<br/>referenced in place"/]
+
+    ui <-->|IPC| cmd
+    cmd --> imp
+    cmd --> ply
+    cmd --> db
+    cmd --> thumb
+    imp -->|probe| mpv
+    imp --> files
+    imp --> db
+    ply --> mpv
+    ply --> db
+    mpv -->|renders| dcomp
+    dcomp -.->|shows through| ui
+```
+
 ## Privacy
 
 No accounts, no telemetry, and no network requests for your content. Your
