@@ -392,6 +392,12 @@
     sidebarTab = tab;
     if (!showPlaylist) togglePlaylist();
   }
+  // The toolbar icon is a plain open/close toggle: if the panel is open on any
+  // tab, close it (don't silently switch tabs). The P/R keys still target tabs.
+  function togglePanel() {
+    if (showPlaylist) togglePlaylist();
+    else showSidebar("content");
+  }
   function openResource(a: Attachment) {
     api.openResource(a.file_path).catch(() => {});
   }
@@ -1018,7 +1024,7 @@
             <Keyboard size={18} />
           </button>
           <button
-            onclick={() => showSidebar("content")}
+            onclick={togglePanel}
             class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
               {showPlaylist ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
             title="Course content (P) · Resources (R)"

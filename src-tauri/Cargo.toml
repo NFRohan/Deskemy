@@ -1,6 +1,6 @@
 [package]
 name = "deskemy"
-version = "1.0.1"
+version = "1.0.2"
 description = "Deskemy — offline course player"
 authors = ["Spooksy"]
 license = "MIT"

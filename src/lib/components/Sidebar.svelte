@@ -35,11 +35,11 @@
 
   const nav = [
     { href: "/", label: "Library", icon: Library },
-    { href: "/tracks", label: "Career Tracks", icon: Route },
-    { href: "/history", label: "History", icon: History },
-    { href: "/bookmarks", label: "Bookmarks", icon: Bookmark },
-    { href: "/favorites", label: "Favorites", icon: Star },
     { href: "/search", label: "Search", icon: Search },
+    { href: "/tracks", label: "Career Tracks", icon: Route },
+    { href: "/favorites", label: "Favorites", icon: Star },
+    { href: "/bookmarks", label: "Bookmarks", icon: Bookmark },
+    { href: "/history", label: "History", icon: History },
     { href: "/stats", label: "Stats", icon: ChartColumn },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
@@ -172,11 +172,9 @@
 
 <!-- Import preview -->
 {#if preview}
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-    onclick={(e) => e.target === e.currentTarget && cancelPreview()}
-    role="presentation"
-  >
+  <!-- Not dismissible by backdrop click: an accidental click (incl. clicking to
+       focus the window) must not nuke the preview and force a full re-scan. -->
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
     <div class="w-full max-w-md bg-surface-container rounded-xl border border-outline-variant p-5 space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">

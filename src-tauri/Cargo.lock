@@ -746,7 +746,7 @@ dependencies = [
 
 [[package]]
 name = "deskemy"
-version = "1.0.0"
+version = "1.0.2"
 dependencies = [
  "base64 0.22.1",
  "blake3",

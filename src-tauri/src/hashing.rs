@@ -2,13 +2,22 @@
 //! videos is too slow, so we hash the file size plus a bounded head sample —
 //! enough to give a stable identity that survives a move but changes when the
 //! file content changes.
+//!
+//! The sample is deliberately small: the file *size* is already a near-unique
+//! discriminator, and the head adds the container header + first frames on top,
+//! so two distinct videos practically never collide. Keeping it at 1 MiB (down
+//! from 8) cuts import disk I/O ~8x — important on HDDs, where reading 8 MiB off
+//! the head of every lecture dominated import time. (A file both moved *and*
+//! re-imported across this change may miss hash-based rename matching once and
+//! fall back to path matching; content is unchanged, so nothing is lost on a
+//! normal same-path re-import.)
 
 use crate::error::Result;
 use std::io::Read;
 use std::path::Path;
 
-/// Bytes of file head folded into the hash (8 MiB).
-const SAMPLE_BYTES: u64 = 8 * 1024 * 1024;
+/// Bytes of file head folded into the hash (1 MiB).
+const SAMPLE_BYTES: u64 = 1024 * 1024;
 
 /// blake3 over `size` + up to `SAMPLE_BYTES` of the file head. Returns a hex string.
 pub fn content_hash(path: &Path, size: u64) -> Result<String> {

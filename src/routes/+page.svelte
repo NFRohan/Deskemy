@@ -19,7 +19,7 @@
   ];
 
   let filter = $state("");
-  let sort = $state<"recent" | "alpha" | "progress">("recent");
+  let sort = $state<"recent" | "alpha" | "progress" | "duration">("recent");
   let tagFilter = $state<string | null>(null);
   let status = $state<Status>("all");
   let trackFilter = $state<string | null>(null);
@@ -73,13 +73,21 @@
     if (trackFilter && trackCourseIds) list = list.filter((c) => trackCourseIds!.has(c.id));
     if (status === "favorites") list = list.filter((c) => c.is_favorite);
     else if (status !== "all") list = list.filter((c) => statusOf(c) === status);
-    if (sort === "alpha") {
+    // Explicit sorts (don't lean on backend row order). Default "recent" =
+    // last opened first, newly-added-but-unopened courses (null) sort last.
+    if (sort === "recent") {
+      list = [...list].sort(
+        (a, b) => (b.last_opened_at ?? 0) - (a.last_opened_at ?? 0) || a.title.localeCompare(b.title),
+      );
+    } else if (sort === "alpha") {
       list = [...list].sort((a, b) => a.title.localeCompare(b.title));
     } else if (sort === "progress") {
       list = [...list].sort(
         (a, b) =>
           pct(b.completed_count, b.lecture_count) - pct(a.completed_count, a.lecture_count),
       );
+    } else if (sort === "duration") {
+      list = [...list].sort((a, b) => (b.total_duration ?? 0) - (a.total_duration ?? 0));
     }
     return list;
   });
@@ -193,6 +201,7 @@
             <option value="recent">Recent</option>
             <option value="alpha">Alphabetical</option>
             <option value="progress">Progress</option>
+            <option value="duration">Longest</option>
           </select>
         </div>
       </div>
