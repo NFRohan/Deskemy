@@ -7,7 +7,7 @@
 
   <p>
     <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0a7bbd" />
-    <img alt="Version" src="https://img.shields.io/badge/version-1.0.0-8e10db" />
+    <img alt="Version" src="https://img.shields.io/badge/version-1.0.1-8e10db" />
     <img alt="License" src="https://img.shields.io/badge/license-MIT-2e7d32" />
     <img alt="Built with" src="https://img.shields.io/badge/Tauri%20v2%20%C2%B7%20Svelte%205%20%C2%B7%20Rust-111317" />
   </p>
