@@ -7,9 +7,14 @@
 
   <p>
     <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0a7bbd" />
-    <img alt="Version" src="https://img.shields.io/badge/version-1.0.2-8e10db" />
+    <a href="https://github.com/NFRohan/Deskemy/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/NFRohan/Deskemy?color=8e10db&label=release" /></a>
+    <a href="https://github.com/NFRohan/Deskemy/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/NFRohan/Deskemy/total?color=8e10db&label=downloads" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-2e7d32" />
     <img alt="Built with" src="https://img.shields.io/badge/Tauri%20v2%20%C2%B7%20Svelte%205%20%C2%B7%20Rust-111317" />
+  </p>
+
+  <p>
+    <a href="https://github.com/NFRohan/Deskemy/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download%20for%20Windows-8e10db?style=for-the-badge&logo=windows&logoColor=white" /></a>
   </p>
 </div>
 
@@ -24,6 +29,25 @@ everything Deskemy records lives in a single local SQLite database.
 <div align="center">
   <img src="Images/Deskemy%20Home.png" alt="Deskemy library — Continue Watching and the course grid" width="100%" />
 </div>
+
+<details>
+<summary><b>More screenshots</b> — course view, player, fullscreen, shortcuts, search, history</summary>
+<br/>
+<table>
+  <tr>
+    <td><img src="Images/Deskemy%20Course%20View.png" alt="Course view" /></td>
+    <td><img src="Images/Deskemy%20Player%20Windowed.png" alt="Player (windowed)" /></td>
+  </tr>
+  <tr>
+    <td><img src="Images/Deskemy%20player%20Fullscreen.png" alt="Fullscreen player" /></td>
+    <td><img src="Images/Deskemy%20Keyboard%20shortcut%20Cheatsheet.png" alt="Keyboard shortcuts cheat sheet" /></td>
+  </tr>
+  <tr>
+    <td><img src="Images/Deskemy%20Search.png" alt="Search" /></td>
+    <td><img src="Images/Deskemy%20history.png" alt="Watch history" /></td>
+  </tr>
+</table>
+</details>
 
 ## Features
 
