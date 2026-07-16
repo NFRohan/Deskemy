@@ -5,7 +5,7 @@ known limitations) see [PLAN.md](PLAN.md). Theme through v1.x: **"the best
 offline course player"** — deepen the core watch/learn loop, don't expand scope.
 
 **1.0.1 shipped** (first public release). The next feature release — backup &
-restore plus daily-use quick wins — is planned in
+restore, an in-app auto-updater, plus daily-use quick wins — is planned in
 [docs/v1.1-plan.md](docs/v1.1-plan.md).
 
 Visual / theming work (custom themes from a color palette, etc.) is tracked
