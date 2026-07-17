@@ -400,6 +400,16 @@
           <div class="bg-surface-container-low border border-outline-variant rounded-lg overflow-hidden">
             <button
               onclick={() => toggle(section.id)}
+              oncontextmenu={(e) => {
+                const first = section.lectures[0];
+                if (first)
+                  openContextMenu(e, [
+                    {
+                      label: "Open containing folder",
+                      action: () => revealInFileManager(first.file_path),
+                    },
+                  ]);
+              }}
               class="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-container transition-colors text-left"
             >
               <div class="flex items-center gap-2 min-w-0">

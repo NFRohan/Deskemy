@@ -330,18 +330,38 @@ pub fn open_resource(app: AppHandle, path: String) -> Result<()> {
 }
 
 /// Reveal a path in the OS file manager: a folder is opened directly; a file is
-/// revealed (its containing folder opens with the file selected). Done in the
-/// backend via the Rust opener API — the JS opener path is scope-gated and
-/// silently rejects arbitrary user file paths.
+/// revealed (its containing folder opens with the file selected). On Windows we
+/// drive Explorer directly — `explorer /select,"file"` / `explorer "folder"` —
+/// which is more reliable than the opener plugin's reveal.
 #[tauri::command]
 pub fn reveal_path(app: AppHandle, path: String, is_dir: bool) -> Result<()> {
-    use tauri_plugin_opener::OpenerExt;
-    if is_dir {
-        app.opener().open_path(path, None::<&str>)
-    } else {
-        app.opener().reveal_item_in_dir(path)
+    #[cfg(windows)]
+    {
+        let _ = &app;
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("explorer.exe");
+        if is_dir {
+            cmd.arg(&path);
+        } else {
+            // /select,"<path>" as one raw arg so Explorer selects the file
+            // instead of treating the switch and path as separate operands.
+            cmd.raw_arg(format!("/select,\"{path}\""));
+        }
+        // Explorer exits non-zero even on success, so spawn and don't wait.
+        cmd.spawn()
+            .map(|_| ())
+            .map_err(|e| DeskemyError::Other(format!("explorer: {e}")))
     }
-    .map_err(|e| DeskemyError::Other(e.to_string()))
+    #[cfg(not(windows))]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        if is_dir {
+            app.opener().open_path(path, None::<&str>)
+        } else {
+            app.opener().reveal_item_in_dir(path)
+        }
+        .map_err(|e| DeskemyError::Other(e.to_string()))
+    }
 }
 
 /// Remove a course from the library (DB only — does not touch files on disk).

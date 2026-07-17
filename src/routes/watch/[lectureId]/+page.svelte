@@ -112,7 +112,7 @@
   let pendingSeek = $state<number | null>(null);
   let tracks = $state<MediaTracks>({ audio: [], subtitle: [], chapters: [] });
   let tracksFor = $state<string | null>(null);
-  let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | "sleep" | null>(null);
+  let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | null>(null);
   let course = $state<CourseDetail | null>(null);
   let attachments = $state<Attachment[]>([]);
   let sidebarTab = $state<"content" | "resources">("content");
@@ -445,7 +445,7 @@
   function pickChapter(index: number) {
     api.playerSetChapter(index).catch(() => {});
   }
-  function toggleMenu(m: "sub" | "audio" | "chapters" | "bookmarks" | "sleep") {
+  function toggleMenu(m: "sub" | "audio" | "chapters" | "bookmarks") {
     openMenu = openMenu === m ? null : m;
     // The panel resizes the video pane; re-sync the mpv window to it.
     reportRectSoon();
@@ -462,6 +462,7 @@
   let sleepLeft = $state(0); // seconds remaining
   let sleepInterval: ReturnType<typeof setInterval> | null = null;
   let customMins = $state<number | null>(null);
+  let showSleepMenu = $state(false);
 
   function pauseIfPlaying() {
     if (!state.paused) api.playerTogglePause().catch(() => {});
@@ -478,7 +479,7 @@
     sleepTotalMinutes = 0;
   }
   function setSleepMinutes(mins: number) {
-    openMenu = null;
+    showSleepMenu = false;
     if (sleepInterval) {
       clearInterval(sleepInterval);
       sleepInterval = null;
@@ -498,7 +499,7 @@
     }, 1000);
   }
   function setSleepLecture() {
-    openMenu = null;
+    showSleepMenu = false;
     if (sleepInterval) {
       clearInterval(sleepInterval);
       sleepInterval = null;
@@ -695,8 +696,9 @@
         toggleShortcuts();
         break;
       case "Escape":
-        // Peel back one layer at a time: cheat sheet → fullscreen → leave.
-        if (showShortcuts) closeShortcuts();
+        // Peel back one layer at a time: sleep menu → cheat sheet → fullscreen → leave.
+        if (showSleepMenu) showSleepMenu = false;
+        else if (showShortcuts) closeShortcuts();
         else if (ui.immersive) toggleImmersive();
         else goBack();
         break;
@@ -846,47 +848,6 @@
                 </div>
               {/each}
             {/if}
-          {:else if openMenu === "sleep"}
-            <div class="px-4 pt-2 pb-1 text-label-sm text-on-surface-variant">Sleep timer</div>
-            <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2">
-              {#each SLEEP_MINUTES as m (m)}
-                <button
-                  onclick={() => setSleepMinutes(m)}
-                  class="px-2.5 py-1 rounded text-label-md transition-colors
-                    {sleepMode === 'minutes' && sleepTotalMinutes === m
-                    ? 'bg-primary-container text-on-primary-container'
-                    : 'bg-surface-container-high text-on-surface hover:bg-surface-container-highest'}"
-                >
-                  {m}m
-                </button>
-              {/each}
-              <form onsubmit={submitCustomSleep} class="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min="1"
-                  max="600"
-                  bind:value={customMins}
-                  placeholder="min"
-                  class="w-14 bg-background border border-outline-variant rounded px-2 py-1 text-label-md text-on-surface outline-none focus:border-accent-blue"
-                />
-                <button
-                  type="submit"
-                  class="px-2.5 py-1 rounded text-label-md bg-surface-container-high text-on-surface hover:bg-surface-container-highest transition-colors"
-                >
-                  Set
-                </button>
-              </form>
-            </div>
-            <button onclick={setSleepLecture} class={panelItem}>
-              <Moon size={16} class="text-on-surface-variant shrink-0" />
-              <span class="flex-1">End of lecture</span>
-              {#if sleepMode === "lecture"}<Check size={16} class="text-primary shrink-0" />{/if}
-            </button>
-            <button onclick={clearSleep} class={panelItem}>
-              <span class="w-4 shrink-0"></span>
-              <span class="flex-1 text-on-surface-variant">Turn off</span>
-              {#if sleepMode === "off"}<Check size={16} class="text-primary shrink-0" />{/if}
-            </button>
           {/if}
         </div>
       </div>
@@ -961,6 +922,77 @@
           </div>
         </div>
       {/if}
+    {/if}
+
+    {#if showSleepMenu}
+      <div
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        role="presentation"
+        onclick={() => (showSleepMenu = false)}
+      >
+        <div
+          class="w-full max-w-xs bg-surface-container rounded-xl border border-outline-variant p-5 shadow-2xl space-y-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sleep timer"
+          onclick={(e) => e.stopPropagation()}
+        >
+          <div class="flex items-center justify-between">
+            <h3 class="text-headline-sm text-on-surface flex items-center gap-2">
+              <Moon size={18} /> Sleep timer
+            </h3>
+            {#if sleepMode !== "off"}
+              <button onclick={clearSleep} class="text-label-md text-primary hover:underline">
+                Turn off
+              </button>
+            {/if}
+          </div>
+          {#if sleepMode === "minutes"}
+            <p class="text-body-sm text-on-surface-variant">
+              Pausing in <span class="text-on-surface tabular-nums font-medium">{sleepBadge}</span>.
+            </p>
+          {:else if sleepMode === "lecture"}
+            <p class="text-body-sm text-on-surface-variant">Pausing at the end of this lecture.</p>
+          {/if}
+          <div class="grid grid-cols-4 gap-2">
+            {#each SLEEP_MINUTES as m (m)}
+              <button
+                onclick={() => setSleepMinutes(m)}
+                class="py-2 rounded text-label-md transition-colors
+                  {sleepMode === 'minutes' && sleepTotalMinutes === m
+                  ? 'bg-primary-container text-on-primary-container'
+                  : 'bg-surface-container-high text-on-surface hover:bg-surface-container-highest'}"
+              >
+                {m}m
+              </button>
+            {/each}
+          </div>
+          <form onsubmit={submitCustomSleep} class="flex items-center gap-2">
+            <input
+              type="number"
+              min="1"
+              max="600"
+              bind:value={customMins}
+              placeholder="Custom minutes"
+              class="flex-1 min-w-0 bg-background border border-outline-variant rounded px-3 py-2 text-body-sm text-on-surface outline-none focus:border-accent-blue"
+            />
+            <button
+              type="submit"
+              class="px-3 py-2 rounded text-label-md bg-surface-container-high text-on-surface hover:bg-surface-container-highest transition-colors"
+            >
+              Set
+            </button>
+          </form>
+          <button
+            onclick={setSleepLecture}
+            class="w-full flex items-center justify-between px-3 py-2 rounded transition-colors hover:bg-surface-container-highest
+              {sleepMode === 'lecture' ? 'text-primary' : 'text-on-surface'}"
+          >
+            <span>End of lecture</span>
+            {#if sleepMode === "lecture"}<Check size={16} class="text-primary" />{/if}
+          </button>
+        </div>
+      </div>
     {/if}
 
     <!-- Control bar (docked below the video — never overlaps the native surface).
@@ -1130,9 +1162,9 @@
           {/if}
 
           <button
-            onclick={() => toggleMenu("sleep")}
+            onclick={() => (showSleepMenu = true)}
             class="px-2 py-2 min-w-9 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface inline-flex items-center justify-center
-              {sleepMode !== 'off' || openMenu === 'sleep'
+              {sleepMode !== 'off' || showSleepMenu
               ? 'bg-surface-container-highest text-primary'
               : 'text-on-surface-variant'}"
             title={sleepMode === "minutes"
