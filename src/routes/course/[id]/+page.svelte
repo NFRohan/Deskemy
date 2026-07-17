@@ -24,9 +24,8 @@
     File,
   } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { api, pickImage, revealInFileManager } from "$lib/api";
+  import { api, pickImage } from "$lib/api";
   import { setCrumbs, loadLibrary } from "$lib/stores/app.svelte";
-  import { openContextMenu } from "$lib/stores/contextmenu.svelte";
   import { formatDuration, formatClock, pct } from "$lib/format";
   import type { Attachment, CourseDetail, Lecture, Section } from "$lib/types";
   import ProgressBar from "$lib/components/ProgressBar.svelte";
@@ -400,16 +399,6 @@
           <div class="bg-surface-container-low border border-outline-variant rounded-lg overflow-hidden">
             <button
               onclick={() => toggle(section.id)}
-              oncontextmenu={(e) => {
-                const first = section.lectures[0];
-                if (first)
-                  openContextMenu(e, [
-                    {
-                      label: "Open containing folder",
-                      action: () => revealInFileManager(first.file_path),
-                    },
-                  ]);
-              }}
               class="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-container transition-colors text-left"
             >
               <div class="flex items-center gap-2 min-w-0">
@@ -430,13 +419,6 @@
                 {#each section.lectures as lecture (lecture.id)}
                   {@const isNext = resume?.id === lecture.id}
                   <li
-                    oncontextmenu={(e) =>
-                      openContextMenu(e, [
-                        {
-                          label: "Open containing folder",
-                          action: () => revealInFileManager(lecture.file_path),
-                        },
-                      ])}
                     class="group flex items-center gap-3 px-4 py-2 transition-colors
                       {isNext ? 'bg-primary-container/15' : 'hover:bg-surface-container'}"
                   >
@@ -520,15 +502,7 @@
               >
                 {#each group.items as a (a.id)}
                   {@const Icon = KIND_ICON[a.kind ?? ""] ?? File}
-                  <li
-                    oncontextmenu={(e) =>
-                      openContextMenu(e, [
-                        {
-                          label: "Open containing folder",
-                          action: () => revealInFileManager(a.file_path),
-                        },
-                      ])}
-                  >
+                  <li>
                     <button
                       onclick={() => openResource(a)}
                       class="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-container transition-colors"

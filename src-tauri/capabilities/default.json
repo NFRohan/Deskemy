@@ -6,8 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "opener:allow-reveal-item-in-dir",
-    "opener:allow-open-path",
     "dialog:default",
     "updater:default",
     "core:window:allow-minimize",

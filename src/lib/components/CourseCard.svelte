@@ -3,8 +3,6 @@
   import { convertFileSrc } from "@tauri-apps/api/core";
   import type { CourseSummary } from "$lib/types";
   import { formatDuration, pct } from "$lib/format";
-  import { revealInFileManager } from "$lib/api";
-  import { openContextMenu } from "$lib/stores/contextmenu.svelte";
   import ProgressBar from "./ProgressBar.svelte";
 
   let { course }: { course: CourseSummary } = $props();
@@ -19,13 +17,6 @@
 
 <a
   href={`/course/${course.id}`}
-  oncontextmenu={(e) =>
-    openContextMenu(e, [
-      {
-        label: "Open containing folder",
-        action: () => revealInFileManager(course.folder_path, true),
-      },
-    ])}
   class="group bg-surface-container-low border border-outline-variant rounded-lg overflow-hidden hover:border-outline hover:bg-surface-container-high transition-all flex flex-col"
 >
   <!-- Thumbnail -->

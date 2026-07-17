@@ -349,7 +349,6 @@ pub fn run() {
             commands::library_delete_course,
             commands::course_attachments,
             commands::open_resource,
-            commands::reveal_path,
             commands::course_tags,
             commands::course_add_tag,
             commands::course_remove_tag,

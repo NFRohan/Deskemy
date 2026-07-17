@@ -168,13 +168,3 @@ export async function pickBackupSource(): Promise<string | null> {
   const result = await open({ multiple: false, filters: BACKUP_FILTER });
   return typeof result === "string" ? result : null;
 }
-
-/** Reveal a file in the OS file manager (selected), or open a folder directly.
- *  Backend command — the JS opener path is scope-gated and rejects user paths. */
-export async function revealInFileManager(path: string, isDir = false): Promise<void> {
-  try {
-    await invoke("reveal_path", { path, isDir });
-  } catch (e) {
-    console.error("revealInFileManager", e);
-  }
-}
