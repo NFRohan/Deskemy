@@ -1,7 +1,7 @@
 // Typed wrappers over the namespaced Rust commands.
 
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   AppConfig,
   Attachment,
@@ -113,6 +113,10 @@ export const api = {
   getConfig: () => invoke<AppConfig>("config_get"),
   setConfig: (config: AppConfig) => invoke<void>("config_set", { config }),
 
+  // data_* — export/import the library (db + config + thumbnails) as one zip
+  dataExport: (dest: string) => invoke<void>("data_export", { dest }),
+  dataImport: (src: string) => invoke<void>("data_import", { src }),
+
   // player_*
   playerAvailable: () => invoke<boolean>("player_available"),
   playerOpen: (lectureId: string) => invoke<void>("player_open", { lectureId }),
@@ -149,5 +153,18 @@ export async function pickImage(): Promise<string | null> {
     multiple: false,
     filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
   });
+  return typeof result === "string" ? result : null;
+}
+
+const BACKUP_FILTER = [{ name: "Deskemy backup", extensions: ["zip"] }];
+
+/** Save dialog for an export archive. Returns the chosen path or null. */
+export async function pickBackupDest(defaultName: string): Promise<string | null> {
+  return await save({ defaultPath: defaultName, filters: BACKUP_FILTER });
+}
+
+/** Open dialog for an import archive. Returns the chosen path or null. */
+export async function pickBackupSource(): Promise<string | null> {
+  const result = await open({ multiple: false, filters: BACKUP_FILTER });
   return typeof result === "string" ? result : null;
 }

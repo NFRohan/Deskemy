@@ -687,3 +687,48 @@ pub fn config_set(state: State<AppState>, config: AppConfig) -> Result<()> {
     *cfg = config;
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// data_* — export / import the app data (db + config + thumbnails) as one zip.
+// Async so the VACUUM + zip run off the UI thread.
+
+/// Write a `.zip` snapshot of the library to `dest` (a path from a save dialog).
+#[tauri::command]
+pub async fn data_export(app: AppHandle, state: State<'_, AppState>, dest: String) -> Result<()> {
+    let tmp = state.data_dir.join(".export.tmp.db");
+    let _ = std::fs::remove_file(&tmp);
+
+    // Consistent, WAL-free snapshot of the db (brief lock; no await while held).
+    let schema: i64 = {
+        let conn = db(&state)?;
+        let v = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        conn.execute("VACUUM INTO ?1", [tmp.to_string_lossy().as_ref()])?;
+        v
+    };
+
+    let version = app.package_info().version.to_string();
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let res = crate::backup::write_archive(
+        &tmp,
+        &state.config_path,
+        &state.thumbnails_dir(),
+        Path::new(&dest),
+        &version,
+        schema,
+        created_at,
+    );
+    let _ = std::fs::remove_file(&tmp);
+    res
+}
+
+/// Validate `src`, stage it, and restart so the swap is applied before the db is
+/// reopened. On a bad/newer archive this returns an error and does NOT restart.
+#[tauri::command]
+pub async fn data_import(app: AppHandle, state: State<'_, AppState>, src: String) -> Result<()> {
+    crate::backup::stage_import(&state.data_dir, Path::new(&src), crate::db::SCHEMA_VERSION)?;
+    app.restart();
+}

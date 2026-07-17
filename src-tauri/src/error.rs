@@ -15,6 +15,9 @@ pub enum DeskemyError {
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 
+    #[error("archive error: {0}")]
+    Archive(#[from] zip::result::ZipError),
+
     #[error("config error: {0}")]
     Config(String),
 
@@ -41,6 +44,7 @@ impl DeskemyError {
             DeskemyError::Io(_) => "Io",
             DeskemyError::Database(_) => "Database",
             DeskemyError::Serde(_) => "Serde",
+            DeskemyError::Archive(_) => "Archive",
             DeskemyError::Config(_) => "Config",
             DeskemyError::Import(_) => "Import",
             DeskemyError::Probe(_) => "Probe",

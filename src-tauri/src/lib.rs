@@ -1,3 +1,4 @@
+mod backup;
 mod commands;
 #[cfg(windows)]
 mod compositor;
@@ -259,6 +260,13 @@ pub fn run() {
             };
             std::fs::create_dir_all(&data_dir)?;
 
+            // Apply a data import staged from Settings → Data (the db can't be
+            // swapped while it's open, so import stages files and we swap here,
+            // before opening, on the next launch).
+            if let Err(e) = backup::apply_pending_import(&data_dir) {
+                tracing::error!(error = %e, "failed to apply staged data import");
+            }
+
             // Thumbnails are handed to the WebView via the asset protocol, whose
             // static config scope only covers %APPDATA%. In portable mode the
             // data dir sits next to the exe, outside that scope, so every
@@ -363,6 +371,8 @@ pub fn run() {
             commands::subtitle_index_clear,
             commands::config_get,
             commands::config_set,
+            commands::data_export,
+            commands::data_import,
             commands::player::player_available,
             commands::player::player_open,
             commands::player::player_toggle_pause,

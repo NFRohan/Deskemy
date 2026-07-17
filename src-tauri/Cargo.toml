@@ -31,6 +31,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # Identity + hashing
 uuid = { version = "1", features = ["v7"] }
 blake3 = "1"
+# Data export/import archives
+zip = "2"
 base64 = "0.22"
 
 # Errors + logging

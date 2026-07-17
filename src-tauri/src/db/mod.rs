@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 7;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (

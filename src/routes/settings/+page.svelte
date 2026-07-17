@@ -8,8 +8,10 @@
     Captions,
     Minimize2,
     LoaderCircle,
+    Download,
+    Upload,
   } from "@lucide/svelte";
-  import { api } from "$lib/api";
+  import { api, pickBackupDest, pickBackupSource } from "$lib/api";
   import { setCrumbs, loadLibrary, applyTheme } from "$lib/stores/app.svelte";
   import type { AppConfig, StorageStats } from "$lib/types";
 
@@ -127,6 +129,41 @@
         ? "Subtitle index already empty."
         : `Cleared ${plural(n, "cue")}. Compact the database to reclaim the space.`;
     });
+
+  // Data export / import
+  let importSrc = $state<string | null>(null);
+  let showImportConfirm = $state(false);
+  let importing = $state(false);
+
+  function exportData() {
+    pickBackupDest("deskemy-backup.zip").then((dest) => {
+      if (!dest) return;
+      run("export", async () => {
+        await api.dataExport(dest);
+        return "Backup saved.";
+      });
+    });
+  }
+  function chooseImport() {
+    pickBackupSource().then((src) => {
+      if (src) {
+        importSrc = src;
+        showImportConfirm = true;
+      }
+    });
+  }
+  async function confirmImport() {
+    if (!importSrc || importing) return;
+    importing = true;
+    results.import = "";
+    try {
+      await api.dataImport(importSrc); // relaunches on success — never resolves
+    } catch (e: any) {
+      results.import = e?.message ?? String(e);
+      importing = false;
+      showImportConfirm = false;
+    }
+  }
 </script>
 
 <div class="p-6 max-w-2xl mx-auto space-y-8">
@@ -307,6 +344,53 @@
       </div>
     </section>
 
+    <!-- Data -->
+    <section class="space-y-3">
+      <h3 class="text-label-md text-on-surface-variant uppercase tracking-wide">Data</h3>
+      <div
+        class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant"
+      >
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Export backup</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Save your library — progress, bookmarks, tags, tracks, thumbnails — to one
+              <code>.zip</code>. Your video files aren't included. Handy for moving a portable copy
+              to a new release, or as a safety backup.
+            </p>
+            {#if results.export}<p class="text-label-sm text-primary mt-1">{results.export}</p>{/if}
+          </div>
+          <button
+            onclick={exportData}
+            disabled={busy !== null}
+            class="shrink-0 inline-flex items-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+          >
+            {#if busy === "export"}<LoaderCircle size={15} class="animate-spin" />{:else}<Download
+                size={15}
+              />{/if} Export
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Import backup</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Replace this library with a backup, then restart. It re-links to your videos where they
+              still exist — it can't restore progress onto a different download of a course.
+            </p>
+            {#if results.import}<p class="text-label-sm text-error mt-1">{results.import}</p>{/if}
+          </div>
+          <button
+            onclick={chooseImport}
+            disabled={busy !== null || importing}
+            class="shrink-0 inline-flex items-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+          >
+            <Upload size={15} /> Import
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- Storage -->
     <section class="space-y-3">
       <h3 class="text-label-md text-on-surface-variant uppercase tracking-wide">Storage</h3>
@@ -391,3 +475,36 @@
     </section>
   {/if}
 </div>
+
+{#if showImportConfirm}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div
+      class="w-full max-w-md bg-surface-container rounded-xl border border-outline-variant p-5 space-y-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <h3 class="text-headline-sm text-on-surface">Import backup?</h3>
+      <p class="text-body-sm text-on-surface-variant">
+        This replaces your current library — progress, bookmarks, tags, everything — with the
+        backup, then restarts Deskemy. Your current data can't be recovered afterward unless you
+        exported it first.
+      </p>
+      <div class="flex justify-end gap-2">
+        <button
+          onclick={() => (showImportConfirm = false)}
+          disabled={importing}
+          class="text-label-md text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={confirmImport}
+          disabled={importing}
+          class="inline-flex items-center gap-1.5 text-label-md bg-primary-container text-on-primary-container px-4 py-2 rounded hover:bg-inverse-primary transition-colors disabled:opacity-60"
+        >
+          {#if importing}<LoaderCircle size={15} class="animate-spin" />{/if} Import &amp; restart
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
