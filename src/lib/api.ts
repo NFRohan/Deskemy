@@ -2,6 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import type {
   AppConfig,
   Attachment,
@@ -167,4 +168,14 @@ export async function pickBackupDest(defaultName: string): Promise<string | null
 export async function pickBackupSource(): Promise<string | null> {
   const result = await open({ multiple: false, filters: BACKUP_FILTER });
   return typeof result === "string" ? result : null;
+}
+
+/** Reveal a file in the OS file manager (selected), or open a folder directly. */
+export async function revealInFileManager(path: string, isDir = false): Promise<void> {
+  try {
+    if (isDir) await openPath(path);
+    else await revealItemInDir(path);
+  } catch (e) {
+    console.error("revealInFileManager", e);
+  }
 }

@@ -6,6 +6,7 @@
   import { listen } from "@tauri-apps/api/event";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import TopBar from "$lib/components/TopBar.svelte";
+  import ContextMenu from "$lib/components/ContextMenu.svelte";
   import { api } from "$lib/api";
   import { ui, applyTheme, loadLibrary } from "$lib/stores/app.svelte";
   import { updates, checkForUpdate, installUpdate } from "$lib/updates.svelte";
@@ -101,3 +102,5 @@
     </main>
   </div>
 </div>
+
+<ContextMenu />
