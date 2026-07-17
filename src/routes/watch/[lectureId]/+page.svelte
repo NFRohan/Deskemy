@@ -29,6 +29,7 @@
     BookmarkPlus,
     Trash2,
     Keyboard,
+    Moon,
     Paperclip,
     FileText,
     FileArchive,
@@ -111,7 +112,7 @@
   let pendingSeek = $state<number | null>(null);
   let tracks = $state<MediaTracks>({ audio: [], subtitle: [], chapters: [] });
   let tracksFor = $state<string | null>(null);
-  let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | null>(null);
+  let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | "sleep" | null>(null);
   let course = $state<CourseDetail | null>(null);
   let attachments = $state<Attachment[]>([]);
   let sidebarTab = $state<"content" | "resources">("content");
@@ -444,16 +445,75 @@
   function pickChapter(index: number) {
     api.playerSetChapter(index).catch(() => {});
   }
-  function toggleMenu(m: "sub" | "audio" | "chapters" | "bookmarks") {
+  function toggleMenu(m: "sub" | "audio" | "chapters" | "bookmarks" | "sleep") {
     openMenu = openMenu === m ? null : m;
     // The panel resizes the video pane; re-sync the mpv window to it.
     reportRectSoon();
   }
 
+  // Sleep timer: pause playback after N minutes, or at the end of this lecture.
+  // Frontend-only — a real-time countdown (minutes) or watching the lecture end.
+  type SleepMode = "off" | 15 | 30 | 45 | 60 | "lecture";
+  const SLEEP_MINUTES = [15, 30, 45, 60] as const;
+  let sleepMode = $state<SleepMode>("off");
+  let sleepArmedLecture = $state<string | null>(null);
+  let sleepEndsAt = $state<number | null>(null); // epoch ms, minute timers
+  let sleepLeft = $state(0); // seconds remaining (display)
+  let sleepInterval: ReturnType<typeof setInterval> | null = null;
+
+  function pauseIfPlaying() {
+    if (!state.paused) api.playerTogglePause().catch(() => {});
+  }
+  function clearSleep() {
+    if (sleepInterval) {
+      clearInterval(sleepInterval);
+      sleepInterval = null;
+    }
+    sleepMode = "off";
+    sleepArmedLecture = null;
+    sleepEndsAt = null;
+    sleepLeft = 0;
+  }
+  function setSleep(mode: SleepMode) {
+    openMenu = null;
+    clearSleep();
+    if (mode === "off") return;
+    sleepMode = mode;
+    if (mode === "lecture") {
+      sleepArmedLecture = state.lecture_id;
+      return;
+    }
+    sleepEndsAt = Date.now() + mode * 60_000;
+    sleepLeft = mode * 60;
+    sleepInterval = setInterval(() => {
+      sleepLeft = Math.max(0, Math.round((sleepEndsAt! - Date.now()) / 1000));
+      if (sleepLeft <= 0) {
+        pauseIfPlaying();
+        clearSleep();
+      }
+    }, 1000);
+  }
+  const sleepClock = $derived(
+    `${Math.floor(sleepLeft / 60)}:${String(sleepLeft % 60).padStart(2, "0")}`,
+  );
+
+  // End-of-lecture mode: stop when the armed lecture finishes or autoplay moves
+  // past it, then disarm so later navigation isn't affected.
+  $effect(() => {
+    if (sleepMode !== "lecture" || !sleepArmedLecture) return;
+    const ended = state.duration > 0 && state.position >= state.duration - 0.5;
+    const advanced = !!state.lecture_id && state.lecture_id !== sleepArmedLecture;
+    if (ended || advanced) {
+      pauseIfPlaying();
+      clearSleep();
+    }
+  });
+
   onDestroy(() => {
     unlisten.forEach((u) => u());
     observer?.disconnect();
     timers.forEach(clearTimeout);
+    if (sleepInterval) clearInterval(sleepInterval);
     setImmersive(false);
     api.windowSetImmersive(false).catch(() => {});
     // Grab a resume frame for the Continue Watching entry, then stop. The
@@ -762,6 +822,28 @@
                 </div>
               {/each}
             {/if}
+          {:else if openMenu === "sleep"}
+            <button onclick={() => setSleep("off")} class={panelItem}>
+              <Moon size={16} class="text-on-surface-variant shrink-0" />
+              <span class="flex-1">Off</span>
+              {#if sleepMode === "off"}<Check size={16} class="text-primary shrink-0" />{/if}
+            </button>
+            {#each SLEEP_MINUTES as m (m)}
+              <button onclick={() => setSleep(m)} class={panelItem}>
+                <Moon size={16} class="text-on-surface-variant shrink-0" />
+                <span class="flex-1">{m} minutes{#if sleepMode === m}<span
+                      class="text-label-sm text-on-surface-variant tabular-nums"
+                    >
+                      · {sleepClock}</span
+                    >{/if}</span>
+                {#if sleepMode === m}<Check size={16} class="text-primary shrink-0" />{/if}
+              </button>
+            {/each}
+            <button onclick={() => setSleep("lecture")} class={panelItem}>
+              <Moon size={16} class="text-on-surface-variant shrink-0" />
+              <span class="flex-1">End of lecture</span>
+              {#if sleepMode === "lecture"}<Check size={16} class="text-primary shrink-0" />{/if}
+            </button>
           {/if}
         </div>
       </div>
@@ -1003,6 +1085,23 @@
               <Captions size={18} />
             </button>
           {/if}
+
+          <button
+            onclick={() => toggleMenu("sleep")}
+            class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface inline-flex items-center gap-1
+              {sleepMode !== 'off' || openMenu === 'sleep'
+              ? 'bg-surface-container-highest text-primary'
+              : 'text-on-surface-variant'}"
+            title="Sleep timer"
+            aria-label="Sleep timer"
+          >
+            <Moon size={18} />
+            {#if sleepMode !== "off"}
+              <span class="text-label-sm tabular-nums"
+                >{sleepMode === "lecture" ? "· end" : sleepClock}</span
+              >
+            {/if}
+          </button>
 
           <select
             bind:value={speedSel}
