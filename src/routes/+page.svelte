@@ -9,14 +9,21 @@
   import { formatDuration, pct } from "$lib/format";
   import type { CourseSummary, TrackSummary } from "$lib/types";
 
-  type Status = "all" | "progress" | "finished" | "new" | "favorites";
+  type Status = "all" | "recent" | "progress" | "finished" | "new" | "favorites";
   const STATUS: { value: Status; label: string }[] = [
     { value: "all", label: "All" },
+    { value: "recent", label: "Recently watched" },
     { value: "progress", label: "In progress" },
     { value: "finished", label: "Finished" },
     { value: "new", label: "Not started" },
     { value: "favorites", label: "Favorites" },
   ];
+
+  // "Recently watched": opened in the last 14 days. last_opened_at is unix
+  // seconds (see format.ts).
+  const RECENT_WINDOW_S = 14 * 24 * 3600;
+  const isRecent = (c: CourseSummary) =>
+    c.last_opened_at != null && Date.now() / 1000 - c.last_opened_at <= RECENT_WINDOW_S;
 
   let filter = $state("");
   let sort = $state<"recent" | "alpha" | "progress" | "duration">("recent");
@@ -51,7 +58,7 @@
     return () => (cancelled = true);
   });
 
-  function statusOf(c: CourseSummary): Exclude<Status, "all" | "favorites"> {
+  function statusOf(c: CourseSummary): Exclude<Status, "all" | "favorites" | "recent"> {
     const finished = c.lecture_count > 0 && c.completed_count >= c.lecture_count;
     if (finished) return "finished";
     const started = c.completed_count > 0 || c.last_opened_at != null;
@@ -72,6 +79,7 @@
     if (tagFilter) list = list.filter((c) => c.tags.includes(tagFilter!));
     if (trackFilter && trackCourseIds) list = list.filter((c) => trackCourseIds!.has(c.id));
     if (status === "favorites") list = list.filter((c) => c.is_favorite);
+    else if (status === "recent") list = list.filter(isRecent);
     else if (status !== "all") list = list.filter((c) => statusOf(c) === status);
     // Explicit sorts (don't lean on backend row order). Default "recent" =
     // last opened first, newly-added-but-unopened courses (null) sort last.
