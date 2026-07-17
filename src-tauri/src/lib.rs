@@ -228,6 +228,14 @@ mod imm {
 /// Portable mode: a `.portable` marker file next to the executable redirects all
 /// app data into a sibling `data/` folder, so a portable copy writes nothing
 /// outside its own directory. Returns None for a normal install (→ %APPDATA%).
+/// Whether this is a portable copy (data next to the exe). The updater can only
+/// self-install the installer build, so the UI points portable users at the
+/// release page instead of downloading in place.
+#[tauri::command]
+fn is_portable() -> bool {
+    portable_data_dir().is_some()
+}
+
 fn portable_data_dir() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
@@ -246,6 +254,7 @@ pub fn run() {
     tracing::info!("Deskemy starting");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -325,6 +334,7 @@ pub fn run() {
             app_health,
             compositor_test,
             compositor_enabled,
+            is_portable,
             window_set_immersive,
             commands::library_add_root,
             commands::library_list_roots,

@@ -12,6 +12,8 @@
     Upload,
   } from "@lucide/svelte";
   import { api, pickBackupDest, pickBackupSource } from "$lib/api";
+  import { getVersion } from "@tauri-apps/api/app";
+  import { updates, checkForUpdate, installUpdate } from "$lib/updates.svelte";
   import { setCrumbs, loadLibrary, applyTheme } from "$lib/stores/app.svelte";
   import type { AppConfig, StorageStats } from "$lib/types";
 
@@ -27,12 +29,23 @@
   let busy = $state<string | null>(null);
   let results = $state<Record<string, string>>({});
   let storage = $state<StorageStats | null>(null);
+  let appVersion = $state("");
 
   onMount(async () => {
     setCrumbs([{ label: "Settings" }]);
     config = await api.getConfig().catch(() => null);
     storage = await api.storageStats().catch(() => null);
+    appVersion = await getVersion().catch(() => "");
   });
+
+  const checkUpdates = () =>
+    run("update", async () => {
+      await checkForUpdate();
+      if (updates.error) throw new Error(updates.error);
+      return updates.available
+        ? `Deskemy ${updates.available.version} is available.`
+        : "You're on the latest version.";
+    });
 
   async function refreshStorage() {
     storage = await api.storageStats().catch(() => null);
@@ -470,6 +483,45 @@
                 />{/if} Clean
             </button>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Updates -->
+    <section class="space-y-3">
+      <h3 class="text-label-md text-on-surface-variant uppercase tracking-wide">Updates</h3>
+      <div
+        class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant"
+      >
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Deskemy {appVersion || "—"}</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Check for a newer release. Nothing downloads until you confirm.
+            </p>
+            {#if results.update}<p class="text-label-sm text-primary mt-1">{results.update}</p>{/if}
+          </div>
+          {#if updates.available}
+            <button
+              onclick={installUpdate}
+              disabled={updates.installing}
+              class="shrink-0 inline-flex items-center gap-1.5 text-label-md bg-primary-container text-on-primary-container px-3 py-2 rounded hover:bg-inverse-primary transition-colors disabled:opacity-60"
+            >
+              {#if updates.installing}<LoaderCircle size={15} class="animate-spin" />{:else}<Download
+                  size={15}
+                />{/if} Update to {updates.available.version}
+            </button>
+          {:else}
+            <button
+              onclick={checkUpdates}
+              disabled={busy !== null}
+              class="shrink-0 inline-flex items-center gap-1.5 text-label-md bg-surface-container-high text-on-surface px-3 py-2 rounded hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+            >
+              {#if busy === "update"}<LoaderCircle size={15} class="animate-spin" />{:else}<RefreshCw
+                  size={15}
+                />{/if} Check
+            </button>
+          {/if}
         </div>
       </div>
     </section>
