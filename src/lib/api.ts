@@ -2,7 +2,6 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import type {
   AppConfig,
   Attachment,
@@ -170,11 +169,11 @@ export async function pickBackupSource(): Promise<string | null> {
   return typeof result === "string" ? result : null;
 }
 
-/** Reveal a file in the OS file manager (selected), or open a folder directly. */
+/** Reveal a file in the OS file manager (selected), or open a folder directly.
+ *  Backend command — the JS opener path is scope-gated and rejects user paths. */
 export async function revealInFileManager(path: string, isDir = false): Promise<void> {
   try {
-    if (isDir) await openPath(path);
-    else await revealItemInDir(path);
+    await invoke("reveal_path", { path, isDir });
   } catch (e) {
     console.error("revealInFileManager", e);
   }

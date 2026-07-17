@@ -451,15 +451,17 @@
     reportRectSoon();
   }
 
-  // Sleep timer: pause playback after N minutes, or at the end of this lecture.
-  // Frontend-only — a real-time countdown (minutes) or watching the lecture end.
-  type SleepMode = "off" | 15 | 30 | 45 | 60 | "lecture";
+  // Sleep timer: pause after N minutes (presets or a custom entry), or at the
+  // end of this lecture. Frontend-only — a real-time countdown, or watching the
+  // lecture end.
   const SLEEP_MINUTES = [15, 30, 45, 60] as const;
-  let sleepMode = $state<SleepMode>("off");
+  let sleepMode = $state<"off" | "minutes" | "lecture">("off");
+  let sleepTotalMinutes = $state(0);
   let sleepArmedLecture = $state<string | null>(null);
-  let sleepEndsAt = $state<number | null>(null); // epoch ms, minute timers
-  let sleepLeft = $state(0); // seconds remaining (display)
+  let sleepEndsAt = $state<number | null>(null); // epoch ms
+  let sleepLeft = $state(0); // seconds remaining
   let sleepInterval: ReturnType<typeof setInterval> | null = null;
+  let customMins = $state<number | null>(null);
 
   function pauseIfPlaying() {
     if (!state.paused) api.playerTogglePause().catch(() => {});
@@ -473,18 +475,20 @@
     sleepArmedLecture = null;
     sleepEndsAt = null;
     sleepLeft = 0;
+    sleepTotalMinutes = 0;
   }
-  function setSleep(mode: SleepMode) {
+  function setSleepMinutes(mins: number) {
     openMenu = null;
-    clearSleep();
-    if (mode === "off") return;
-    sleepMode = mode;
-    if (mode === "lecture") {
-      sleepArmedLecture = state.lecture_id;
-      return;
+    if (sleepInterval) {
+      clearInterval(sleepInterval);
+      sleepInterval = null;
     }
-    sleepEndsAt = Date.now() + mode * 60_000;
-    sleepLeft = mode * 60;
+    const m = Math.min(600, Math.max(1, Math.floor(mins)));
+    sleepMode = "minutes";
+    sleepTotalMinutes = m;
+    sleepArmedLecture = null;
+    sleepEndsAt = Date.now() + m * 60_000;
+    sleepLeft = m * 60;
     sleepInterval = setInterval(() => {
       sleepLeft = Math.max(0, Math.round((sleepEndsAt! - Date.now()) / 1000));
       if (sleepLeft <= 0) {
@@ -493,8 +497,28 @@
       }
     }, 1000);
   }
-  const sleepClock = $derived(
-    `${Math.floor(sleepLeft / 60)}:${String(sleepLeft % 60).padStart(2, "0")}`,
+  function setSleepLecture() {
+    openMenu = null;
+    if (sleepInterval) {
+      clearInterval(sleepInterval);
+      sleepInterval = null;
+    }
+    sleepMode = "lecture";
+    sleepTotalMinutes = 0;
+    sleepEndsAt = null;
+    sleepLeft = 0;
+    sleepArmedLecture = state.lecture_id;
+  }
+  function submitCustomSleep(e: Event) {
+    e.preventDefault();
+    if (customMins && customMins > 0) {
+      setSleepMinutes(customMins);
+      customMins = null;
+    }
+  }
+  // Toolbar badge: minutes remaining while a countdown runs (5m / 10m / 27m…).
+  const sleepBadge = $derived(
+    sleepMode === "minutes" ? `${Math.max(1, Math.ceil(sleepLeft / 60))}m` : "",
   );
 
   // End-of-lecture mode: stop when the armed lecture finishes or autoplay moves
@@ -823,26 +847,45 @@
               {/each}
             {/if}
           {:else if openMenu === "sleep"}
-            <button onclick={() => setSleep("off")} class={panelItem}>
-              <Moon size={16} class="text-on-surface-variant shrink-0" />
-              <span class="flex-1">Off</span>
-              {#if sleepMode === "off"}<Check size={16} class="text-primary shrink-0" />{/if}
-            </button>
-            {#each SLEEP_MINUTES as m (m)}
-              <button onclick={() => setSleep(m)} class={panelItem}>
-                <Moon size={16} class="text-on-surface-variant shrink-0" />
-                <span class="flex-1">{m} minutes{#if sleepMode === m}<span
-                      class="text-label-sm text-on-surface-variant tabular-nums"
-                    >
-                      · {sleepClock}</span
-                    >{/if}</span>
-                {#if sleepMode === m}<Check size={16} class="text-primary shrink-0" />{/if}
-              </button>
-            {/each}
-            <button onclick={() => setSleep("lecture")} class={panelItem}>
+            <div class="px-4 pt-2 pb-1 text-label-sm text-on-surface-variant">Sleep timer</div>
+            <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2">
+              {#each SLEEP_MINUTES as m (m)}
+                <button
+                  onclick={() => setSleepMinutes(m)}
+                  class="px-2.5 py-1 rounded text-label-md transition-colors
+                    {sleepMode === 'minutes' && sleepTotalMinutes === m
+                    ? 'bg-primary-container text-on-primary-container'
+                    : 'bg-surface-container-high text-on-surface hover:bg-surface-container-highest'}"
+                >
+                  {m}m
+                </button>
+              {/each}
+              <form onsubmit={submitCustomSleep} class="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min="1"
+                  max="600"
+                  bind:value={customMins}
+                  placeholder="min"
+                  class="w-14 bg-background border border-outline-variant rounded px-2 py-1 text-label-md text-on-surface outline-none focus:border-accent-blue"
+                />
+                <button
+                  type="submit"
+                  class="px-2.5 py-1 rounded text-label-md bg-surface-container-high text-on-surface hover:bg-surface-container-highest transition-colors"
+                >
+                  Set
+                </button>
+              </form>
+            </div>
+            <button onclick={setSleepLecture} class={panelItem}>
               <Moon size={16} class="text-on-surface-variant shrink-0" />
               <span class="flex-1">End of lecture</span>
               {#if sleepMode === "lecture"}<Check size={16} class="text-primary shrink-0" />{/if}
+            </button>
+            <button onclick={clearSleep} class={panelItem}>
+              <span class="w-4 shrink-0"></span>
+              <span class="flex-1 text-on-surface-variant">Turn off</span>
+              {#if sleepMode === "off"}<Check size={16} class="text-primary shrink-0" />{/if}
             </button>
           {/if}
         </div>
@@ -1088,18 +1131,21 @@
 
           <button
             onclick={() => toggleMenu("sleep")}
-            class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface inline-flex items-center gap-1
+            class="px-2 py-2 min-w-9 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface inline-flex items-center justify-center
               {sleepMode !== 'off' || openMenu === 'sleep'
               ? 'bg-surface-container-highest text-primary'
               : 'text-on-surface-variant'}"
-            title="Sleep timer"
+            title={sleepMode === "minutes"
+              ? `Sleep in ${sleepBadge}`
+              : sleepMode === "lecture"
+                ? "Sleep at end of lecture"
+                : "Sleep timer"}
             aria-label="Sleep timer"
           >
-            <Moon size={18} />
-            {#if sleepMode !== "off"}
-              <span class="text-label-sm tabular-nums"
-                >{sleepMode === "lecture" ? "· end" : sleepClock}</span
-              >
+            {#if sleepMode === "minutes"}
+              <span class="text-label-md tabular-nums font-medium">{sleepBadge}</span>
+            {:else}
+              <Moon size={18} />
             {/if}
           </button>
 

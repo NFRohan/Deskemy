@@ -34,6 +34,8 @@
       <img
         src={thumb}
         alt={course.title}
+        loading="lazy"
+        decoding="async"
         class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-500 {completed
           ? 'grayscale group-hover:grayscale-0'
           : ''}"

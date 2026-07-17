@@ -329,6 +329,21 @@ pub fn open_resource(app: AppHandle, path: String) -> Result<()> {
         .map_err(|e| DeskemyError::Other(e.to_string()))
 }
 
+/// Reveal a path in the OS file manager: a folder is opened directly; a file is
+/// revealed (its containing folder opens with the file selected). Done in the
+/// backend via the Rust opener API — the JS opener path is scope-gated and
+/// silently rejects arbitrary user file paths.
+#[tauri::command]
+pub fn reveal_path(app: AppHandle, path: String, is_dir: bool) -> Result<()> {
+    use tauri_plugin_opener::OpenerExt;
+    if is_dir {
+        app.opener().open_path(path, None::<&str>)
+    } else {
+        app.opener().reveal_item_in_dir(path)
+    }
+    .map_err(|e| DeskemyError::Other(e.to_string()))
+}
+
 /// Remove a course from the library (DB only — does not touch files on disk).
 /// Cascades to its sections/lectures/progress/bookmarks and the search index.
 #[tauri::command]
