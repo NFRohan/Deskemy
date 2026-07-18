@@ -21,7 +21,7 @@ pub mod watcher;
 
 use config::AppConfig;
 use state::AppState;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tracing_subscriber::EnvFilter;
 
 /// Lightweight backend health check used by the frontend to confirm the
@@ -296,6 +296,45 @@ pub fn run() {
 
             tracing::info!(db = %db_path.display(), "database ready");
             app.manage(AppState::new(conn, config, data_dir, config_path));
+
+            // Startup reconcile (folder-level): flag any course whose whole
+            // folder is gone (renamed/moved) as Missing, so the course page
+            // shows its "Locate folder" banner without the user first running
+            // Settings → "Check for missing files". This stats one folder per
+            // course (not every lecture), and runs off the main thread so a
+            // slow or disconnected path can't stall startup. Clearing the flag
+            // stays with the thorough manual check / relocate, which confirm the
+            // files are actually back.
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let state = handle.state::<AppState>();
+                    let folders = {
+                        let Ok(conn) = state.db.lock() else { return };
+                        match db::queries::all_course_folders(&conn) {
+                            Ok(f) => f,
+                            Err(e) => {
+                                tracing::warn!(error = %e, "startup reconcile: query failed");
+                                return;
+                            }
+                        }
+                    };
+                    let mut changed = false;
+                    for (id, folder, _root_id) in folders {
+                        if std::path::Path::new(&folder).exists() {
+                            continue;
+                        }
+                        if let Ok(conn) = state.db.lock() {
+                            if db::queries::set_missing(&conn, &id, true).is_ok() {
+                                changed = true;
+                            }
+                        }
+                    }
+                    if changed {
+                        let _ = handle.emit("library:changed", ());
+                    }
+                });
+            }
 
             // Decide the player compositing path once, up front, on the main
             // thread (DirectComposition is UI-thread bound). Both the UI and the
