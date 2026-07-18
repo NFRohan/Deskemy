@@ -67,6 +67,8 @@ export interface AppConfig {
   autoplay_next: boolean;
   daily_goal_minutes: number;
   auto_rescan: boolean;
+  clean_titles: boolean;
+  autohide_controls: boolean;
   last_root: string | null;
 }
 

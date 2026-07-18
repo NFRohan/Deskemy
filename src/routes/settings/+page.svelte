@@ -64,9 +64,19 @@
     config.autoplay_next = !config.autoplay_next;
     save();
   }
+  function toggleAutohideControls() {
+    if (!config) return;
+    config.autohide_controls = !config.autohide_controls;
+    save();
+  }
   function toggleAutoRescan() {
     if (!config) return;
     config.auto_rescan = !config.auto_rescan;
+    save();
+  }
+  function toggleCleanTitles() {
+    if (!config) return;
+    config.clean_titles = !config.clean_titles;
     save();
   }
   function onTheme(e: Event) {
@@ -250,6 +260,28 @@
           </button>
         </div>
         <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Auto-hide controls in fullscreen</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Hide the control bar and cursor after a few seconds of no mouse movement while
+              fullscreen (VLC-style). Off keeps them always visible.
+            </p>
+          </div>
+          <button
+            onclick={toggleAutohideControls}
+            role="switch"
+            aria-checked={config.autohide_controls}
+            aria-label="Auto-hide controls in fullscreen"
+            class="relative w-11 h-6 rounded-full transition-colors shrink-0
+              {config.autohide_controls ? 'bg-primary-container' : 'bg-surface-container-highest'}"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform
+                {config.autohide_controls ? 'translate-x-5' : ''}"
+            ></span>
+          </button>
+        </div>
+        <div class="flex items-center justify-between gap-4 p-4">
           <div>
             <p class="text-body-md text-on-surface">Daily goal</p>
             <p class="text-label-sm text-on-surface-variant">Target watch time per day (Stats).</p>
@@ -275,6 +307,29 @@
       <div
         class="bg-surface-container-low border border-outline-variant rounded-lg divide-y divide-outline-variant"
       >
+        <div class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-body-md text-on-surface">Clean up lecture titles</p>
+            <p class="text-label-sm text-on-surface-variant">
+              Strip leading numbers and file extensions on import (e.g. "01. Intro.mp4" → "Intro").
+              Off keeps the raw file and folder names. Applies to new imports.
+            </p>
+          </div>
+          <button
+            onclick={toggleCleanTitles}
+            role="switch"
+            aria-checked={config.clean_titles}
+            aria-label="Clean up lecture titles"
+            class="relative w-11 h-6 rounded-full transition-colors shrink-0
+              {config.clean_titles ? 'bg-primary-container' : 'bg-surface-container-highest'}"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform
+                {config.clean_titles ? 'translate-x-5' : ''}"
+            ></span>
+          </button>
+        </div>
+
         <div class="flex items-center justify-between gap-4 p-4">
           <div class="min-w-0">
             <p class="text-body-md text-on-surface">Auto-rescan folders</p>

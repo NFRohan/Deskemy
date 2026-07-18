@@ -161,7 +161,7 @@ impl Importer {
         course_dir: &Path,
     ) -> Result<String> {
         let snap = self.read_snapshot(conn, course_dir)?;
-        let plan = self.build(course_dir, &snap, |_, _| {})?;
+        let plan = self.build(course_dir, &snap, true, |_, _| {})?;
         self.persist(conn, root_id, &snap, &plan)
     }
 
@@ -199,10 +199,11 @@ impl Importer {
         &self,
         course_dir: &Path,
         snap: &ImportSnapshot,
+        clean_titles: bool,
         progress: impl Fn(usize, usize),
     ) -> Result<ImportPlan> {
         let scan = FilesystemScanner.scan(course_dir)?;
-        let sections = self.plan_sections(&scan, &snap.prior, &progress)?;
+        let sections = self.plan_sections(&scan, &snap.prior, clean_titles, &progress)?;
         Ok(ImportPlan { scan, sections })
     }
 
@@ -444,6 +445,7 @@ impl Importer {
         &self,
         scan: &ScannedTree,
         prior: &HashMap<String, PriorMeta>,
+        clean_titles: bool,
         progress: &impl Fn(usize, usize),
     ) -> Result<Vec<PlannedSection>> {
         // Group video files by their top-level section key ("" = course root).
@@ -467,8 +469,10 @@ impl Importer {
 
             let title = if key.is_empty() {
                 "Introduction".to_string()
-            } else {
+            } else if clean_titles {
                 clean_title(&key)
+            } else {
+                key.clone()
             };
 
             let mut lectures = Vec::new();
@@ -515,7 +519,7 @@ impl Importer {
                     .unwrap_or_else(|| v.name.clone());
                 lectures.push(PlannedLecture {
                     id: new_id(),
-                    title: clean_title(&v.name),
+                    title: if clean_titles { clean_title(&v.name) } else { v.name.clone() },
                     position: l_pos as i64,
                     number: leading_number(&v.name),
                     stem,

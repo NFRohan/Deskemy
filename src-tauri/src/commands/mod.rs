@@ -105,7 +105,8 @@ pub async fn library_import_course(
                 let conn = db(&state)?;
                 state.importer.read_snapshot(&conn, course_dir)?
             };
-            let plan = state.importer.build(course_dir, &snap, |_, _| {})?;
+            let clean = state.config.lock().map(|c| c.clean_titles).unwrap_or(true);
+            let plan = state.importer.build(course_dir, &snap, clean, |_, _| {})?;
             (snap, plan)
         }
     };
@@ -136,7 +137,8 @@ pub async fn library_preview_import(
         let conn = db(&state)?;
         state.importer.read_snapshot(&conn, course_dir)?
     };
-    let plan = state.importer.build(course_dir, &snap, |done, total| {
+    let clean = state.config.lock().map(|c| c.clean_titles).unwrap_or(true);
+    let plan = state.importer.build(course_dir, &snap, clean, |done, total| {
         let _ = app.emit("import:progress", (done, total));
     })?;
 
@@ -198,7 +200,8 @@ pub async fn library_scan_root(
                 let conn = db(&state)?;
                 state.importer.read_snapshot(&conn, &path)?
             };
-            let plan = state.importer.build(&path, &snap, |_, _| {})?;
+            let clean = state.config.lock().map(|c| c.clean_titles).unwrap_or(true);
+            let plan = state.importer.build(&path, &snap, clean, |_, _| {})?;
             let mut guard = db(&state)?;
             let conn: &mut Connection = &mut guard;
             state.importer.persist(conn, Some(&root_id), &snap, &plan)?;

@@ -154,7 +154,8 @@ fn handle_changes(app: &AppHandle, paths: Vec<PathBuf>) {
                 }
             }
         };
-        let plan = match state.importer.build(folder, &snap, |_, _| {}) {
+        let clean = state.config.lock().map(|c| c.clean_titles).unwrap_or(true);
+        let plan = match state.importer.build(folder, &snap, clean, |_, _| {}) {
             Ok(p) => p,
             Err(e) => {
                 tracing::warn!(folder = %folder.display(), error = %e, "auto-rescan build failed");

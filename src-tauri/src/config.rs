@@ -20,6 +20,12 @@ pub struct AppConfig {
     /// re-importing probes new files while holding the DB lock, which can briefly
     /// block the UI, and it must not run against a course being watched.
     pub auto_rescan: bool,
+    /// Clean up lecture/section titles on import (strip leading numbers and file
+    /// extensions). On by default; off keeps the raw file/folder names.
+    pub clean_titles: bool,
+    /// Auto-hide the player controls (and cursor) in fullscreen after a few
+    /// seconds of no mouse movement, VLC-style. Off by default (controls stay).
+    pub autohide_controls: bool,
     /// Last library root the user registered (convenience).
     pub last_root: Option<String>,
 }
@@ -32,6 +38,8 @@ impl Default for AppConfig {
             autoplay_next: true,
             daily_goal_minutes: 30,
             auto_rescan: false,
+            clean_titles: true,
+            autohide_controls: false,
             last_root: None,
         }
     }

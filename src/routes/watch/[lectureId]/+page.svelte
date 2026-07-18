@@ -235,6 +235,7 @@
 
   onMount(async () => {
     available = await api.playerAvailable().catch(() => false);
+    api.getConfig().then((c) => (autohideControls = c.autohide_controls)).catch(() => {});
 
     unlisten.push(
       await listen<PlayerState>("player:state", (e) => {
@@ -534,11 +535,46 @@
     }
   });
 
+  // Auto-hide controls (VLC-style) in fullscreen, gated by the setting. Read on
+  // mount so a Settings toggle takes effect the next time a lecture is opened.
+  let autohideControls = $state(false);
+  let controlsVisible = $state(true);
+  let controlsHideTimer: ReturnType<typeof setTimeout> | null = null;
+  const canAutohide = $derived(ui.immersive && autohideControls && !state.paused);
+
+  function armControlsHide() {
+    if (controlsHideTimer) {
+      clearTimeout(controlsHideTimer);
+      controlsHideTimer = null;
+    }
+    if (canAutohide) {
+      controlsHideTimer = setTimeout(() => (controlsVisible = false), 2500);
+    }
+  }
+  function nudgeControls() {
+    if (!controlsVisible) controlsVisible = true;
+    armControlsHide();
+  }
+  // Force controls back whenever we shouldn't be hiding (windowed, feature off,
+  // or paused), and cancel any pending hide.
+  $effect(() => {
+    if (canAutohide) {
+      armControlsHide();
+    } else {
+      controlsVisible = true;
+      if (controlsHideTimer) {
+        clearTimeout(controlsHideTimer);
+        controlsHideTimer = null;
+      }
+    }
+  });
+
   onDestroy(() => {
     unlisten.forEach((u) => u());
     observer?.disconnect();
     timers.forEach(clearTimeout);
     if (sleepInterval) clearInterval(sleepInterval);
+    if (controlsHideTimer) clearTimeout(controlsHideTimer);
     setImmersive(false);
     api.windowSetImmersive(false).catch(() => {});
     // Grab a resume frame for the Continue Watching entry, then stop. The
@@ -751,9 +787,10 @@
        black/white bar. Windowed stays in normal flow (h-full). Compositing mode
        keeps the background transparent so the video (behind the webview) shows. -->
   <div
-    class="flex flex-col {ui.compositor ? '' : 'bg-black'} {ui.immersive
-      ? 'fixed inset-0 z-30'
-      : 'h-full'}"
+    onpointermove={nudgeControls}
+    class="flex flex-col {controlsVisible ? '' : 'cursor-none'} {ui.compositor
+      ? ''
+      : 'bg-black'} {ui.immersive ? 'fixed inset-0 z-30' : 'h-full'}"
   >
     {#if error}
       <div class="bg-error/10 border-b border-error/30 text-error text-body-sm px-4 py-2">{error}</div>
@@ -996,9 +1033,12 @@
     {/if}
 
     <!-- Control bar (docked below the video — never overlaps the native surface).
-         Always visible, including in fullscreen. -->
+         Auto-hides in fullscreen when the setting is on (collapses so the video
+         fills; reappears on mouse move). -->
       <div
-        class="shrink-0 bg-surface border-t border-outline-variant px-4 py-3 flex flex-col gap-2"
+        class="shrink-0 bg-surface border-t border-outline-variant px-4 py-3 flex flex-col gap-2 {controlsVisible
+          ? ''
+          : 'hidden'}"
       >
       <div class="flex items-center gap-3">
         <span class="text-label-sm text-on-surface-variant tabular-nums w-12 text-right">
