@@ -234,3 +234,58 @@ fn reimport_keeps_progress_across_a_rename() {
         "bookmark survived the rename"
     );
 }
+
+// Relocating a moved/renamed course rewrites the stored paths, keeps every id,
+// and therefore preserves progress and bookmarks untouched.
+#[test]
+fn relocate_course_rewrites_paths_and_keeps_progress() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Old Name");
+    let s = course.join("01 - Intro");
+    fs::create_dir_all(&s).unwrap();
+    touch(&s.join("001 First.mp4"));
+    touch(&s.join("002 Second.mp4"));
+
+    let mut conn = db::open_in_memory().unwrap();
+    let importer = Importer::new(Box::new(StubProber));
+    let course_id = importer.import_course(&mut conn, None, &course).unwrap();
+
+    let before = db::queries::get_course_detail(&conn, &course_id).unwrap().unwrap();
+    let old_folder = before.folder_path.clone();
+    let lec_id = before.sections[0].lectures[0].id.clone();
+    let lec_path = before.sections[0].lectures[0].file_path.clone();
+    db::queries::save_progress(&conn, &lec_id, 90.0, true).unwrap();
+    db::queries::add_bookmark(&conn, &lec_id, 10.0, Some("bm")).unwrap();
+
+    // Simulate the folder being renamed/moved.
+    let new_folder = r"D:\Moved\New Name";
+    db::queries::relocate_course(&conn, &course_id, &old_folder, new_folder).unwrap();
+
+    let after = db::queries::get_course_detail(&conn, &course_id).unwrap().unwrap();
+    assert_eq!(after.folder_path, new_folder, "course folder repointed");
+    let lec_after = &after.sections[0].lectures[0];
+    assert_eq!(lec_after.id, lec_id, "lecture id preserved");
+    assert!(lec_after.file_path.starts_with(new_folder), "lecture path repointed");
+    assert_eq!(
+        lec_path.strip_prefix(old_folder.as_str()).unwrap(),
+        lec_after.file_path.strip_prefix(new_folder).unwrap(),
+        "relative suffix unchanged",
+    );
+
+    let (pos, completed) = db::queries::get_progress(&conn, &lec_id).unwrap();
+    assert!(completed && (pos - 90.0).abs() < 0.01, "progress preserved");
+    assert_eq!(
+        db::queries::list_bookmarks(&conn, &lec_id).unwrap().len(),
+        1,
+        "bookmark preserved"
+    );
+
+    let status: String = conn
+        .query_row(
+            "SELECT scan_status FROM courses WHERE id = ?1",
+            [course_id.as_str()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "Ready", "course marked Ready again");
+}

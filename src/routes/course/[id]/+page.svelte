@@ -9,6 +9,7 @@
     ChevronDown,
     ChevronRight,
     TriangleAlert,
+    FolderOpen,
     ListVideo,
     LoaderCircle,
     Upload,
@@ -24,7 +25,7 @@
     File,
   } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { api, pickImage } from "$lib/api";
+  import { api, pickImage, pickFolder } from "$lib/api";
   import { setCrumbs, loadLibrary } from "$lib/stores/app.svelte";
   import { formatDuration, formatClock, pct } from "$lib/format";
   import type { Attachment, CourseDetail, Lecture, Section } from "$lib/types";
@@ -124,6 +125,26 @@
   $effect(() => {
     load($page.params.id);
   });
+
+  // Relocate a course whose folder was moved/renamed (shows when it's Missing).
+  let relocating = $state(false);
+  let relocateError = $state<string | null>(null);
+  async function relocateFolder() {
+    if (!course || relocating) return;
+    const folder = await pickFolder();
+    if (!folder) return;
+    relocating = true;
+    relocateError = null;
+    try {
+      await api.relocateCourse(course.id, folder);
+      await load(course.id);
+      await loadLibrary(true);
+    } catch (e: any) {
+      relocateError = e?.message ?? String(e);
+    } finally {
+      relocating = false;
+    }
+  }
 
   function toggle(sectionId: string) {
     const next = new Set(expanded);
@@ -281,6 +302,29 @@
   </div>
 {:else if course}
   <div class="p-6 max-w-5xl mx-auto space-y-6">
+    {#if course.scan_status === "Missing" || course.scan_status === "Error"}
+      <div class="flex items-center gap-3 bg-error/10 border border-error/30 rounded-lg px-4 py-3">
+        <TriangleAlert size={18} class="text-error shrink-0" />
+        <div class="flex-1 min-w-0">
+          <p class="text-body-md text-on-surface">This course's folder can't be found</p>
+          <p class="text-label-sm text-on-surface-variant">
+            Moved or renamed the folder? Point Deskemy at its new location — your progress,
+            bookmarks and tags are all kept.
+          </p>
+          {#if relocateError}<p class="text-label-sm text-error mt-1">{relocateError}</p>{/if}
+        </div>
+        <button
+          onclick={relocateFolder}
+          disabled={relocating}
+          class="shrink-0 inline-flex items-center gap-1.5 text-label-md bg-primary-container text-on-primary-container px-3 py-2 rounded hover:bg-inverse-primary transition-colors disabled:opacity-60"
+        >
+          {#if relocating}<LoaderCircle size={15} class="animate-spin" />{:else}<FolderOpen
+              size={15}
+            />{/if} Locate folder
+        </button>
+      </div>
+    {/if}
+
     <!-- Header -->
     <div class="flex gap-6 bg-surface-container-low border border-outline-variant rounded-xl p-4">
       <button

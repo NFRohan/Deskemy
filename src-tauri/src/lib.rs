@@ -340,6 +340,7 @@ pub fn run() {
             commands::library_list_roots,
             commands::library_remove_root,
             commands::library_import_course,
+            commands::library_relocate_course,
             commands::library_preview_import,
             commands::library_scan_root,
             commands::library_list_courses,

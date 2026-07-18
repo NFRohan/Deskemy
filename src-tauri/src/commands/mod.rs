@@ -120,6 +120,45 @@ pub async fn library_import_course(
     Ok(id)
 }
 
+/// Repoint a course whose folder was moved or renamed to a new location, keeping
+/// all progress/bookmarks/tags/track membership (only the stored paths change).
+/// Refuses folders that don't actually contain the course's files.
+#[tauri::command]
+pub fn library_relocate_course(
+    app: AppHandle,
+    state: State<AppState>,
+    course_id: String,
+    new_folder: String,
+) -> Result<()> {
+    let new_folder = new_folder
+        .trim_end_matches(|c| c == '/' || c == '\\')
+        .to_string();
+    if !Path::new(&new_folder).is_dir() {
+        return Err(DeskemyError::NotFound(format!("folder not found: {new_folder}")));
+    }
+    {
+        let conn = db(&state)?;
+        let old_folder = queries::course_folder(&conn, &course_id)?
+            .ok_or_else(|| DeskemyError::NotFound("course not found".into()))?;
+        // Sanity: a course file should exist at the same relative path under the
+        // new folder — i.e. this is the same course, just moved/renamed.
+        if let Some(sample) = queries::first_lecture_path(&conn, &course_id)? {
+            if let Ok(rel) = Path::new(&sample).strip_prefix(&old_folder) {
+                if !Path::new(&new_folder).join(rel).exists() {
+                    return Err(DeskemyError::Other(
+                        "That folder doesn't contain this course's files. Pick the folder the \
+                         course was moved or renamed to."
+                            .into(),
+                    ));
+                }
+            }
+        }
+        queries::relocate_course(&conn, &course_id, &old_folder, &new_folder)?;
+    }
+    watch_path(&app, &new_folder);
+    Ok(())
+}
+
 /// Dry-run an import: probe the folder and return what it would create, staging
 /// the probed plan so a following `library_import_course` doesn't re-probe.
 ///

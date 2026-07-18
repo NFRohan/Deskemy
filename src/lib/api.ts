@@ -43,6 +43,8 @@ export const api = {
   previewImport: (path: string) => invoke<ImportPreview>("library_preview_import", { path }),
   scanRoot: (rootId: string) => invoke<ScanResult>("library_scan_root", { rootId }),
   listCourses: () => invoke<CourseSummary[]>("library_list_courses"),
+  relocateCourse: (courseId: string, newFolder: string) =>
+    invoke<void>("library_relocate_course", { courseId, newFolder }),
 
   // course_*
   getCourse: (id: string) => invoke<CourseDetail | null>("course_get", { id }),

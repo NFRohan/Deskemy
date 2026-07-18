@@ -71,6 +71,55 @@ pub fn find_course_by_path(conn: &Connection, folder_path: &str) -> Result<Optio
         .optional()?)
 }
 
+/// A course's current folder path, if it exists.
+pub fn course_folder(conn: &Connection, course_id: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT folder_path FROM courses WHERE id = ?1",
+            params![course_id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?)
+}
+
+/// One lecture's file path for a course (used to sanity-check a relocate target).
+pub fn first_lecture_path(conn: &Connection, course_id: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT file_path FROM lectures WHERE course_id = ?1 LIMIT 1",
+            params![course_id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?)
+}
+
+/// Repoint a course and its lecture/attachment file paths from `old_folder` to
+/// `new_folder` (a moved or renamed course folder). Rewrites only the path
+/// prefix and keeps every id, so progress, bookmarks, tags, and track membership
+/// are preserved untouched.
+pub fn relocate_course(
+    conn: &Connection,
+    course_id: &str,
+    old_folder: &str,
+    new_folder: &str,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE lectures SET file_path = ?2 || substr(file_path, length(?3) + 1)
+           WHERE course_id = ?1",
+        params![course_id, new_folder, old_folder],
+    )?;
+    conn.execute(
+        "UPDATE attachments SET file_path = ?2 || substr(file_path, length(?3) + 1)
+           WHERE course_id = ?1",
+        params![course_id, new_folder, old_folder],
+    )?;
+    conn.execute(
+        "UPDATE courses SET folder_path = ?2, scan_status = 'Ready' WHERE id = ?1",
+        params![course_id, new_folder],
+    )?;
+    Ok(())
+}
+
 pub fn delete_course(conn: &Connection, id: &str) -> Result<()> {
     // The FTS tables have no FK, so clear their rows explicitly.
     conn.execute("DELETE FROM search_index WHERE course_id = ?1", params![id])?;
