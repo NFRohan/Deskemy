@@ -112,7 +112,7 @@
   let pendingSeek = $state<number | null>(null);
   let tracks = $state<MediaTracks>({ audio: [], subtitle: [], chapters: [] });
   let tracksFor = $state<string | null>(null);
-  let openMenu = $state<"sub" | "audio" | "chapters" | "bookmarks" | null>(null);
+  let openMenu = $state<"sub" | "audio" | "chapters" | null>(null);
   let course = $state<CourseDetail | null>(null);
   let attachments = $state<Attachment[]>([]);
   let sidebarTab = $state<"content" | "resources">("content");
@@ -129,6 +129,12 @@
   let bookmarks = $state<Bookmark[]>([]);
   let bookmarksFor = $state<string | null>(null);
   let newBookmarkLabel = $state("");
+  // Add-bookmark flow: a center-screen panel that pauses the video so the moment
+  // stays put while you type a label. We capture the position at open time and
+  // restore the prior play state when the panel closes.
+  let showBookmarkPanel = $state(false);
+  let bookmarkAtPosition = $state(0);
+  let bookmarkResumeAfter = $state(false);
 
   let unlisten: UnlistenFn[] = [];
   let observer: ResizeObserver | null = null;
@@ -312,17 +318,38 @@
     if (!lid) return;
     api.listBookmarks(lid).then((b) => (bookmarks = b)).catch(() => {});
   }
-  async function addBookmark() {
+  function openBookmarkPanel() {
     const lid = state.lecture_id;
-    if (!lid) return;
+    if (!lid || showBookmarkPanel) return;
+    // Freeze the moment: capture the position and pause so it doesn't slip away
+    // while the label is being typed.
+    bookmarkAtPosition = state.position;
+    bookmarkResumeAfter = !state.paused;
+    if (!state.paused) api.playerSetPaused(true).catch(() => {});
+    newBookmarkLabel = "";
+    showBookmarkPanel = true;
+  }
+  function closeBookmarkPanel() {
+    if (!showBookmarkPanel) return;
+    showBookmarkPanel = false;
+    newBookmarkLabel = "";
+    if (bookmarkResumeAfter) api.playerSetPaused(false).catch(() => {});
+    bookmarkResumeAfter = false;
+  }
+  async function saveBookmark() {
+    const lid = state.lecture_id;
+    if (!lid) {
+      closeBookmarkPanel();
+      return;
+    }
     const label = newBookmarkLabel.trim() || null;
     try {
-      await api.addBookmark(lid, state.position, label);
-      newBookmarkLabel = "";
+      await api.addBookmark(lid, bookmarkAtPosition, label);
       refetchBookmarks(lid);
     } catch {
       /* ignore — list stays as-is */
     }
+    closeBookmarkPanel();
   }
   async function removeBookmark(id: string) {
     await api.deleteBookmark(id).catch(() => {});
@@ -446,7 +473,7 @@
   function pickChapter(index: number) {
     api.playerSetChapter(index).catch(() => {});
   }
-  function toggleMenu(m: "sub" | "audio" | "chapters" | "bookmarks") {
+  function toggleMenu(m: "sub" | "audio" | "chapters") {
     openMenu = openMenu === m ? null : m;
     // The panel resizes the video pane; re-sync the mpv window to it.
     reportRectSoon();
@@ -646,13 +673,6 @@
   function seekFraction(f: number) {
     if (state.duration > 0) api.playerSeek(state.duration * f).catch(() => {});
   }
-  async function quickBookmark() {
-    const lid = state.lecture_id;
-    if (!lid) return;
-    await api.addBookmark(lid, state.position, null).catch(() => {});
-    refetchBookmarks(lid);
-  }
-
   function onKey(e: KeyboardEvent) {
     const el = e.target as HTMLElement | null;
     const tag = el?.tagName;
@@ -720,7 +740,7 @@
         showSidebar("resources");
         break;
       case "b":
-        quickBookmark();
+        openBookmarkPanel();
         break;
       case "n":
         api.playerNext().catch(() => {});
@@ -732,8 +752,10 @@
         toggleShortcuts();
         break;
       case "Escape":
-        // Peel back one layer at a time: sleep menu → cheat sheet → fullscreen → leave.
-        if (showSleepMenu) showSleepMenu = false;
+        // Peel back one layer at a time: bookmark panel → sleep menu → cheat
+        // sheet → fullscreen → leave.
+        if (showBookmarkPanel) closeBookmarkPanel();
+        else if (showSleepMenu) showSleepMenu = false;
         else if (showShortcuts) closeShortcuts();
         else if (ui.immersive) toggleImmersive();
         else goBack();
@@ -753,6 +775,12 @@
   // Clear focus from a control after use so the keyboard shortcuts keep working.
   function blurSelf(e: Event) {
     (e.currentTarget as HTMLElement | null)?.blur();
+  }
+
+  // Focus a freshly-mounted input (used by the bookmark panel so you can type
+  // the label immediately).
+  function autofocus(node: HTMLElement) {
+    node.focus();
   }
 </script>
 
@@ -842,49 +870,6 @@
                 {#if state.chapter === c.index}<Check size={16} class="text-primary shrink-0" />{/if}
               </button>
             {/each}
-          {:else if openMenu === "bookmarks"}
-            <div class="flex items-center gap-2 px-4 py-2 border-b border-outline-variant">
-              <input
-                type="text"
-                bind:value={newBookmarkLabel}
-                onkeydown={(e) => e.key === "Enter" && addBookmark()}
-                placeholder="Label (optional)"
-                class="flex-1 min-w-0 bg-background border border-outline-variant rounded px-2 py-1 text-body-sm text-on-surface outline-none focus:border-accent-blue"
-              />
-              <button
-                onclick={addBookmark}
-                class="flex items-center gap-1.5 px-3 py-1 rounded bg-primary-container text-on-primary-container text-label-md hover:bg-inverse-primary transition-colors shrink-0"
-              >
-                <BookmarkPlus size={15} /> Add at {formatClock(state.position)}
-              </button>
-            </div>
-            {#if bookmarks.length === 0}
-              <div class="px-6 py-3 text-body-sm text-on-surface-variant">No bookmarks yet.</div>
-            {:else}
-              {#each bookmarks as b (b.id)}
-                <div class="flex items-center gap-3 px-6 py-1.5 hover:bg-surface-container">
-                  <button
-                    onclick={() => jumpToBookmark(b)}
-                    class="flex items-center gap-3 flex-1 min-w-0 text-left"
-                  >
-                    <span class="text-label-sm text-on-surface-variant tabular-nums w-14 shrink-0">
-                      {formatClock(b.position_seconds)}
-                    </span>
-                    <span class="flex-1 truncate text-body-md text-on-surface">
-                      {b.label ?? "Bookmark"}
-                    </span>
-                  </button>
-                  <button
-                    onclick={() => removeBookmark(b.id)}
-                    class="p-1 rounded text-on-surface-variant hover:text-error hover:bg-surface-container-highest transition-colors shrink-0"
-                    aria-label="Delete bookmark"
-                    title="Delete bookmark"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              {/each}
-            {/if}
           {/if}
         </div>
       </div>
@@ -1032,6 +1017,103 @@
       </div>
     {/if}
 
+    <!-- Add-bookmark panel: a center-screen modal (like the sleep timer). Opening
+         it pauses the video, so the moment holds while you type a label. -->
+    {#if showBookmarkPanel}
+      <div
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        role="presentation"
+        onclick={closeBookmarkPanel}
+      >
+        <div
+          class="w-full max-w-sm bg-surface-container rounded-xl border border-outline-variant p-5 shadow-2xl space-y-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Add bookmark"
+          onclick={(e) => e.stopPropagation()}
+        >
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="text-headline-sm text-on-surface flex items-center gap-2">
+              <BookmarkPlus size={18} /> Add bookmark
+            </h3>
+            <span class="text-label-md text-on-surface-variant tabular-nums shrink-0">
+              {formatClock(bookmarkAtPosition)}
+            </span>
+          </div>
+          <form
+            onsubmit={(e) => {
+              e.preventDefault();
+              saveBookmark();
+            }}
+            class="space-y-3"
+          >
+            <input
+              use:autofocus
+              type="text"
+              bind:value={newBookmarkLabel}
+              onkeydown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeBookmarkPanel();
+                }
+              }}
+              placeholder="Label (optional)"
+              class="w-full bg-background border border-outline-variant rounded px-3 py-2 text-body-sm text-on-surface outline-none focus:border-accent-blue"
+            />
+            <div class="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onclick={closeBookmarkPanel}
+                class="px-3 py-2 rounded text-label-md text-on-surface-variant hover:bg-surface-container-highest transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="flex items-center gap-1.5 px-3 py-2 rounded bg-primary-container text-on-primary-container text-label-md hover:bg-inverse-primary transition-colors"
+              >
+                <BookmarkPlus size={15} /> Save
+              </button>
+            </div>
+          </form>
+
+          {#if bookmarks.length > 0}
+            <div class="border-t border-outline-variant pt-3 max-h-56 overflow-y-auto">
+              <p class="text-label-sm text-on-surface-variant uppercase tracking-wide mb-1.5">
+                Saved bookmarks
+              </p>
+              {#each bookmarks as b (b.id)}
+                <div class="flex items-center gap-3 py-1.5 px-1 rounded hover:bg-surface-container-high">
+                  <button
+                    onclick={() => {
+                      jumpToBookmark(b);
+                      closeBookmarkPanel();
+                    }}
+                    class="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  >
+                    <span class="text-label-sm text-on-surface-variant tabular-nums w-14 shrink-0">
+                      {formatClock(b.position_seconds)}
+                    </span>
+                    <span class="flex-1 truncate text-body-md text-on-surface">
+                      {b.label ?? "Bookmark"}
+                    </span>
+                  </button>
+                  <button
+                    onclick={() => removeBookmark(b.id)}
+                    class="p-1 rounded text-on-surface-variant hover:text-error hover:bg-surface-container-highest transition-colors shrink-0"
+                    aria-label="Delete bookmark"
+                    title="Delete bookmark"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     <!-- Control bar (docked below the video — never overlaps the native surface).
          Auto-hides in fullscreen when the setting is on (collapses so the video
          fills; reappears on mouse move). -->
@@ -1158,11 +1240,11 @@
 
         <div class="flex items-center gap-2 shrink-0">
           <button
-            onclick={() => toggleMenu("bookmarks")}
+            onclick={openBookmarkPanel}
             class="p-2 rounded transition-colors hover:bg-surface-container-highest hover:text-on-surface
-              {openMenu === 'bookmarks' ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
-            title="Bookmarks"
-            aria-label="Bookmarks"
+              {showBookmarkPanel ? 'bg-surface-container-highest text-on-surface' : 'text-on-surface-variant'}"
+            title="Bookmark this moment"
+            aria-label="Bookmark this moment"
           >
             <BookmarkIcon size={18} />
           </button>
