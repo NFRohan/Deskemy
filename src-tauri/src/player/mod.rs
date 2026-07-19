@@ -586,7 +586,7 @@ impl PlayerInner {
         let Some(lecture_id) = lecture_id else {
             return;
         };
-        let done = completed || (duration > 0.0 && position / duration >= 0.9);
+        let done = completed || (duration > 0.0 && position / duration >= COMPLETE_FRACTION);
         let st = self.app.state::<AppState>();
         let db = match st.db.lock() {
             Ok(g) => g,
@@ -741,6 +741,13 @@ fn spawn_pump(inner: Arc<PlayerInner>) {
         }
     });
 }
+
+/// Fraction of a video that must be watched for it to auto-mark as complete
+/// (the ✓ badge, section counts, stats) when the user stops *before* the end.
+/// Reaching actual EOF always marks done regardless. Kept a touch under 1.0 so
+/// trailing outros / "see you next lecture" tails don't block completion, but
+/// high enough that a long video isn't marked done with many minutes still left.
+const COMPLETE_FRACTION: f64 = 0.95;
 
 /// Where playback should start when (re)loading a lecture.
 ///
