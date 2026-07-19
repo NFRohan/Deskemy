@@ -378,12 +378,12 @@ impl PlayerInner {
             (item.lecture_id.clone(), item.path.clone(), pl.course_id.clone())
         };
 
-        let (saved_pos, completed) = {
+        let (saved_pos, completed, duration) = {
             let st = self.app.state::<AppState>();
             let db = st.db.lock().unwrap_or_else(|e| e.into_inner());
-            queries::get_progress(&db, &lecture_id).unwrap_or((0.0, false))
+            queries::get_progress(&db, &lecture_id).unwrap_or((0.0, false, None))
         };
-        let start = if resume && !completed { saved_pos } else { 0.0 };
+        let start = resume_start(resume, saved_pos, completed, duration);
         // Per-course playback prefs override the global default where present.
         let prefs = {
             let st = self.app.state::<AppState>();
@@ -742,6 +742,32 @@ fn spawn_pump(inner: Arc<PlayerInner>) {
     });
 }
 
+/// Where playback should start when (re)loading a lecture.
+///
+/// Resume the saved position — even for videos marked complete (watched >=90%) —
+/// EXCEPT when the saved spot is effectively at the very end, where resuming
+/// would just replay the final seconds; then start over from 0. This keeps the
+/// `completed` flag (used for badges/stats) independent of the resume point, so a
+/// video you stopped at, say, 92% resumes at 92% instead of restarting. Falls
+/// back to the `completed` flag when the duration is unknown (unprobed).
+///
+/// `END_EPSILON_SECS` is the "close enough to the end to start over" window.
+fn resume_start(resume: bool, saved_pos: f64, completed: bool, duration: Option<f64>) -> f64 {
+    const END_EPSILON_SECS: f64 = 5.0;
+    if !resume {
+        return 0.0;
+    }
+    let at_end = match duration {
+        Some(d) if d > 0.0 => saved_pos >= d - END_EPSILON_SECS,
+        _ => completed,
+    };
+    if at_end {
+        0.0
+    } else {
+        saved_pos
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Native child window (Windows). Other platforms get inert stubs for now.
 // ---------------------------------------------------------------------------
@@ -826,3 +852,48 @@ fn create_child(_parent: isize) -> isize {
 fn move_child(_hwnd: isize, _x: i32, _y: i32, _w: i32, _h: i32) {}
 #[cfg(not(windows))]
 fn show_child(_hwnd: isize, _visible: bool) {}
+
+#[cfg(test)]
+mod tests {
+    use super::resume_start;
+
+    #[test]
+    fn resumes_partway_through() {
+        // 50% of a 600s video → resume there.
+        assert_eq!(resume_start(true, 300.0, false, Some(600.0)), 300.0);
+    }
+
+    #[test]
+    fn resumes_completed_video_stopped_before_the_end() {
+        // The bug: watched to 92% (marked complete) but not finished → must
+        // resume at 552s, not restart at 0.
+        assert_eq!(resume_start(true, 552.0, true, Some(600.0)), 552.0);
+    }
+
+    #[test]
+    fn restarts_when_effectively_at_the_end() {
+        // Watched to the final seconds → replaying the end is pointless; start over.
+        assert_eq!(resume_start(true, 599.0, true, Some(600.0)), 0.0);
+        assert_eq!(resume_start(true, 600.0, true, Some(600.0)), 0.0);
+    }
+
+    #[test]
+    fn never_resumes_when_resume_is_off() {
+        // Explicit "play from start" (e.g. autoplay advance) always starts at 0.
+        assert_eq!(resume_start(false, 300.0, false, Some(600.0)), 0.0);
+    }
+
+    #[test]
+    fn falls_back_to_completed_flag_when_duration_unknown() {
+        // Unprobed lecture (no duration): keep the old behavior — completed
+        // restarts, in-progress resumes.
+        assert_eq!(resume_start(true, 300.0, true, None), 0.0);
+        assert_eq!(resume_start(true, 300.0, false, None), 300.0);
+    }
+
+    #[test]
+    fn short_video_end_window() {
+        // On a very short clip, the last 5s counts as "at the end".
+        assert_eq!(resume_start(true, 7.0, true, Some(8.0)), 0.0);
+    }
+}

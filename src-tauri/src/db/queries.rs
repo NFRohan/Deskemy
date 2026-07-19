@@ -1135,15 +1135,27 @@ pub fn set_pref_audio(conn: &Connection, course_id: &str, aid: Option<i64>) -> R
     Ok(())
 }
 
-pub fn get_progress(conn: &Connection, lecture_id: &str) -> Result<(f64, bool)> {
+/// (position_seconds, completed, lecture duration). Duration lets the caller
+/// decide whether a saved position is worth resuming or is effectively at the
+/// end (see the player's resume logic). `None` duration if unknown/unprobed.
+pub fn get_progress(conn: &Connection, lecture_id: &str) -> Result<(f64, bool, Option<f64>)> {
     Ok(conn
         .query_row(
-            "SELECT position_seconds, completed FROM progress WHERE lecture_id = ?1",
+            "SELECT p.position_seconds, p.completed, l.duration
+               FROM progress p
+               LEFT JOIN lectures l ON l.id = p.lecture_id
+              WHERE p.lecture_id = ?1",
             params![lecture_id],
-            |r| Ok((r.get::<_, f64>(0)?, r.get::<_, i64>(1)? != 0)),
+            |r| {
+                Ok((
+                    r.get::<_, f64>(0)?,
+                    r.get::<_, i64>(1)? != 0,
+                    r.get::<_, Option<f64>>(2)?,
+                ))
+            },
         )
         .optional()?
-        .unwrap_or((0.0, false)))
+        .unwrap_or((0.0, false, None)))
 }
 
 pub fn save_progress(
