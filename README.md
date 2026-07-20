@@ -131,6 +131,15 @@ settings, thumbnails) in a `data/` folder next to it, so nothing is written to
 `%APPDATA%` or the registry. Delete the folder to remove it entirely. (The
 WebView2 runtime still needs to be present on the system, as it is by default.)
 
+## Translations
+
+**简体中文 / Simplified Chinese** — [Deskemy-zh-CN](https://github.com/flipped0419/Deskemy-zh-CN),
+a community translation by [@flipped0419](https://github.com/flipped0419).
+
+It's maintained as a separate project, so it may trail the latest release — for
+anything translation-specific, please open an issue on that repo. Thanks to
+@flipped0419 for putting it together.
+
 ## Build from source
 
 ```bash
