@@ -52,6 +52,8 @@ libloading = "0.8"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
+    # SetThreadExecutionState — keep the machine awake during playback.
+    "Win32_System_Power",
 ] }
 # COM-based bindings for the compositing path (DirectComposition + D3D11/DXGI).
 # Already present transitively via webview2-com; pinned here as a direct dep.

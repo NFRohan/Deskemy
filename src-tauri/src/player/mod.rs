@@ -136,6 +136,9 @@ struct PlayerInner {
     watch_accum: Mutex<f64>,
     last_watch: Mutex<Instant>,
     completed_session: Mutex<std::collections::HashSet<String>>,
+    // Last sleep-inhibit state we applied, so the tick only calls into the OS on
+    // an actual change. Owned by the pump thread (see `set_keep_awake`).
+    keep_awake: std::sync::atomic::AtomicBool,
 }
 
 impl MpvPlayer {
@@ -224,6 +227,7 @@ impl MpvPlayer {
             watch_accum: Mutex::new(0.0),
             last_watch: Mutex::new(now),
             completed_session: Mutex::new(std::collections::HashSet::new()),
+            keep_awake: std::sync::atomic::AtomicBool::new(false),
         });
 
         spawn_pump(inner.clone());
@@ -447,6 +451,7 @@ impl PlayerInner {
 
     /// Refresh the observable state from mpv and emit (throttled).
     fn tick(&self, force: bool) {
+        let want_awake;
         {
             let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(p) = self.mpv.get_f64("time-pos") {
@@ -474,6 +479,22 @@ impl PlayerInner {
                 .get_property_string("mute")
                 .map(|v| v == "yes")
                 .unwrap_or(s.muted);
+            want_awake = !s.paused && s.lecture_id.is_some();
+        }
+
+        // Keep the machine (and display) awake while a video is actually playing,
+        // and let it sleep normally the moment it isn't. mpv can't do this for us
+        // on the default compositor path: `vo=libmpv` renders into a texture we
+        // own and has no window of its own, so mpv's stop-screensaver has nothing
+        // to hook into. Only calls into the OS on a real change, and runs on the
+        // pump thread — which is what scopes the request, since
+        // SetThreadExecutionState is per-thread.
+        if self
+            .keep_awake
+            .swap(want_awake, std::sync::atomic::Ordering::Relaxed)
+            != want_awake
+        {
+            set_keep_awake(want_awake);
         }
 
         // Accumulate real watch time while playing (capped per tick so a system
@@ -710,7 +731,12 @@ fn spawn_pump(inner: Arc<PlayerInner>) {
             if !ev.is_null() {
                 let id = unsafe { (*ev).event_id };
                 match id {
-                    MPV_EVENT_SHUTDOWN => return,
+                    MPV_EVENT_SHUTDOWN => {
+                        // Drop the sleep inhibit explicitly; the thread ending
+                        // would release it anyway, but don't rely on that.
+                        set_keep_awake(false);
+                        return;
+                    }
                     MPV_EVENT_FILE_LOADED => {
                         // Ensure playback starts (pause set before load can be reset).
                         inner.mpv.set_property("pause", "no").ok();
@@ -741,6 +767,30 @@ fn spawn_pump(inner: Arc<PlayerInner>) {
         }
     });
 }
+
+/// Ask Windows not to sleep or blank the display while a video is playing, or
+/// release that request when it isn't.
+///
+/// NOTE: `SetThreadExecutionState` is scoped to the *calling thread* — the
+/// request lapses when that thread exits. It is therefore only ever called from
+/// the player's long-lived pump thread, which also means shutting the player (or
+/// the app) down releases it automatically.
+#[cfg(windows)]
+fn set_keep_awake(on: bool) {
+    use windows_sys::Win32::System::Power::{
+        SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
+    };
+    let flags = if on {
+        ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+    } else {
+        ES_CONTINUOUS
+    };
+    unsafe { SetThreadExecutionState(flags) };
+    tracing::debug!(on, "sleep inhibit");
+}
+
+#[cfg(not(windows))]
+fn set_keep_awake(_on: bool) {}
 
 /// Fraction of a video that must be watched for it to auto-mark as complete
 /// (the ✓ badge, section counts, stats) when the user stops *before* the end.
