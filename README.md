@@ -8,7 +8,7 @@
   <p>
     <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0a7bbd" />
     <a href="https://github.com/NFRohan/Deskemy/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/NFRohan/Deskemy?color=8e10db&label=release" /></a>
-    <a href="https://github.com/NFRohan/Deskemy/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/NFRohan/Deskemy/total?color=8e10db&label=downloads" /></a>
+    <a href="https://github.com/NFRohan/Deskemy/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/NFRohan/Deskemy?color=8e10db&label=stars" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-2e7d32" />
     <img alt="Built with" src="https://img.shields.io/badge/Tauri%20v2%20%C2%B7%20Svelte%205%20%C2%B7%20Rust-111317" />
   </p>
