@@ -24,6 +24,42 @@ use state::AppState;
 use tauri::{Emitter, Manager};
 use tracing_subscriber::EnvFilter;
 
+/// Delete installers the auto-updater left behind in the temp dir.
+///
+/// `tauri-plugin-updater` downloads the new installer to
+/// `%TEMP%\Deskemy-<version>-updater-<rand>\`, then launches it and immediately
+/// calls `std::process::exit(0)` — which skips the tempfile cleanup guard, so a
+/// ~37 MB installer is orphaned after every update. By the time this runs we ARE
+/// the updated build, so those directories are stale.
+///
+/// Best-effort by design: if the installer process hasn't exited yet its own exe
+/// is still locked, the delete fails harmlessly, and the next launch sweeps it.
+/// A running installer can never be broken by this — Windows won't let us delete
+/// a running executable.
+fn sweep_updater_temp() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    let mut removed = 0usize;
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        // The plugin's dir prefix is "{app_name}-{version}-updater-".
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("Deskemy-")
+            && name.contains("-updater-")
+            && std::fs::remove_dir_all(entry.path()).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        tracing::info!(removed, "swept leftover updater temp dirs");
+    }
+}
+
 /// Lightweight backend health check used by the frontend to confirm the
 /// Rust <-> WebView bridge is wired up.
 #[tauri::command]
@@ -308,6 +344,8 @@ pub fn run() {
             {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
+                    sweep_updater_temp();
+
                     let state = handle.state::<AppState>();
                     let folders = {
                         let Ok(conn) = state.db.lock() else { return };
