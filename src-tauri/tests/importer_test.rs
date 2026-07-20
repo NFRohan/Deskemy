@@ -131,7 +131,7 @@ fn reimport_preserves_user_data() {
     assert_ne!(lec2.id, old_lec_id, "new lecture id after re-import");
 
     // Progress remapped by file path.
-    let (pos, completed) = db::queries::get_progress(&conn, &lec2.id).unwrap();
+    let (pos, completed, _) = db::queries::get_progress(&conn, &lec2.id).unwrap();
     assert!(completed);
     assert!((pos - 123.5).abs() < 0.01);
     assert!(lec2.completed);
@@ -226,7 +226,7 @@ fn reimport_keeps_progress_across_a_rename() {
 
     // Progress + bookmark carried over by content hash despite the new path/id.
     assert_ne!(lec2.id, old_id);
-    let (pos, completed) = db::queries::get_progress(&conn, &lec2.id).unwrap();
+    let (pos, completed, _) = db::queries::get_progress(&conn, &lec2.id).unwrap();
     assert!(completed && (pos - 200.0).abs() < 0.01, "progress survived the rename");
     assert_eq!(
         db::queries::list_bookmarks(&conn, &lec2.id).unwrap().len(),
@@ -272,7 +272,7 @@ fn relocate_course_rewrites_paths_and_keeps_progress() {
         "relative suffix unchanged",
     );
 
-    let (pos, completed) = db::queries::get_progress(&conn, &lec_id).unwrap();
+    let (pos, completed, _) = db::queries::get_progress(&conn, &lec_id).unwrap();
     assert!(completed && (pos - 90.0).abs() < 0.01, "progress preserved");
     assert_eq!(
         db::queries::list_bookmarks(&conn, &lec_id).unwrap().len(),
