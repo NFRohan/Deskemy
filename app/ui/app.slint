@@ -48,48 +48,6 @@ export component AppWindow inherits Window {
     if root.playing: PlayerOverlay {
         width: parent.width;
         height: parent.height;
-
-        title: Playback.title;
-        subtitle: Playback.subtitle;
-        stats: Playback.stats;
-        clock: Playback.clock;
-        ends-at: Playback.ends-at;
-        up-next: Playback.up-next;
-        position: Playback.position;
-        duration: Playback.duration;
-        paused: Playback.paused;
-        volume: Playback.volume;
-        muted: Playback.muted;
-        fullscreen: Playback.fullscreen;
-        has-previous: Playback.has-previous;
-        has-next: Playback.has-next;
-        speed-label: Playback.speed-label;
-        subtitles-on: Playback.subtitles-on;
-        speeds: Playback.speeds;
-        subtitles: Playback.subtitles;
-        audio-tracks: Playback.audio-tracks;
-        chapters: Playback.chapters;
-        open-menu <=> Playback.open-menu;
-        sleep-mode: Playback.sleep-mode;
-        sleep-badge: Playback.sleep-badge;
-        sleep-minutes: Playback.sleep-minutes;
-
-        back => { Playback.back(); }
-        toggle-pause => { Playback.toggle-pause(); }
-        seek(t) => { Playback.seek(t); }
-        seek-by(d) => { Playback.seek-by(d); }
-        previous => { Playback.previous(); }
-        next => { Playback.next(); }
-        set-volume(v) => { Playback.set-volume(v); }
-        toggle-mute => { Playback.toggle-mute(); }
-        toggle-fullscreen => { Playback.toggle-fullscreen(); }
-        pick-speed(i) => { Playback.pick-speed(i); }
-        pick-subtitle(id) => { Playback.pick-subtitle(id); }
-        pick-audio(id) => { Playback.pick-audio(id); }
-        pick-chapter(i) => { Playback.pick-chapter(i); }
-        sleep-for(m) => { Playback.sleep-for(m); }
-        sleep-at-end => { Playback.sleep-at-end(); }
-        sleep-off => { Playback.sleep-off(); }
     }
 
     if !root.playing: VerticalLayout {

@@ -210,57 +210,14 @@ component MenuRow inherits Rectangle {
     }
 }
 
+/// The player overlay. Reads and drives the `Playback` global directly.
 export component PlayerOverlay inherits Rectangle {
-    in property <string> title;
-    in property <string> subtitle;
-    /// Diagnostics under the title (decoder in use) — for the port spike.
-    in property <string> stats;
-    in property <string> clock;
-    in property <string> ends-at;
-    in property <string> up-next;
-    in property <float> position;
-    in property <float> duration;
-    in property <bool> paused;
-    in property <float> volume;
-    in property <bool> muted;
-    in property <bool> fullscreen;
-    in property <bool> has-previous;
-    in property <bool> has-next;
-    in property <string> speed-label;
-    in property <bool> subtitles-on;
-    in property <[MenuItem]> speeds;
-    in property <[MenuItem]> subtitles;
-    in property <[MenuItem]> audio-tracks;
-    in property <[MenuItem]> chapters;
-    in property <string> sleep-mode;
-    in property <string> sleep-badge;
-    in property <int> sleep-minutes;
-
-    callback back();
-    callback toggle-pause();
-    callback seek(float);
-    callback seek-by(float);
-    callback previous();
-    callback next();
-    callback set-volume(float);
-    callback toggle-mute();
-    callback toggle-fullscreen();
-    callback pick-speed(int);
-    callback pick-subtitle(int);
-    callback pick-audio(int);
-    callback pick-chapter(int);
-    callback sleep-for(int);
-    callback sleep-at-end();
-    callback sleep-off();
-
     in-out property <bool> controls-shown: true;
-    /// Which menu is open: "" (none), "speed", "sub", "audio" or "chapters".
-    in-out property <string> open-menu;
     // Never auto-hide while paused, mid-drag or with a menu open.
-    property <bool> pinned: root.paused || seek-bar.dragging || volume-bar.dragging || root.open-menu != "";
+    property <bool> pinned: Playback.paused || seek-bar.dragging || volume-bar.dragging || Playback.open-menu != "";
 
     function toggle-menu(name: string) {
-        root.open-menu = root.open-menu == name ? "" : name;
+        Playback.open-menu = Playback.open-menu == name ? "" : name;
     }
 
     pure function pad(n: float) -> string {
@@ -288,14 +245,14 @@ export component PlayerOverlay inherits Rectangle {
         mouse-cursor: root.controls-shown ? MouseCursor.default : MouseCursor.none;
         moved => { root.wake(); }
         clicked => {
-            if root.open-menu != "" {
-                root.open-menu = "";
+            if Playback.open-menu != "" {
+                Playback.open-menu = "";
             } else {
-                root.toggle-pause();
+                Playback.toggle-pause();
             }
             root.wake();
         }
-        double-clicked => { root.toggle-fullscreen(); }
+        double-clicked => { Playback.toggle-fullscreen(); }
     }
 
     controls := Rectangle {
@@ -319,7 +276,7 @@ export component PlayerOverlay inherits Rectangle {
             IconButton {
                 y: 16px;
                 icon: @image-url("icons/arrow-left.svg");
-                clicked => { root.back(); }
+                clicked => { Playback.back(); }
             }
             VerticalLayout {
                 horizontal-stretch: 1;
@@ -327,26 +284,26 @@ export component PlayerOverlay inherits Rectangle {
                 spacing: 2px;
                 padding-top: 6px;
                 Text {
-                    text: root.title;
+                    text: Playback.title;
                     color: #ffffff;
                     font-size: 16px;
                     font-weight: 700;
                     overflow: elide;
                 }
                 Text {
-                    text: root.subtitle;
+                    text: Playback.subtitle;
                     color: #ffffffb3;
                     font-size: 13px;
                     overflow: elide;
                 }
                 Text {
-                    text: root.stats;
+                    text: Playback.stats;
                     color: #ffffff80;
                     font-size: 12px;
                 }
             }
             Text {
-                text: root.clock;
+                text: Playback.clock;
                 color: #ffffffcc;
                 font-size: 14px;
                 font-weight: 600;
@@ -356,7 +313,7 @@ export component PlayerOverlay inherits Rectangle {
         }
 
         // Track / chapter / speed menu, floating above the bar at the right.
-        if root.open-menu != "" && root.open-menu != "sleep": Rectangle {
+        if Playback.open-menu != "" && Playback.open-menu != "sleep": Rectangle {
             property <length> list-height: min(menu-list.preferred-height, 360px);
             x: parent.width - self.width - 20px;
             y: parent.height - 108px - self.height;
@@ -380,9 +337,9 @@ export component PlayerOverlay inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 12px;
                         Text {
-                            text: root.open-menu == "speed" ? "Playback speed"
-                                : root.open-menu == "sub" ? "Subtitles"
-                                : root.open-menu == "audio" ? "Audio track"
+                            text: Playback.open-menu == "speed" ? "Playback speed"
+                                : Playback.open-menu == "sub" ? "Subtitles"
+                                : Playback.open-menu == "audio" ? "Audio track"
                                 : "Chapters";
                             color: #ffffff99;
                             font-size: 12px;
@@ -391,32 +348,32 @@ export component PlayerOverlay inherits Rectangle {
                             vertical-alignment: center;
                         }
                     }
-                    if root.open-menu == "speed": VerticalLayout {
+                    if Playback.open-menu == "speed": VerticalLayout {
                         spacing: 2px;
-                        for item in root.speeds: MenuRow {
+                        for item in Playback.speeds: MenuRow {
                             item: item;
-                            clicked => { root.pick-speed(item.id); }
+                            clicked => { Playback.pick-speed(item.id); }
                         }
                     }
-                    if root.open-menu == "sub": VerticalLayout {
+                    if Playback.open-menu == "sub": VerticalLayout {
                         spacing: 2px;
-                        for item in root.subtitles: MenuRow {
+                        for item in Playback.subtitles: MenuRow {
                             item: item;
-                            clicked => { root.pick-subtitle(item.id); }
+                            clicked => { Playback.pick-subtitle(item.id); }
                         }
                     }
-                    if root.open-menu == "audio": VerticalLayout {
+                    if Playback.open-menu == "audio": VerticalLayout {
                         spacing: 2px;
-                        for item in root.audio-tracks: MenuRow {
+                        for item in Playback.audio-tracks: MenuRow {
                             item: item;
-                            clicked => { root.pick-audio(item.id); }
+                            clicked => { Playback.pick-audio(item.id); }
                         }
                     }
-                    if root.open-menu == "chapters": VerticalLayout {
+                    if Playback.open-menu == "chapters": VerticalLayout {
                         spacing: 2px;
-                        for item in root.chapters: MenuRow {
+                        for item in Playback.chapters: MenuRow {
                             item: item;
-                            clicked => { root.pick-chapter(item.id); }
+                            clicked => { Playback.pick-chapter(item.id); }
                         }
                     }
                 }
@@ -440,7 +397,7 @@ export component PlayerOverlay inherits Rectangle {
             HorizontalLayout {
                 spacing: 14px;
                 Text {
-                    text: root.time(seek-bar.dragging ? seek-bar.preview * root.duration : root.position);
+                    text: root.time(seek-bar.dragging ? seek-bar.preview * Playback.duration : Playback.position);
                     color: #ffffff;
                     font-size: 13px;
                     vertical-alignment: center;
@@ -448,11 +405,11 @@ export component PlayerOverlay inherits Rectangle {
                 }
                 seek-bar := Scrubber {
                     horizontal-stretch: 1;
-                    value: root.duration > 0 ? root.position / root.duration : 0;
-                    committed(v) => { root.seek(v * root.duration); }
+                    value: Playback.duration > 0 ? Playback.position / Playback.duration : 0;
+                    committed(v) => { Playback.seek(v * Playback.duration); }
                 }
                 Text {
-                    text: "-" + root.time(max(0, root.duration - root.position));
+                    text: "-" + root.time(max(0, Playback.duration - Playback.position));
                     color: #ffffff;
                     font-size: 13px;
                     vertical-alignment: center;
@@ -467,29 +424,29 @@ export component PlayerOverlay inherits Rectangle {
 
                 IconButton {
                     icon: @image-url("icons/skip-back.svg");
-                    enabled: root.has-previous;
-                    clicked => { root.previous(); }
+                    enabled: Playback.has-previous;
+                    clicked => { Playback.previous(); }
                 }
                 IconButton {
                     icon: @image-url("icons/rotate-ccw.svg");
-                    clicked => { root.seek-by(-10); }
+                    clicked => { Playback.seek-by(-10); }
                 }
                 IconButton {
-                    icon: root.paused ? @image-url("icons/play.svg") : @image-url("icons/pause.svg");
+                    icon: Playback.paused ? @image-url("icons/play.svg") : @image-url("icons/pause.svg");
                     icon-size: 26px;
-                    clicked => { root.toggle-pause(); }
+                    clicked => { Playback.toggle-pause(); }
                 }
                 IconButton {
                     icon: @image-url("icons/rotate-cw.svg");
-                    clicked => { root.seek-by(10); }
+                    clicked => { Playback.seek-by(10); }
                 }
                 IconButton {
                     icon: @image-url("icons/skip-forward.svg");
-                    enabled: root.has-next;
-                    clicked => { root.next(); }
+                    enabled: Playback.has-next;
+                    clicked => { Playback.next(); }
                 }
                 Text {
-                    text: root.ends-at;
+                    text: Playback.ends-at;
                     color: #ffffffcc;
                     font-size: 13px;
                     vertical-alignment: center;
@@ -501,7 +458,7 @@ export component PlayerOverlay inherits Rectangle {
                     alignment: end;
                     padding-right: 12px;
 
-                    if root.up-next != "": Rectangle {
+                    if Playback.up-next != "": Rectangle {
                         max-width: 380px;
                         border-radius: 6px;
                         background: up-next-touch.has-hover ? #ffffff1f : transparent;
@@ -517,7 +474,7 @@ export component PlayerOverlay inherits Rectangle {
                                 horizontal-alignment: right;
                             }
                             Text {
-                                text: root.up-next;
+                                text: Playback.up-next;
                                 color: #ffffff;
                                 font-size: 13px;
                                 horizontal-alignment: right;
@@ -526,33 +483,33 @@ export component PlayerOverlay inherits Rectangle {
                         }
                         up-next-touch := TouchArea {
                             mouse-cursor: pointer;
-                            clicked => { root.next(); }
+                            clicked => { Playback.next(); }
                         }
                     }
                 }
 
                 IconButton {
-                    icon: root.muted || root.volume == 0
+                    icon: Playback.muted || Playback.volume == 0
                         ? @image-url("icons/volume-x.svg")
                         : @image-url("icons/volume-2.svg");
-                    clicked => { root.toggle-mute(); }
+                    clicked => { Playback.toggle-mute(); }
                 }
                 volume-bar := Scrubber {
                     width: 96px;
                     y: (38px - self.height) / 2;
-                    value: root.muted ? 0 : root.volume / 100;
-                    changed(v) => { root.set-volume(v * 100); }
+                    value: Playback.muted ? 0 : Playback.volume / 100;
+                    changed(v) => { Playback.set-volume(v * 100); }
                 }
                 Rectangle { width: 10px; }
                 // Sleep timer: a moon, or the minutes left while counting down.
-                if root.sleep-mode == "minutes": Chip {
-                    text: root.sleep-badge;
+                if Playback.sleep-mode == "minutes": Chip {
+                    text: Playback.sleep-badge;
                     selected: false;
                     clicked => { root.toggle-menu("sleep"); }
                 }
-                if root.sleep-mode != "minutes": IconButton {
+                if Playback.sleep-mode != "minutes": IconButton {
                     icon: @image-url("icons/moon.svg");
-                    active: root.open-menu == "sleep" || root.sleep-mode != "off";
+                    active: Playback.open-menu == "sleep" || Playback.sleep-mode != "off";
                     clicked => { root.toggle-menu("sleep"); }
                 }
 
@@ -561,9 +518,9 @@ export component PlayerOverlay inherits Rectangle {
                     width: max(44px, speed-text.preferred-width + 16px);
                     height: 38px;
                     border-radius: 19px;
-                    background: root.open-menu == "speed" ? #ffffff2e : speed-touch.has-hover ? #ffffff1f : transparent;
+                    background: Playback.open-menu == "speed" ? #ffffff2e : speed-touch.has-hover ? #ffffff1f : transparent;
                     speed-text := Text {
-                        text: root.speed-label;
+                        text: Playback.speed-label;
                         color: #ffffff;
                         font-size: 13px;
                         font-weight: 600;
@@ -573,34 +530,34 @@ export component PlayerOverlay inherits Rectangle {
                         clicked => { root.toggle-menu("speed"); }
                     }
                 }
-                if root.subtitles.length > 1: IconButton {
+                if Playback.subtitles.length > 1: IconButton {
                     icon: @image-url("icons/captions.svg");
-                    active: root.open-menu == "sub" || root.subtitles-on;
+                    active: Playback.open-menu == "sub" || Playback.subtitles-on;
                     clicked => { root.toggle-menu("sub"); }
                 }
-                if root.audio-tracks.length > 1: IconButton {
+                if Playback.audio-tracks.length > 1: IconButton {
                     icon: @image-url("icons/audio-lines.svg");
-                    active: root.open-menu == "audio";
+                    active: Playback.open-menu == "audio";
                     clicked => { root.toggle-menu("audio"); }
                 }
-                if root.chapters.length > 0: IconButton {
+                if Playback.chapters.length > 0: IconButton {
                     icon: @image-url("icons/list-video.svg");
-                    active: root.open-menu == "chapters";
+                    active: Playback.open-menu == "chapters";
                     clicked => { root.toggle-menu("chapters"); }
                 }
                 IconButton {
-                    icon: root.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");
-                    clicked => { root.toggle-fullscreen(); }
+                    icon: Playback.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");
+                    clicked => { Playback.toggle-fullscreen(); }
                 }
             }
         }
 
         // Sleep timer dialog, centred over the dimmed player (as in the Tauri
         // app). Last in the tree so its scrim covers the bars too.
-        if root.open-menu == "sleep": Rectangle {
+        if Playback.open-menu == "sleep": Rectangle {
             background: #00000099;
             TouchArea {
-                clicked => { root.open-menu = ""; }
+                clicked => { Playback.open-menu = ""; }
             }
 
             Rectangle {
@@ -636,24 +593,24 @@ export component PlayerOverlay inherits Rectangle {
                             horizontal-stretch: 1;
                             vertical-alignment: center;
                         }
-                        if root.sleep-mode != "off": Text {
+                        if Playback.sleep-mode != "off": Text {
                             text: "Turn off";
                             color: off-touch.has-hover ? #ffffff : #ffffffb3;
                             font-size: 13px;
                             vertical-alignment: center;
                             off-touch := TouchArea {
                                 mouse-cursor: pointer;
-                                clicked => { root.sleep-off(); }
+                                clicked => { Playback.sleep-off(); }
                             }
                         }
                     }
 
-                    if root.sleep-mode == "minutes": Text {
-                        text: "Pausing in " + root.sleep-badge + ".";
+                    if Playback.sleep-mode == "minutes": Text {
+                        text: "Pausing in " + Playback.sleep-badge + ".";
                         color: #ffffffb3;
                         font-size: 13px;
                     }
-                    if root.sleep-mode == "lecture": Text {
+                    if Playback.sleep-mode == "lecture": Text {
                         text: "Pausing at the end of this lecture.";
                         color: #ffffffb3;
                         font-size: 13px;
@@ -664,10 +621,10 @@ export component PlayerOverlay inherits Rectangle {
                         for minutes in [15, 30, 45, 60]: Chip {
                             horizontal-stretch: 1;
                             text: minutes + "m";
-                            selected: root.sleep-mode == "minutes" && root.sleep-minutes == minutes;
+                            selected: Playback.sleep-mode == "minutes" && Playback.sleep-minutes == minutes;
                             clicked => {
-                                root.sleep-for(minutes);
-                                root.open-menu = "";
+                                Playback.sleep-for(minutes);
+                                Playback.open-menu = "";
                             }
                         }
                     }
@@ -692,9 +649,9 @@ export component PlayerOverlay inherits Rectangle {
                                 input-type: InputType.number;
                                 accepted => {
                                     if self.text.to-float() >= 1 {
-                                        root.sleep-for(floor(self.text.to-float()));
+                                        Playback.sleep-for(floor(self.text.to-float()));
                                         self.text = "";
-                                        root.open-menu = "";
+                                        Playback.open-menu = "";
                                     }
                                 }
                             }
@@ -711,9 +668,9 @@ export component PlayerOverlay inherits Rectangle {
                             text: "Set";
                             clicked => {
                                 if custom.text.to-float() >= 1 {
-                                    root.sleep-for(floor(custom.text.to-float()));
+                                    Playback.sleep-for(floor(custom.text.to-float()));
                                     custom.text = "";
-                                    root.open-menu = "";
+                                    Playback.open-menu = "";
                                 }
                             }
                         }
@@ -724,11 +681,11 @@ export component PlayerOverlay inherits Rectangle {
                             id: 0,
                             label: "End of lecture",
                             detail: "",
-                            selected: root.sleep-mode == "lecture",
+                            selected: Playback.sleep-mode == "lecture",
                         };
                         clicked => {
-                            root.sleep-at-end();
-                            root.open-menu = "";
+                            Playback.sleep-at-end();
+                            Playback.open-menu = "";
                         }
                     }
                 }
