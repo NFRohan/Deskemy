@@ -4,7 +4,7 @@
 //! video. No native child window, no rect reporting, on any platform.
 
 use crate::session::{Db, Session, Sleep};
-use crate::tracks;
+use crate::{course_panel, tracks};
 use crate::{AppWindow, BookmarkRow, MenuItem, Playback};
 use deskemy_core::config::AppConfig;
 use deskemy_core::mpv::{
@@ -15,7 +15,8 @@ use deskemy_core::mpv::{
 use glow::HasContext;
 use slint::{ComponentHandle, GraphicsAPI, RenderingState};
 use std::ffi::c_void;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -424,6 +425,7 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
     playback.on_sleep_off(move || s.set_sleep(Sleep::Off));
 
     wire_bookmarks(ui, session, mpv);
+    wire_panel(ui, session);
 
     let (s, m) = (session.clone(), mpv.clone());
     playback.on_toggle_subtitles(move || {
@@ -548,6 +550,85 @@ fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
     });
 }
 
+/// Which sections are expanded in the course panel (UI thread only).
+#[derive(Default)]
+struct PanelState {
+    course: Option<String>,
+    expanded: HashSet<String>,
+    /// The lecture whose section was last opened automatically.
+    auto_for: Option<String>,
+}
+
+/// The course panel (P) and resources (R).
+fn wire_panel(ui: &AppWindow, session: &Arc<Session>) {
+    let playback = ui.global::<Playback>();
+    let state = Rc::new(RefCell::new(PanelState::default()));
+
+    let refresh = {
+        let (s, state, weak) = (session.clone(), state.clone(), ui.as_weak());
+        move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let playback = ui.global::<Playback>();
+            let Some(course) = s.course() else {
+                playback.set_panel_sections(course_panel::model(Vec::new()));
+                playback.set_panel_resources(course_panel::model(Vec::new()));
+                playback.set_resources_section("".into());
+                playback.set_resources_count(0);
+                return;
+            };
+            let current = s.lecture_id();
+            let mut state = state.borrow_mut();
+            if state.course.as_deref() != Some(course.id.as_str()) {
+                *state = PanelState {
+                    course: Some(course.id.clone()),
+                    ..PanelState::default()
+                };
+            }
+            // Open the playing lecture's section whenever the lecture changes.
+            if state.auto_for != current {
+                if let Some(section) = course_panel::current_section(&course, current.as_deref()) {
+                    state.expanded.insert(section.id.clone());
+                }
+                state.auto_for = current.clone();
+            }
+            playback.set_panel_sections(course_panel::model(course_panel::sections(
+                &course,
+                current.as_deref(),
+                &state.expanded,
+            )));
+            let resources = course_panel::resources(&course, &s.attachments(), current.as_deref());
+            playback.set_resources_section(resources.section.into());
+            playback.set_resources_count(resources.count as i32);
+            playback.set_panel_resources(course_panel::model(resources.groups));
+        }
+    };
+
+    let (st, update) = (state.clone(), refresh.clone());
+    playback.on_toggle_section(move |id| {
+        {
+            let mut st = st.borrow_mut();
+            if !st.expanded.remove(id.as_str()) {
+                st.expanded.insert(id.to_string());
+            }
+        }
+        update();
+    });
+    playback.on_refresh_panel(refresh);
+
+    let s = session.clone();
+    playback.on_open_lecture(move |id| {
+        // Resumes where it was left, like opening it from the library.
+        if let Err(e) = s.open(&id) {
+            tracing::warn!(error = %e, lecture = %id, "open lecture");
+        }
+    });
+    playback.on_open_resource(|path| {
+        if let Err(e) = open::that_detached(path.as_str()) {
+            tracing::warn!(error = %e, %path, "open resource");
+        }
+    });
+}
+
 /// What the overlay shows, sampled from mpv on the event thread.
 struct State {
     position: f64,
@@ -659,6 +740,9 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
                 playback.set_has_previous(np.has_previous);
                 playback.set_has_next(np.has_next);
                 playback.set_in_library(np.in_library);
+                if playback.get_panel_open() {
+                    playback.invoke_refresh_panel();
+                }
             }
             playback.set_position(s.position as f32);
             playback.set_duration(s.duration as f32);

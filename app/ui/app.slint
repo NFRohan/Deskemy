@@ -1,8 +1,11 @@
 // Deskemy — Slint frontend (port in progress; see docs/slint-port.md).
 
-import { BookmarkRow, MenuItem, Playback, PlayerOverlay } from "player.slint";
+import {
+    BookmarkRow, LectureRow, MenuItem, Playback, PlayerOverlay, ResourceGroup, ResourceItem, SectionRow,
+} from "player.slint";
+import { CoursePanel } from "course_panel.slint";
 
-export { BookmarkRow, MenuItem, Playback }
+export { BookmarkRow, LectureRow, MenuItem, Playback, ResourceGroup, ResourceItem, SectionRow }
 
 export struct CourseRow {
     id: string,
@@ -31,13 +34,15 @@ export component AppWindow inherits Window {
     // the element's size back to render at exactly its physical resolution.
     in property <bool> playing;
     in property <image> video-frame;
+    // The course panel sits beside the video, which narrows to make room.
+    property <length> panel-width: root.playing && Playback.panel-open ? 340px : 0px;
     out property <length> video-width: video.width;
     out property <length> video-height: video.height;
 
     video := Image {
         x: 0;
         y: 0;
-        width: parent.width;
+        width: parent.width - root.panel-width;
         height: parent.height;
         source: root.video-frame;
         image-fit: fill;
@@ -46,7 +51,15 @@ export component AppWindow inherits Window {
 
     // Anything after the video in the tree draws on top of it.
     if root.playing: PlayerOverlay {
-        width: parent.width;
+        // Explicit x: a fixed-width child is otherwise centred in its parent.
+        x: 0;
+        width: parent.width - root.panel-width;
+        height: parent.height;
+    }
+
+    if root.playing && Playback.panel-open: CoursePanel {
+        x: parent.width - root.panel-width;
+        width: root.panel-width;
         height: parent.height;
     }
 

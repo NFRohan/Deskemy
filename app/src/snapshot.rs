@@ -31,7 +31,7 @@ pub fn install(width: u32, height: u32) -> Result<Rc<MinimalSoftwareWindow>, Pla
 }
 
 /// Put the player overlay on screen with plausible state, for layout checks.
-pub fn sample_playback(ui: &crate::AppWindow, menu: &str) {
+pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::Db) {
     use slint::ComponentHandle;
     ui.set_playing(true);
     let playback = ui.global::<crate::Playback>();
@@ -82,7 +82,37 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str) {
             position,
         });
     playback.set_bookmarks(slint::ModelRc::new(slint::VecModel::from(marks.to_vec())));
-    playback.set_open_menu(menu.into());
+    match menu {
+        // The course panel, filled from the most recently watched course.
+        "content" | "resources" => {
+            playback.set_panel_tab(menu.into());
+            playback.set_panel_open(true);
+            sample_panel(&playback, db);
+        }
+        _ => playback.set_open_menu(menu.into()),
+    }
+}
+
+fn sample_panel(playback: &crate::Playback, db: &crate::session::Db) {
+    use crate::course_panel;
+    use deskemy_core::db::queries;
+    let conn = db.lock().unwrap_or_else(|e| e.into_inner());
+    let Some((course, lecture)) = queries::list_course_summaries(&conn)
+        .ok()
+        .and_then(|cs| cs.into_iter().find_map(|c| Some((c.id, c.last_lecture_id?))))
+        .and_then(|(id, lecture)| Some((queries::get_course_detail(&conn, &id).ok()??, lecture)))
+    else {
+        return;
+    };
+    let attachments = queries::list_course_attachments(&conn, &course.id).unwrap_or_default();
+    let expanded = course_panel::current_section(&course, Some(&lecture))
+        .map(|s| std::iter::once(s.id.clone()).collect())
+        .unwrap_or_default();
+    playback.set_panel_sections(course_panel::model(course_panel::sections(&course, Some(&lecture), &expanded)));
+    let resources = course_panel::resources(&course, &attachments, Some(&lecture));
+    playback.set_resources_section(resources.section.into());
+    playback.set_resources_count(resources.count as i32);
+    playback.set_panel_resources(course_panel::model(resources.groups));
 }
 
 /// Draw the current frame of `window` and save it to `path`.

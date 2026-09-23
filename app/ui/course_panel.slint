@@ -1,0 +1,264 @@
+// Course content panel (P) and the current section's resources (R), beside
+// the video as in the Tauri player.
+
+import { Playback, LectureRow, ResourceItem } from "player.slint";
+
+component Tab inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+
+    height: 30px;
+    width: label.preferred-width + 24px;
+    border-radius: 6px;
+    background: root.selected ? #ffffff1f : transparent;
+
+    label := Text {
+        text: root.text;
+        color: root.selected || touch.has-hover ? #ffffff : #ffffff99;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component LectureItem inherits Rectangle {
+    in property <LectureRow> lecture;
+    callback clicked;
+
+    height: 34px;
+    background: root.lecture.current ? #ffffff17 : touch.has-hover && root.lecture.playable ? #ffffff0d : transparent;
+    opacity: root.lecture.playable ? 1 : 0.5;
+
+    HorizontalLayout {
+        padding-left: 30px;
+        padding-right: 14px;
+        spacing: 10px;
+
+        Image {
+            source: root.lecture.completed ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
+            width: 15px;
+            height: 15px;
+            y: (parent.height - self.height) / 2;
+            colorize: root.lecture.completed ? #ffffffcc : #ffffff4d;
+        }
+        Text {
+            text: root.lecture.title;
+            color: root.lecture.current ? #ffffff : root.lecture.completed ? #ffffff99 : #ffffffdd;
+            font-size: 13px;
+            font-weight: root.lecture.current ? 600 : 400;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Text {
+            text: root.lecture.duration;
+            color: #ffffff80;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.lecture.playable;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component ResourceEntry inherits Rectangle {
+    in property <ResourceItem> item;
+
+    height: 34px;
+    background: touch.has-hover ? #ffffff0d : transparent;
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+
+        Image {
+            source: root.item.kind == "pdf" || root.item.kind == "text" ? @image-url("icons/file-text.svg")
+                : root.item.kind == "archive" ? @image-url("icons/file-archive.svg")
+                : root.item.kind == "code" || root.item.kind == "html" ? @image-url("icons/file-code.svg")
+                : @image-url("icons/file.svg");
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: #ffffffb3;
+        }
+        Text {
+            text: root.item.name;
+            color: #ffffffdd;
+            font-size: 13px;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Text {
+            text: root.item.kind;
+            color: #ffffff80;
+            font-size: 11px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        // Opens with the system's default app for the file.
+        clicked => { Playback.open-resource(root.item.path); }
+    }
+}
+
+export component CoursePanel inherits Rectangle {
+    background: #0e0f12;
+
+    // A hairline between the video and the panel.
+    Rectangle {
+        x: 0;
+        width: 1px;
+        background: #ffffff14;
+    }
+
+    VerticalLayout {
+        HorizontalLayout {
+            height: 48px;
+            padding-left: 10px;
+            padding-right: 6px;
+            spacing: 4px;
+            alignment: stretch;
+
+            Tab {
+                y: 9px;
+                text: "Content";
+                selected: Playback.panel-tab == "content";
+                clicked => { Playback.panel-tab = "content"; }
+            }
+            Tab {
+                y: 9px;
+                text: Playback.resources-count > 0 ? "Resources · " + Playback.resources-count : "Resources";
+                selected: Playback.panel-tab == "resources";
+                clicked => { Playback.panel-tab = "resources"; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                y: 8px;
+                border-radius: 16px;
+                background: close-touch.has-hover ? #ffffff1f : transparent;
+                Image {
+                    source: @image-url("icons/x.svg");
+                    width: 16px;
+                    height: 16px;
+                    colorize: #ffffffcc;
+                }
+                close-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Playback.panel-open = false; }
+                }
+            }
+        }
+        Rectangle {
+            height: 1px;
+            background: #ffffff14;
+        }
+
+        // Content: sections and their lectures.
+        if Playback.panel-tab == "content": Flickable {
+            content-height: sections.preferred-height;
+            sections := VerticalLayout {
+                padding-bottom: 12px;
+                for section in Playback.panel-sections: VerticalLayout {
+                    Rectangle {
+                        height: 40px;
+                        background: head-touch.has-hover ? #ffffff0d : transparent;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 14px;
+                            spacing: 6px;
+                            Image {
+                                source: section.expanded ? @image-url("icons/chevron-down.svg") : @image-url("icons/chevron-right.svg");
+                                width: 16px;
+                                height: 16px;
+                                y: (parent.height - self.height) / 2;
+                                colorize: #ffffff99;
+                            }
+                            Text {
+                                text: section.title;
+                                color: #ffffff;
+                                font-size: 13px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: section.progress;
+                                color: #ffffff80;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                            }
+                        }
+                        head-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Playback.toggle-section(section.id); }
+                        }
+                    }
+                    if section.expanded: VerticalLayout {
+                        for lecture in section.lectures: LectureItem {
+                            lecture: lecture;
+                            clicked => { Playback.open-lecture(lecture.id); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Resources of the current section, grouped by lecture.
+        if Playback.panel-tab == "resources": Flickable {
+            content-height: resources.preferred-height;
+            resources := VerticalLayout {
+                padding-bottom: 12px;
+                if Playback.resources-section != "": HorizontalLayout {
+                    padding: 14px;
+                    padding-bottom: 6px;
+                    Text {
+                        text: "Resources in " + Playback.resources-section;
+                        color: #ffffff99;
+                        font-size: 12px;
+                        overflow: elide;
+                    }
+                }
+                if Playback.panel-resources.length == 0: HorizontalLayout {
+                    padding: 14px;
+                    Text {
+                        text: "No resources in this section.";
+                        color: #ffffff80;
+                        font-size: 13px;
+                    }
+                }
+                for group in Playback.panel-resources: VerticalLayout {
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        padding-top: 12px;
+                        padding-bottom: 4px;
+                        Text {
+                            text: group.title;
+                            color: #ffffff80;
+                            font-size: 11px;
+                            font-weight: 600;
+                            overflow: elide;
+                        }
+                    }
+                    for item in group.items: ResourceEntry {
+                        item: item;
+                    }
+                }
+            }
+        }
+    }
+}

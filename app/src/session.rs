@@ -5,7 +5,7 @@
 
 use deskemy_core::config::AppConfig;
 use deskemy_core::db::{queries, Connection};
-use deskemy_core::domain::Bookmark;
+use deskemy_core::domain::{Attachment, Bookmark, CourseDetail};
 use deskemy_core::importer::structure::clean_title;
 use deskemy_core::mpv::Mpv;
 use deskemy_core::playback::{resume_start, watched_enough};
@@ -289,6 +289,7 @@ impl Session {
                 inner.index += 1;
             } else {
                 inner.ended = true;
+                inner.revision += 1;
             }
             advance
         };
@@ -355,6 +356,22 @@ impl Session {
         if let Err(e) = f(&self.db(), course) {
             tracing::warn!(error = %e, "save course pref");
         }
+    }
+
+    pub fn lecture_id(&self) -> Option<String> {
+        self.inner().lecture_id.clone()
+    }
+
+    /// The loaded course, with its sections, lectures and their progress.
+    pub fn course(&self) -> Option<CourseDetail> {
+        let course = self.inner().course_id.clone()?;
+        queries::get_course_detail(&self.db(), &course).ok().flatten()
+    }
+
+    /// Resource files of the loaded course.
+    pub fn attachments(&self) -> Vec<Attachment> {
+        let Some(course) = self.inner().course_id.clone() else { return Vec::new() };
+        queries::list_course_attachments(&self.db(), &course).unwrap_or_default()
     }
 
     /// Bookmarks of the playing lecture, in time order.

@@ -1,6 +1,7 @@
 // Release builds are GUI-only on Windows (no console window).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod course_panel;
 mod library;
 mod session;
 mod snapshot;
@@ -67,7 +68,7 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Mode::Snapshot { path, player } = mode {
         let window = offscreen.expect("snapshot platform installed");
         if let Some(menu) = player {
-            snapshot::sample_playback(&ui, &menu);
+            snapshot::sample_playback(&ui, &menu, &db);
         }
         ui.show()?;
         snapshot::save(&window, &path).map_err(slint::PlatformError::Other)?;
