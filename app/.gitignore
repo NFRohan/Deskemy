@@ -1,1 +1,3 @@
 /target/
+# libmpv-2.dll for local builds (too large for git)
+/vendor/

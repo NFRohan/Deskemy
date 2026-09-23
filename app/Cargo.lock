@@ -1079,6 +1079,7 @@ name = "deskemy-app"
 version = "0.1.0"
 dependencies = [
  "deskemy-core",
+ "glow",
  "png",
  "slint",
  "slint-build",

@@ -2,12 +2,34 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod snapshot;
+mod video;
 
 use deskemy_core::{db, paths};
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
 slint::include_modules!();
+
+enum Mode {
+    /// The normal app.
+    Window,
+    /// `--snapshot <file.png>`: render one frame offscreen and exit.
+    Snapshot(PathBuf),
+    /// `--play <file>`: open straight into playback (port spike).
+    Play(PathBuf),
+}
+
+fn parse_args() -> Mode {
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        Some("--snapshot") => Mode::Snapshot(args.next().unwrap_or("snapshot.png".into()).into()),
+        Some("--play") => match args.next() {
+            Some(file) => Mode::Play(file.into()),
+            None => Mode::Window,
+        },
+        _ => Mode::Window,
+    }
+}
 
 fn main() -> Result<(), slint::PlatformError> {
     tracing_subscriber::fmt()
@@ -17,14 +39,15 @@ fn main() -> Result<(), slint::PlatformError> {
         )
         .init();
 
-    let mut args = std::env::args().skip(1);
-    let snapshot_path = match args.next().as_deref() {
-        Some("--snapshot") => Some(PathBuf::from(args.next().unwrap_or("snapshot.png".into()))),
-        _ => None,
-    };
-    let offscreen = match &snapshot_path {
-        Some(_) => Some(snapshot::install(1280, 800)?),
-        None => None,
+    let mode = parse_args();
+    let offscreen = match &mode {
+        Mode::Snapshot(_) => Some(snapshot::install(1280, 800)?),
+        // Video is rendered by mpv through OpenGL, so real windows need an
+        // OpenGL-backed renderer (FemtoVG by default).
+        _ => {
+            slint::BackendSelector::new().require_opengl().select()?;
+            None
+        }
     };
 
     let ui = AppWindow::new()?;
@@ -40,14 +63,26 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     }
 
-    if let (Some(window), Some(path)) = (offscreen, snapshot_path) {
-        ui.show()?;
-        snapshot::save(&window, &path).map_err(slint::PlatformError::Other)?;
-        tracing::info!(path = %path.display(), "snapshot written");
-        return Ok(());
-    }
+    let player = match mode {
+        Mode::Snapshot(path) => {
+            let window = offscreen.expect("snapshot platform installed");
+            ui.show()?;
+            snapshot::save(&window, &path).map_err(slint::PlatformError::Other)?;
+            tracing::info!(path = %path.display(), "snapshot written");
+            return Ok(());
+        }
+        Mode::Play(file) => {
+            ui.set_playing(true);
+            Some(video::Player::start(&ui, file).map_err(slint::PlatformError::Other)?)
+        }
+        Mode::Window => None,
+    };
 
-    ui.run()
+    let result = ui.run();
+    if let Some(player) = player {
+        player.shutdown();
+    }
+    result
 }
 
 fn load_courses() -> Result<Vec<CourseRow>, String> {

@@ -18,7 +18,43 @@ export component AppWindow inherits Window {
     in property <string> status;
     in property <[CourseRow]> courses;
 
-    VerticalLayout {
+    // Video: mpv renders into a GL texture that Rust hands us here. Rust reads
+    // the element's size back to render at exactly its physical resolution.
+    in property <bool> playing;
+    in property <image> video-frame;
+    in property <string> overlay-text;
+    out property <length> video-width: video.width;
+    out property <length> video-height: video.height;
+
+    video := Image {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: root.video-frame;
+        image-fit: fill;
+        visible: root.playing;
+    }
+
+    // Anything after the video in the tree draws on top of it.
+    if root.playing: Rectangle {
+        x: 0;
+        y: parent.height - self.height;
+        width: parent.width;
+        height: 44px;
+        background: #000000b3;
+
+        Text {
+            x: 16px;
+            text: root.overlay-text;
+            color: #f2f2f3;
+            vertical-alignment: center;
+        }
+    }
+
+    if !root.playing: VerticalLayout {
+        width: parent.width;
+        height: parent.height;
         padding: 32px;
         spacing: 8px;
         alignment: start;
