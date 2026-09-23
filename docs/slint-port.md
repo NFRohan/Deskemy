@@ -1,6 +1,6 @@
 # Slint port — cross-platform Deskemy
 
-**Branch:** `slint-port` · **Status:** Phase 1 (video spike) in progress
+**Branch:** `slint-port` · **Status:** Phase 4 (pages) in progress — player done, shell done, Library and course page done
 
 ## Why
 
@@ -80,10 +80,35 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
 - ☐ Fullscreen from a maximized window: the Tauri app stages this to avoid a
   visible jump (`imm` in `src-tauri/src/lib.rs`); check whether winit needs it
 
+## Phase 3 — app shell
+
+- ☑ Design tokens as a `Theme` global (`ui/theme.slint`, same names as the
+  Tauri CSS variables), dark / light / system from `config.theme`
+- ☑ Inter (variable TTF, OFL) vendored in `ui/fonts/`
+- ☑ Frameless window: top bar with breadcrumbs (links) and window buttons,
+  drag / double-click-maximize / edge resize; the player's header does the
+  same over video
+- ☑ Sidebar: brand, collapse (240 ↔ 64 px), the eight pages
+- ☐ Run it: drag, resize from edges, maximize/restore glyph, Win+↑ / snapping
+
+## Phase 4 — pages
+
+- ☑ Library: Continue Watching, search / track / sort, status + tag pills,
+  responsive card grid (`ui/library.slint`, logic in `src/library.rs`)
+- ☑ Course: header (cover, favorite, tags, progress, resume), curriculum
+  (completion ticks, Next up, Corrupted), resources, cover editor
+  (upload / Ctrl+V paste / remove), relocate a missing course, remove
+- ☐ Run it: native dialogs (upload, locate folder), clipboard paste,
+  remove, toggling ticks and tags
+- ☐ Search, Career Tracks (+ track page), Favorites, Bookmarks, History,
+  Stats, Settings
+
+Slint gotchas met so far: a fixed-size child with no `x` is centred in its
+parent; wrapped `Text` is measured at its unwrapped width, so give it a
+`max-width` when its container sizes itself from content.
+
 ## Later phases
 
-3. App shell: custom window chrome (`no-frame` + `WindowMoveArea`), sidebar, navigation.
-4. Pages: library, course, search, history, bookmarks, favorites, stats, tracks, settings.
 5. Import flow (preview + progress) and the filesystem watcher (callback instead of `tauri::Emitter`).
 6. Platforms: Linux (EGL; pass the X11/Wayland display to mpv for vaapi), macOS (Apple's deprecated GL).
 7. Packaging + updater; retire `src-tauri/`.
