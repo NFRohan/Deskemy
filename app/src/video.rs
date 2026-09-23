@@ -3,7 +3,7 @@
 //! anything declared after it in the `.slint` tree simply draws on top of the
 //! video. No native child window, no rect reporting, on any platform.
 
-use crate::session::{Db, Session};
+use crate::session::{Db, Session, Sleep};
 use crate::tracks;
 use crate::{AppWindow, MenuItem, Playback};
 use deskemy_core::config::AppConfig;
@@ -414,6 +414,13 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
     let s = session.clone();
     playback.on_pick_chapter(move |i| s.set_chapter(i as i64));
 
+    let s = session.clone();
+    playback.on_sleep_for(move |minutes| s.set_sleep(Sleep::after(minutes.max(1) as u32)));
+    let s = session.clone();
+    playback.on_sleep_at_end(move || s.set_sleep(Sleep::EndOfLecture));
+    let s = session.clone();
+    playback.on_sleep_off(move || s.set_sleep(Sleep::Off));
+
     let step = |session: &Arc<Session>, delta: i32| {
         let s = session.clone();
         move || {
@@ -538,6 +545,14 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
             String::new()
         };
         let stats = format!("Decoder: {decoder}");
+        let (sleep_mode, sleep_badge, sleep_minutes) = match session.sleep() {
+            Sleep::Off => ("off", String::new(), 0),
+            Sleep::EndOfLecture => ("lecture", String::new(), 0),
+            Sleep::At { deadline, minutes } => {
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                ("minutes", format!("{}m", left.as_secs().div_ceil(60).max(1)), minutes as i32)
+            }
+        };
 
         let _ = ui.upgrade_in_event_loop(move |ui| {
             let playback = ui.global::<Playback>();
@@ -559,6 +574,9 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
             playback.set_clock(clock.into());
             playback.set_ends_at(ends_at.into());
             playback.set_stats(stats.into());
+            playback.set_sleep_mode(sleep_mode.into());
+            playback.set_sleep_badge(sleep_badge.into());
+            playback.set_sleep_minutes(sleep_minutes);
         });
     }
     set_keep_awake(false);

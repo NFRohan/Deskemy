@@ -31,7 +31,7 @@ pub fn install(width: u32, height: u32) -> Result<Rc<MinimalSoftwareWindow>, Pla
 }
 
 /// Put the player overlay on screen with plausible state, for layout checks.
-pub fn sample_playback(ui: &crate::AppWindow) {
+pub fn sample_playback(ui: &crate::AppWindow, menu: &str) {
     use slint::ComponentHandle;
     ui.set_playing(true);
     let playback = ui.global::<crate::Playback>();
@@ -47,7 +47,7 @@ pub fn sample_playback(ui: &crate::AppWindow) {
     playback.set_has_next(true);
     playback.set_up_next("IAM Users & Groups Hands On".into());
 
-    // A file with chapters and two subtitle tracks, the chapter menu open.
+    // A file with chapters and two subtitle tracks, a sleep countdown running.
     let t = crate::tracks::Tracks {
         subtitles: vec![
             crate::tracks::Track { id: 1, lang: Some("en".into()), filename: Some("1. IAM Introduction.en.srt".into()), ..Default::default() },
@@ -69,7 +69,10 @@ pub fn sample_playback(ui: &crate::AppWindow) {
     playback.set_speeds(model(crate::tracks::speed_menu(&t)));
     playback.set_subtitles(model(crate::tracks::subtitle_menu(&t)));
     playback.set_chapters(model(crate::tracks::chapter_menu(&t)));
-    playback.set_open_menu("chapters".into());
+    playback.set_sleep_mode("minutes".into());
+    playback.set_sleep_badge("27m".into());
+    playback.set_sleep_minutes(30);
+    playback.set_open_menu(menu.into());
 }
 
 /// Draw the current frame of `window` and save it to `path`.

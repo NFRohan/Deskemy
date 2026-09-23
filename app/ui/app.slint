@@ -70,6 +70,9 @@ export component AppWindow inherits Window {
         audio-tracks: Playback.audio-tracks;
         chapters: Playback.chapters;
         open-menu <=> Playback.open-menu;
+        sleep-mode: Playback.sleep-mode;
+        sleep-badge: Playback.sleep-badge;
+        sleep-minutes: Playback.sleep-minutes;
 
         back => { Playback.back(); }
         toggle-pause => { Playback.toggle-pause(); }
@@ -84,6 +87,9 @@ export component AppWindow inherits Window {
         pick-subtitle(id) => { Playback.pick-subtitle(id); }
         pick-audio(id) => { Playback.pick-audio(id); }
         pick-chapter(i) => { Playback.pick-chapter(i); }
+        sleep-for(m) => { Playback.sleep-for(m); }
+        sleep-at-end => { Playback.sleep-at-end(); }
+        sleep-off => { Playback.sleep-off(); }
     }
 
     if !root.playing: VerticalLayout {

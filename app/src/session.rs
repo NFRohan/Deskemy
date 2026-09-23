@@ -28,6 +28,28 @@ pub struct NowPlaying {
     pub has_next: bool,
 }
 
+/// The sleep timer: pause after a while, or when the playing lecture ends.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Sleep {
+    #[default]
+    Off,
+    /// Pause at `deadline`; `minutes` is what was asked for (for the menu).
+    At { deadline: Instant, minutes: u32 },
+    /// Stop at the end of the playing lecture instead of moving on.
+    EndOfLecture,
+}
+
+impl Sleep {
+    /// Pause after `minutes` (clamped to 1..=600, as in the Tauri player).
+    pub fn after(minutes: u32) -> Self {
+        let minutes = minutes.clamp(1, 600);
+        Sleep::At {
+            deadline: Instant::now() + Duration::from_secs(minutes as u64 * 60),
+            minutes,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct Item {
     lecture_id: String,
@@ -53,6 +75,7 @@ struct Inner {
     watch_accum: f64,
     /// Lectures already counted as completed today (count each once).
     completed: HashSet<String>,
+    sleep: Sleep,
 }
 
 pub struct Session {
@@ -113,6 +136,7 @@ impl Session {
         let mut inner = self.inner();
         *inner = Inner {
             completed: std::mem::take(&mut inner.completed),
+            sleep: inner.sleep,
             revision: inner.revision + 1,
             now: NowPlaying {
                 title: file_title(&path),
@@ -228,6 +252,13 @@ impl Session {
             // Capped so a system suspend or long stall doesn't count as watching.
             inner.watch_accum += elapsed.min(2.0);
         }
+        if let Sleep::At { deadline, .. } = inner.sleep {
+            if now >= deadline {
+                inner.sleep = Sleep::Off;
+                let _ = self.mpv.set_property("pause", "yes");
+                tracing::info!("sleep timer: paused");
+            }
+        }
         if inner.last_save.is_none_or(|t| now.duration_since(t) >= SAVE_EVERY) {
             inner.last_save = Some(now);
             self.save(&mut inner, position, false);
@@ -236,14 +267,20 @@ impl Session {
     }
 
     /// The lecture played to its end: mark it done, then advance if autoplay
-    /// is on and there is a next lecture.
+    /// is on, there is a next lecture, and the sleep timer isn't set to stop
+    /// here.
     pub fn on_eof(&self) {
         let advance = {
             let mut inner = self.inner();
             let duration = inner.duration;
             self.save(&mut inner, duration, true);
             self.flush_watch(&mut inner);
-            let advance = self.config.autoplay_next && inner.index + 1 < inner.items.len();
+            let sleep_here = inner.sleep == Sleep::EndOfLecture;
+            if sleep_here {
+                inner.sleep = Sleep::Off;
+            }
+            let advance =
+                !sleep_here && self.config.autoplay_next && inner.index + 1 < inner.items.len();
             if advance {
                 inner.index += 1;
             } else {
@@ -314,6 +351,14 @@ impl Session {
         if let Err(e) = f(&self.db(), course) {
             tracing::warn!(error = %e, "save course pref");
         }
+    }
+
+    pub fn set_sleep(&self, sleep: Sleep) {
+        self.inner().sleep = sleep;
+    }
+
+    pub fn sleep(&self) -> Sleep {
+        self.inner().sleep
     }
 
     /// `(revision, header)` — re-read the header when the revision changes.
@@ -476,6 +521,48 @@ mod tests {
         assert_eq!(session.now_playing().1.title, "First", "stays on the lecture");
         assert!(session.replay_if_ended());
         assert!(!session.replay_if_ended(), "only once the lecture has ended");
+    }
+
+    #[test]
+    fn sleep_at_end_of_lecture_stops_instead_of_autoplaying() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db.clone(), AppConfig::default());
+
+        session.open(&lectures[0]).unwrap();
+        session.set_sleep(Sleep::EndOfLecture);
+        session.tick(99.0, 100.0, false);
+        session.on_eof();
+
+        assert_eq!(session.now_playing().1.title, "First", "did not advance");
+        assert_eq!(progress(&db, &lectures[0]), (100.0, true), "still completed");
+        assert_eq!(session.sleep(), Sleep::Off, "disarmed after firing");
+    }
+
+    #[test]
+    fn a_sleep_countdown_pauses_when_it_runs_out() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv.clone(), db, AppConfig::default());
+
+        session.open(&lectures[0]).unwrap();
+        mpv.set_property("pause", "no").unwrap();
+        session.set_sleep(Sleep::At { deadline: Instant::now(), minutes: 15 });
+        session.tick(10.0, 100.0, false);
+
+        assert_eq!(mpv.get_property_string("pause").as_deref(), Some("yes"));
+        assert_eq!(session.sleep(), Sleep::Off);
+    }
+
+    #[test]
+    fn sleep_minutes_are_clamped() {
+        let minutes = |s| match s {
+            Sleep::At { minutes, .. } => minutes,
+            _ => 0,
+        };
+        assert_eq!(minutes(Sleep::after(0)), 1);
+        assert_eq!(minutes(Sleep::after(45)), 45);
+        assert_eq!(minutes(Sleep::after(9999)), 600);
     }
 
     #[test]

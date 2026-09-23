@@ -21,9 +21,10 @@ enum Mode {
     /// The normal app.
     Window,
     /// `--snapshot <file.png>`: render one frame offscreen and exit.
-    /// `--snapshot-player <file.png>` does the same for the player overlay,
-    /// filled with sample state (no mpv; the video area stays blank).
-    Snapshot { path: PathBuf, player: bool },
+    /// `--snapshot-player <file.png> [menu]` does the same for the player
+    /// overlay, filled with sample state and optionally a menu open ("sleep",
+    /// "speed", …); no mpv, so the video area stays blank.
+    Snapshot { path: PathBuf, player: Option<String> },
     /// `--play <lecture id | video file>`: open straight into playback.
     Play(String),
 }
@@ -32,8 +33,8 @@ fn parse_args() -> Mode {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some(flag @ ("--snapshot" | "--snapshot-player")) => Mode::Snapshot {
-            player: flag == "--snapshot-player",
             path: args.next().unwrap_or("snapshot.png".into()).into(),
+            player: (flag == "--snapshot-player").then(|| args.next().unwrap_or_default()),
         },
         Some("--play") => args.next().map_or(Mode::Window, Mode::Play),
         _ => Mode::Window,
@@ -65,8 +66,8 @@ fn main() -> Result<(), slint::PlatformError> {
 
     if let Mode::Snapshot { path, player } = mode {
         let window = offscreen.expect("snapshot platform installed");
-        if player {
-            snapshot::sample_playback(&ui);
+        if let Some(menu) = player {
+            snapshot::sample_playback(&ui, &menu);
         }
         ui.show()?;
         snapshot::save(&window, &path).map_err(slint::PlatformError::Other)?;

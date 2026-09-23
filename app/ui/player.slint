@@ -35,6 +35,10 @@ export global Playback {
     in property <[MenuItem]> chapters;
     /// Which overlay menu is open ("" = none); two-way bound to the overlay.
     in-out property <string> open-menu;
+    /// Sleep timer: "off", "minutes" or "lecture"; the badge is e.g. "27m".
+    in property <string> sleep-mode: "off";
+    in property <string> sleep-badge;
+    in property <int> sleep-minutes;
 
     callback back();
     callback toggle-pause();
@@ -49,6 +53,9 @@ export global Playback {
     callback pick-subtitle(int);
     callback pick-audio(int);
     callback pick-chapter(int);
+    callback sleep-for(int);
+    callback sleep-at-end();
+    callback sleep-off();
 }
 
 component IconButton inherits Rectangle {
@@ -137,6 +144,28 @@ component Scrubber inherits Rectangle {
     }
 }
 
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+
+    height: 36px;
+    min-width: 56px;
+    border-radius: 8px;
+    background: root.selected ? #ffffff : touch.has-hover ? #ffffff2e : #ffffff1a;
+
+    Text {
+        text: root.text;
+        color: root.selected ? #000000 : #ffffff;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 component MenuRow inherits Rectangle {
     in property <MenuItem> item;
     callback clicked;
@@ -203,6 +232,9 @@ export component PlayerOverlay inherits Rectangle {
     in property <[MenuItem]> subtitles;
     in property <[MenuItem]> audio-tracks;
     in property <[MenuItem]> chapters;
+    in property <string> sleep-mode;
+    in property <string> sleep-badge;
+    in property <int> sleep-minutes;
 
     callback back();
     callback toggle-pause();
@@ -217,6 +249,9 @@ export component PlayerOverlay inherits Rectangle {
     callback pick-subtitle(int);
     callback pick-audio(int);
     callback pick-chapter(int);
+    callback sleep-for(int);
+    callback sleep-at-end();
+    callback sleep-off();
 
     in-out property <bool> controls-shown: true;
     /// Which menu is open: "" (none), "speed", "sub", "audio" or "chapters".
@@ -321,7 +356,7 @@ export component PlayerOverlay inherits Rectangle {
         }
 
         // Track / chapter / speed menu, floating above the bar at the right.
-        if root.open-menu != "": Rectangle {
+        if root.open-menu != "" && root.open-menu != "sleep": Rectangle {
             property <length> list-height: min(menu-list.preferred-height, 360px);
             x: parent.width - self.width - 20px;
             y: parent.height - 108px - self.height;
@@ -509,6 +544,18 @@ export component PlayerOverlay inherits Rectangle {
                     changed(v) => { root.set-volume(v * 100); }
                 }
                 Rectangle { width: 10px; }
+                // Sleep timer: a moon, or the minutes left while counting down.
+                if root.sleep-mode == "minutes": Chip {
+                    text: root.sleep-badge;
+                    selected: false;
+                    clicked => { root.toggle-menu("sleep"); }
+                }
+                if root.sleep-mode != "minutes": IconButton {
+                    icon: @image-url("icons/moon.svg");
+                    active: root.open-menu == "sleep" || root.sleep-mode != "off";
+                    clicked => { root.toggle-menu("sleep"); }
+                }
+
                 // Speed: shows the current rate, like the Tauri picker.
                 Rectangle {
                     width: max(44px, speed-text.preferred-width + 16px);
@@ -544,6 +591,146 @@ export component PlayerOverlay inherits Rectangle {
                 IconButton {
                     icon: root.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");
                     clicked => { root.toggle-fullscreen(); }
+                }
+            }
+        }
+
+        // Sleep timer dialog, centred over the dimmed player (as in the Tauri
+        // app). Last in the tree so its scrim covers the bars too.
+        if root.open-menu == "sleep": Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.open-menu = ""; }
+            }
+
+            Rectangle {
+                width: 340px;
+                height: sleep-card.preferred-height;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 14px;
+                background: #16171b;
+                border-width: 1px;
+                border-color: #ffffff14;
+
+                TouchArea { }
+
+                sleep-card := VerticalLayout {
+                    padding: 20px;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Image {
+                            source: @image-url("icons/moon.svg");
+                            width: 18px;
+                            height: 18px;
+                            y: (parent.height - self.height) / 2;
+                            colorize: #ffffff;
+                        }
+                        Text {
+                            text: "Sleep timer";
+                            color: #ffffff;
+                            font-size: 16px;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+                        if root.sleep-mode != "off": Text {
+                            text: "Turn off";
+                            color: off-touch.has-hover ? #ffffff : #ffffffb3;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                            off-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.sleep-off(); }
+                            }
+                        }
+                    }
+
+                    if root.sleep-mode == "minutes": Text {
+                        text: "Pausing in " + root.sleep-badge + ".";
+                        color: #ffffffb3;
+                        font-size: 13px;
+                    }
+                    if root.sleep-mode == "lecture": Text {
+                        text: "Pausing at the end of this lecture.";
+                        color: #ffffffb3;
+                        font-size: 13px;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        for minutes in [15, 30, 45, 60]: Chip {
+                            horizontal-stretch: 1;
+                            text: minutes + "m";
+                            selected: root.sleep-mode == "minutes" && root.sleep-minutes == minutes;
+                            clicked => {
+                                root.sleep-for(minutes);
+                                root.open-menu = "";
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 36px;
+                            border-radius: 8px;
+                            background: #0e0f12;
+                            border-width: 1px;
+                            border-color: custom.has-focus ? #ffffff66 : #ffffff1f;
+
+                            custom := TextInput {
+                                x: 10px;
+                                width: parent.width - 20px;
+                                height: parent.height;
+                                vertical-alignment: center;
+                                color: #ffffff;
+                                font-size: 13px;
+                                input-type: InputType.number;
+                                accepted => {
+                                    if self.text.to-float() >= 1 {
+                                        root.sleep-for(floor(self.text.to-float()));
+                                        self.text = "";
+                                        root.open-menu = "";
+                                    }
+                                }
+                            }
+                            if custom.text == "": Text {
+                                x: 10px;
+                                height: parent.height;
+                                text: "Custom minutes";
+                                color: #ffffff59;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                        }
+                        Chip {
+                            text: "Set";
+                            clicked => {
+                                if custom.text.to-float() >= 1 {
+                                    root.sleep-for(floor(custom.text.to-float()));
+                                    custom.text = "";
+                                    root.open-menu = "";
+                                }
+                            }
+                        }
+                    }
+
+                    MenuRow {
+                        item: {
+                            id: 0,
+                            label: "End of lecture",
+                            detail: "",
+                            selected: root.sleep-mode == "lecture",
+                        };
+                        clicked => {
+                            root.sleep-at-end();
+                            root.open-menu = "";
+                        }
+                    }
                 }
             }
         }
