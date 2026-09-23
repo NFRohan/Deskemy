@@ -5,6 +5,7 @@ mod course_panel;
 mod library;
 mod session;
 mod snapshot;
+mod stats;
 mod tracks;
 mod video;
 

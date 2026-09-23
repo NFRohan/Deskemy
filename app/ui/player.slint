@@ -11,6 +11,21 @@ export struct MenuItem {
     selected: bool,
 }
 
+/// Playback info (I): labelled values in titled groups, three groups a row.
+export struct StatLine {
+    label: string,
+    value: string,
+}
+
+export struct StatGroup {
+    title: string,
+    lines: [StatLine],
+}
+
+export struct StatRow {
+    groups: [StatGroup],
+}
+
 export struct Shortcut {
     keys: string,
     action: string,
@@ -68,7 +83,8 @@ export struct BookmarkRow {
 export global Playback {
     in property <string> title;
     in property <string> subtitle;
-    in property <string> stats;
+    in property <[StatRow]> stats;
+    in property <bool> stats-open;
     in property <string> clock;
     in property <string> ends-at;
     in property <string> up-next;
@@ -130,6 +146,8 @@ export global Playback {
     callback toggle-subtitles();
     /// < / >: previous / next preset speed.
     callback step-speed(int);
+    /// I: show / hide the playback-info overlay.
+    callback toggle-stats();
     /// Rebuild the panel's contents (on opening it, or a lecture change).
     callback refresh-panel();
     callback toggle-section(string);
@@ -342,6 +360,7 @@ export component PlayerOverlay inherits Rectangle {
                 { keys: "P", action: "Course content" },
                 { keys: "R", action: "Resources" },
                 { keys: "B", action: "Bookmark here" },
+                { keys: "I", action: "Playback info" },
                 { keys: "?", action: "This cheat sheet" },
             ],
         },
@@ -433,6 +452,8 @@ export component PlayerOverlay inherits Rectangle {
             root.show-panel("content");
         } else if event.text == "r" {
             root.show-panel("resources");
+        } else if event.text == "i" {
+            Playback.toggle-stats();
         } else if event.text == "?" {
             root.toggle-menu("shortcuts");
         } else if event.text.is-float() {
@@ -522,11 +543,6 @@ export component PlayerOverlay inherits Rectangle {
                         color: #ffffffb3;
                         font-size: 13px;
                         overflow: elide;
-                    }
-                    Text {
-                        text: Playback.stats;
-                        color: #ffffff80;
-                        font-size: 12px;
                     }
                 }
                 Text {
@@ -1083,6 +1099,52 @@ export component PlayerOverlay inherits Rectangle {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Playback info (I), under the header. Outside the fading controls, so
+        // it stays up while watching.
+        if Playback.stats-open: Rectangle {
+            x: 16px;
+            y: 92px;
+            width: stats-grid.preferred-width;
+            height: stats-grid.preferred-height;
+            border-radius: 10px;
+            background: #000000a6;
+
+            stats-grid := VerticalLayout {
+                padding: 14px;
+                spacing: 12px;
+                for row in Playback.stats: HorizontalLayout {
+                    spacing: 22px;
+                    alignment: start;
+                    for group in row.groups: VerticalLayout {
+                        spacing: 2px;
+                        alignment: start;
+                        min-width: 120px;
+                        Text {
+                            text: group.title;
+                            color: #ffffff;
+                            font-size: 12px;
+                            font-weight: 700;
+                        }
+                        for line in group.lines: HorizontalLayout {
+                            spacing: 4px;
+                            alignment: start;
+                            Text {
+                                text: line.label + ":";
+                                color: #ffffff99;
+                                font-size: 11px;
+                            }
+                            Text {
+                                text: line.value;
+                                color: #ffffff;
+                                font-size: 11px;
+                                font-weight: 600;
                             }
                         }
                     }

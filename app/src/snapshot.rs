@@ -37,7 +37,21 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
     let playback = ui.global::<crate::Playback>();
     playback.set_title("IAM Introduction: Users, Groups, Policies".into());
     playback.set_subtitle("IAM & AWS CLI".into());
-    playback.set_stats("Decoder: d3d11va-copy".into());
+    // Playback info as it looks for a typical course lecture.
+    let line = |label, value: &str| (label, value.to_string());
+    let groups: crate::stats::Groups = vec![
+        ("Video", vec![line("Codec", "H.264"), line("Resolution", "1920x1080"), line("FPS", "30.00"),
+            line("Bitrate", "1.9 Mbps"), line("Decoder", "d3d11va-copy")]),
+        ("Audio", vec![line("Codec", "AAC"), line("Sample rate", "48.0 kHz"), line("Channels", "2"),
+            line("Bitrate", "128 kbps")]),
+        ("Color", vec![line("Pixel format", "nv12"), line("HW format", "d3d11"), line("Matrix", "bt.709"),
+            line("Primaries", "bt.709"), line("Transfer", "bt.1886")]),
+        ("Performance", vec![line("Render FPS", "30.00"), line("A/V sync", "0ms"), line("Dropped", "0")]),
+        ("Buffer", vec![line("Cached", "142.3s"), line("Speed", "3.1 MB/s")]),
+        ("App", vec![line("Player", "mpv v0.40.0"), line("Renderer", "Slint · OpenGL")]),
+    ];
+    playback.set_stats(crate::course_panel::model(crate::stats::rows(groups)));
+    playback.set_stats_open(menu == "stats");
     playback.set_clock("00:32".into());
     playback.set_ends_at("Ends at 00:35".into());
     playback.set_position(54.0);
@@ -89,6 +103,7 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
             playback.set_panel_open(true);
             sample_panel(&playback, db);
         }
+        "stats" => {}
         _ => playback.set_open_menu(menu.into()),
     }
 }

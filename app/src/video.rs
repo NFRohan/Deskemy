@@ -4,7 +4,7 @@
 //! video. No native child window, no rect reporting, on any platform.
 
 use crate::session::{Db, Session, Sleep};
-use crate::{course_panel, tracks};
+use crate::{course_panel, stats, tracks};
 use crate::{AppWindow, BookmarkRow, MenuItem, Playback};
 use deskemy_core::config::AppConfig;
 use deskemy_core::mpv::{
@@ -19,6 +19,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -74,11 +75,23 @@ impl Player {
         let session = Arc::new(Session::new(mpv.clone(), db, config));
         wire_controls(ui, &session, &mpv);
 
+        // Playback info is only read from mpv while its overlay is open.
+        let stats_open = Arc::new(AtomicBool::new(false));
+        ui.global::<Playback>().on_toggle_stats({
+            let (open, weak) = (stats_open.clone(), ui.as_weak());
+            move || {
+                let now = !open.fetch_xor(true, Ordering::Relaxed);
+                if let Some(ui) = weak.upgrade() {
+                    ui.global::<Playback>().set_stats_open(now);
+                }
+            }
+        });
+
         let events = {
             let (session, mpv, ui) = (session.clone(), mpv.clone(), ui.as_weak());
             std::thread::Builder::new()
                 .name("mpv-events".into())
-                .spawn(move || pump_events(&mpv, &session, ui))
+                .spawn(move || pump_events(&mpv, &session, &stats_open, ui))
                 .map_err(|e| e.to_string())?
         };
 
@@ -656,8 +669,7 @@ impl State {
 /// The player's long-lived thread: drains mpv's events (they must be
 /// drained), drives the session (end of file, periodic saves), keeps the
 /// machine awake while playing, and pushes state to the overlay ~5×/s.
-fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
-    let mut decoder = String::from("…");
+fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint::Weak<AppWindow>) {
     let mut shown_revision = u64::MAX;
     let mut shown_tracks = None;
     let mut awake = false;
@@ -670,10 +682,8 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
                     tracing::info!(duration = ?mpv.get_f64("duration"), "file loaded");
                 }
                 MPV_EVENT_PLAYBACK_RESTART => {
-                    decoder = mpv
-                        .get_property_string("hwdec-current")
-                        .unwrap_or_else(|| "software".into());
-                    tracing::info!(%decoder, "decoding");
+                    let decoder = mpv.get_property_string("hwdec-current");
+                    tracing::info!(decoder = decoder.as_deref().unwrap_or("software"), "decoding");
                 }
                 MPV_EVENT_END_FILE => {
                     let data = unsafe { (*event).data } as *const MpvEventEndFile;
@@ -718,7 +728,7 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
         } else {
             String::new()
         };
-        let stats = format!("Decoder: {decoder}");
+        let stats = stats_open.load(Ordering::Relaxed).then(|| stats::read(mpv));
         let (sleep_mode, sleep_badge, sleep_minutes) = match session.sleep() {
             Sleep::Off => ("off", String::new(), 0),
             Sleep::EndOfLecture => ("lecture", String::new(), 0),
@@ -751,7 +761,9 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
             playback.set_muted(s.muted);
             playback.set_clock(clock.into());
             playback.set_ends_at(ends_at.into());
-            playback.set_stats(stats.into());
+            if let Some(groups) = stats {
+                playback.set_stats(course_panel::model(stats::rows(groups)));
+            }
             playback.set_sleep_mode(sleep_mode.into());
             playback.set_sleep_badge(sleep_badge.into());
             playback.set_sleep_minutes(sleep_minutes);

@@ -75,9 +75,8 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
 - ☑ Course content panel (P) with Content / Resources (R) tabs
 - ☑ Keyboard shortcuts (the Tauri app's full map) + cheat sheet (?)
 - ☑ Keep-awake
-- ☐ **Run it** — the controls above are verified offscreen and by tests, but
-  not yet clicked through in a real window
-- ☐ Stats overlay toggle (the decoder line is always on for now)
+- ☑ **Run it** (2026-09-24): every control clicked through in a real window
+- ☑ Playback info overlay (I), Plezy-style; only sampled while open
 - ☐ Fullscreen from a maximized window: the Tauri app stages this to avoid a
   visible jump (`imm` in `src-tauri/src/lib.rs`); check whether winit needs it
 
