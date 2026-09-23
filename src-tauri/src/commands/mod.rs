@@ -130,31 +130,7 @@ pub fn library_relocate_course(
     course_id: String,
     new_folder: String,
 ) -> Result<()> {
-    let new_folder = new_folder
-        .trim_end_matches(|c| c == '/' || c == '\\')
-        .to_string();
-    if !Path::new(&new_folder).is_dir() {
-        return Err(DeskemyError::NotFound(format!("folder not found: {new_folder}")));
-    }
-    {
-        let conn = db(&state)?;
-        let old_folder = queries::course_folder(&conn, &course_id)?
-            .ok_or_else(|| DeskemyError::NotFound("course not found".into()))?;
-        // Sanity: a course file should exist at the same relative path under the
-        // new folder — i.e. this is the same course, just moved/renamed.
-        if let Some(sample) = queries::first_lecture_path(&conn, &course_id)? {
-            if let Ok(rel) = Path::new(&sample).strip_prefix(&old_folder) {
-                if !Path::new(&new_folder).join(rel).exists() {
-                    return Err(DeskemyError::Other(
-                        "That folder doesn't contain this course's files. Pick the folder the \
-                         course was moved or renamed to."
-                            .into(),
-                    ));
-                }
-            }
-        }
-        queries::relocate_course(&conn, &course_id, &old_folder, &new_folder)?;
-    }
+    let new_folder = crate::courses::relocate(&*db(&state)?, &course_id, &new_folder)?;
     watch_path(&app, &new_folder);
     Ok(())
 }
@@ -291,11 +267,7 @@ fn set_course_thumb(
     bytes: &[u8],
     ext_hint: Option<&str>,
 ) -> Result<String> {
-    let path = crate::thumbnails::store(&state.thumbnails_dir(), bytes, ext_hint)?;
-    let path_str = path.to_string_lossy().into_owned();
-    let conn = db(state)?;
-    queries::set_thumbnail(&conn, course_id, Some(&path_str))?;
-    Ok(path_str)
+    crate::courses::set_cover(&*db(state)?, &state.thumbnails_dir(), course_id, bytes, ext_hint)
 }
 
 /// Set a course thumbnail from a local image file (from the native picker).
@@ -375,11 +347,7 @@ pub fn open_resource(app: AppHandle, path: String) -> Result<()> {
 /// Cascades to its sections/lectures/progress/bookmarks and the search index.
 #[tauri::command]
 pub fn library_delete_course(state: State<AppState>, id: String) -> Result<()> {
-    let mut conn = db(&state)?;
-    let tx = conn.transaction()?;
-    queries::delete_course(&tx, &id)?;
-    tx.commit()?;
-    Ok(())
+    crate::courses::delete(&mut *db(&state)?, &id)
 }
 
 /// Manually mark a lecture complete/incomplete.

@@ -353,3 +353,47 @@ fn repair_fixes_only_titles_the_old_cleaner_broke() {
     assert!(hits.iter().any(|h| h.title == "IAM & AWS CLI"));
     assert_eq!(deskemy_core::importer::repair_section_titles(&mut conn).unwrap(), 0);
 }
+
+#[test]
+fn relocate_accepts_the_moved_folder_and_refuses_an_unrelated_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Course");
+    fs::create_dir_all(course.join("01 Intro")).unwrap();
+    touch(&course.join("01 Intro").join("001 Welcome.mp4"));
+    let mut conn = db::open_in_memory().unwrap();
+    let course_id = Importer::new(Box::new(StubProber))
+        .import_course(&mut conn, None, &course)
+        .unwrap();
+
+    let unrelated = tmp.path().join("Something else");
+    fs::create_dir_all(&unrelated).unwrap();
+    let err = deskemy_core::courses::relocate(&conn, &course_id, unrelated.to_str().unwrap());
+    assert!(err.is_err(), "a folder without the course's files is refused");
+    assert!(deskemy_core::courses::relocate(&conn, &course_id, "/does/not/exist").is_err());
+
+    let moved = tmp.path().join("Course (moved)");
+    fs::rename(&course, &moved).unwrap();
+    // A trailing separator is tolerated.
+    let target = format!("{}{}", moved.display(), std::path::MAIN_SEPARATOR);
+    let stored = deskemy_core::courses::relocate(&conn, &course_id, &target).unwrap();
+    assert_eq!(stored, moved.to_string_lossy());
+    let lecture = db::queries::first_lecture_path(&conn, &course_id).unwrap().unwrap();
+    assert!(std::path::Path::new(&lecture).exists(), "lectures follow the folder");
+}
+
+#[test]
+fn delete_removes_the_course_and_nothing_on_disk() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Course");
+    fs::create_dir_all(&course).unwrap();
+    touch(&course.join("001 Welcome.mp4"));
+    let mut conn = db::open_in_memory().unwrap();
+    let course_id = Importer::new(Box::new(StubProber))
+        .import_course(&mut conn, None, &course)
+        .unwrap();
+
+    deskemy_core::courses::delete(&mut conn, &course_id).unwrap();
+    assert!(db::queries::get_course_detail(&conn, &course_id).unwrap().is_none());
+    assert!(db::queries::search(&conn, "Welcome", 10).unwrap().is_empty(), "search index cleaned");
+    assert!(course.join("001 Welcome.mp4").exists(), "files stay on disk");
+}

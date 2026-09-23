@@ -5,6 +5,7 @@
 
 pub mod backup;
 pub mod config;
+pub mod courses;
 pub mod db;
 pub mod domain;
 pub mod error;
