@@ -1,0 +1,54 @@
+// Deskemy — Slint frontend (port in progress; see docs/slint-port.md).
+
+export struct CourseRow {
+    title: string,
+    lectures: int,
+    completed: int,
+}
+
+export component AppWindow inherits Window {
+    title: "Deskemy";
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    min-width: 900px;
+    min-height: 600px;
+    background: #0e0f12;
+    default-font-size: 14px;
+
+    in property <string> status;
+    in property <[CourseRow]> courses;
+
+    VerticalLayout {
+        padding: 32px;
+        spacing: 8px;
+        alignment: start;
+
+        Text {
+            text: "Deskemy";
+            font-size: 28px;
+            font-weight: 700;
+            color: #f2f2f3;
+        }
+
+        Text {
+            text: root.status;
+            color: #8b8d94;
+        }
+
+        Rectangle { height: 16px; }
+
+        for course in root.courses: HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: course.title;
+                color: #e4e5e8;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            Text {
+                text: course.completed + " / " + course.lectures + " lectures";
+                color: #8b8d94;
+            }
+        }
+    }
+}

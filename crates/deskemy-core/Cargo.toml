@@ -30,6 +30,9 @@ walkdir = "2"
 # Runtime FFI to libmpv (no build-time link dependency)
 libloading = "0.8"
 
+# Per-user OS data directory (paths::data_dir)
+dirs = "7"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

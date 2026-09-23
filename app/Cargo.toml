@@ -1,0 +1,28 @@
+[package]
+name = "deskemy-app"
+version = "0.1.0"
+description = "Deskemy — offline course player (Slint frontend)"
+authors = ["Spooksy"]
+license = "MIT"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "deskemy"
+path = "src/main.rs"
+
+[dependencies]
+# Library, import, persistence and libmpv bindings — shared with the Tauri app.
+deskemy-core = { path = "../crates/deskemy-core" }
+
+slint = "1.18"
+
+# Offscreen --snapshot mode (PNG encoding)
+png = "0.18"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+slint-build = "1.18"
