@@ -52,13 +52,39 @@ pub struct MpvEventEndFile {
     pub playlist_insert_num_entries: c_int,
 }
 
-// mpv_render_param_type (render API — used by the compositing path).
+// mpv_render_param_type (render API — see mpv/render.h and render_gl.h).
 pub const MPV_RENDER_PARAM_INVALID: c_int = 0;
 pub const MPV_RENDER_PARAM_API_TYPE: c_int = 1;
+pub const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
+pub const MPV_RENDER_PARAM_OPENGL_FBO: c_int = 3;
+pub const MPV_RENDER_PARAM_FLIP_Y: c_int = 4;
+pub const MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME: c_int = 12;
 pub const MPV_RENDER_PARAM_SW_SIZE: c_int = 17;
 pub const MPV_RENDER_PARAM_SW_FORMAT: c_int = 18;
 pub const MPV_RENDER_PARAM_SW_STRIDE: c_int = 19;
 pub const MPV_RENDER_PARAM_SW_POINTER: c_int = 20;
+
+/// Bit in `mpv_render_context_update()`'s result: a new frame is ready.
+pub const MPV_RENDER_UPDATE_FRAME: u64 = 1;
+
+/// `GL_RGBA8` — the internal format of the textures we hand mpv to draw into.
+pub const GL_RGBA8: c_int = 0x8058;
+
+/// `mpv_opengl_init_params`.
+#[repr(C)]
+struct MpvOpenGlInitParams {
+    get_proc_address: Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_void>,
+    get_proc_address_ctx: *mut c_void,
+}
+
+/// `mpv_opengl_fbo`.
+#[repr(C)]
+struct MpvOpenGlFbo {
+    fbo: c_int,
+    w: c_int,
+    h: c_int,
+    internal_format: c_int,
+}
 
 /// mpv_render_param: `{ int type; void *data; }` (data pointer is 8-aligned, so
 /// this matches the C layout including the 4 bytes of padding after `type_`).
@@ -86,8 +112,11 @@ struct Fns {
         Option<unsafe extern "C" fn(*mut *mut c_void, *mut Handle, *mut MpvRenderParam) -> c_int>,
     render_context_render:
         Option<unsafe extern "C" fn(*mut c_void, *mut MpvRenderParam) -> c_int>,
-    render_context_set_update_callback:
-        Option<unsafe extern "C" fn(*mut c_void, extern "C" fn(*mut c_void), *mut c_void)>,
+    render_context_set_update_callback: Option<
+        unsafe extern "C" fn(*mut c_void, Option<extern "C" fn(*mut c_void)>, *mut c_void),
+    >,
+    render_context_update: Option<unsafe extern "C" fn(*mut c_void) -> u64>,
+    render_context_report_swap: Option<unsafe extern "C" fn(*mut c_void)>,
     render_context_free: Option<unsafe extern "C" fn(*mut c_void)>,
 }
 unsafe impl Send for Fns {}
@@ -183,6 +212,8 @@ unsafe fn load() -> Result<Fns> {
         let render_context_render = opt_sym!("mpv_render_context_render");
         let render_context_set_update_callback =
             opt_sym!("mpv_render_context_set_update_callback");
+        let render_context_update = opt_sym!("mpv_render_context_update");
+        let render_context_report_swap = opt_sym!("mpv_render_context_report_swap");
         let render_context_free = opt_sym!("mpv_render_context_free");
         return Ok(Fns {
             create,
@@ -198,6 +229,8 @@ unsafe fn load() -> Result<Fns> {
             render_context_create,
             render_context_render,
             render_context_set_update_callback,
+            render_context_update,
+            render_context_report_swap,
             render_context_free,
             _lib: lib,
         });
@@ -357,13 +390,120 @@ impl MpvRenderContext {
         Ok(Self { ctx })
     }
 
+    /// Create an OpenGL render context against the GL context that is current
+    /// on this thread. `get_proc_address` resolves GL entry points in that
+    /// context; it only has to live for this call, because libmpv loads every
+    /// hwdec interop up front, at creation (see `--gpu-hwdec-interop`).
+    ///
+    /// # Safety
+    /// A GL context must be current, and every later call on the returned
+    /// context — including dropping it — must happen with that same context
+    /// current. The `mpv` handle must outlive the render context.
+    pub unsafe fn new_gl(mpv: &Mpv, get_proc_address: &dyn Fn(&CStr) -> *const c_void) -> Result<Self> {
+        unsafe extern "C" fn resolve(ctx: *mut c_void, name: *const c_char) -> *mut c_void {
+            let lookup = &*(ctx as *const &dyn Fn(&CStr) -> *const c_void);
+            let name = CStr::from_ptr(name);
+            // Never unwind into mpv's C frames.
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lookup(name)))
+                .unwrap_or(std::ptr::null()) as *mut c_void
+        }
+
+        let f = fns()?;
+        let create = f
+            .render_context_create
+            .ok_or_else(|| DeskemyError::Player("libmpv render API unavailable".into()))?;
+        let api = cstr("opengl")?;
+        let mut init = MpvOpenGlInitParams {
+            get_proc_address: Some(resolve),
+            get_proc_address_ctx: &get_proc_address as *const &dyn Fn(&CStr) -> *const c_void
+                as *mut c_void,
+        };
+        let mut params = [
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_API_TYPE,
+                data: api.as_ptr() as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
+                data: &mut init as *mut MpvOpenGlInitParams as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        let mut ctx: *mut c_void = std::ptr::null_mut();
+        check(create(&mut ctx, mpv.ctx, params.as_mut_ptr()))?;
+        if ctx.is_null() {
+            return Err(DeskemyError::Player("mpv render context is null".into()));
+        }
+        Ok(Self { ctx })
+    }
+
     /// Register a callback invoked (from an arbitrary thread) when a new frame is
     /// available. Keep it fast — just wake the render loop.
     pub fn set_update_callback(&self, cb: extern "C" fn(*mut c_void), data: *mut c_void) {
         if let Ok(f) = fns() {
             if let Some(set) = f.render_context_set_update_callback {
-                unsafe { set(self.ctx, cb, data) };
+                unsafe { set(self.ctx, Some(cb), data) };
             }
+        }
+    }
+
+    /// Poll what mpv wants after an update callback; test the result against
+    /// [`MPV_RENDER_UPDATE_FRAME`]. Must be called before each render.
+    pub fn update(&self) -> u64 {
+        match fns().ok().and_then(|f| f.render_context_update) {
+            Some(update) => unsafe { update(self.ctx) },
+            None => MPV_RENDER_UPDATE_FRAME,
+        }
+    }
+
+    /// Render the current frame into the OpenGL framebuffer object `fbo`
+    /// (`w`×`h`, backed by a `GL_RGBA8` texture). Row 0 of the output is the
+    /// top of the picture. Never blocks waiting for the frame's display time,
+    /// since this runs on the UI thread.
+    ///
+    /// # Safety
+    /// The GL context this render context was created on must be current.
+    pub unsafe fn render_gl(&self, fbo: u32, w: i32, h: i32) -> Result<()> {
+        let f = fns()?;
+        let render = f
+            .render_context_render
+            .ok_or_else(|| DeskemyError::Player("libmpv render API unavailable".into()))?;
+        let mut target = MpvOpenGlFbo {
+            fbo: fbo as c_int,
+            w,
+            h,
+            internal_format: GL_RGBA8,
+        };
+        let mut flip_y: c_int = 0;
+        let mut block: c_int = 0;
+        let mut params = [
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_OPENGL_FBO,
+                data: &mut target as *mut MpvOpenGlFbo as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_FLIP_Y,
+                data: &mut flip_y as *mut c_int as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME,
+                data: &mut block as *mut c_int as *mut c_void,
+            },
+            MpvRenderParam {
+                type_: MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        check(render(self.ctx, params.as_mut_ptr()))
+    }
+
+    /// Tell mpv a rendered frame reached the screen, for its frame timing.
+    pub fn report_swap(&self) {
+        if let Some(swap) = fns().ok().and_then(|f| f.render_context_report_swap) {
+            unsafe { swap(self.ctx) };
         }
     }
 
@@ -412,6 +552,11 @@ impl MpvRenderContext {
 impl Drop for MpvRenderContext {
     fn drop(&mut self) {
         if let Ok(f) = fns() {
+            // Unregister first: a callback racing in from mpv's thread after
+            // this point would otherwise see freed `data`.
+            if let Some(set) = f.render_context_set_update_callback {
+                unsafe { set(self.ctx, None, std::ptr::null_mut()) };
+            }
             if let Some(free) = f.render_context_free {
                 unsafe { free(self.ctx) };
             }
