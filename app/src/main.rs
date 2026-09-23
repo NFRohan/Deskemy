@@ -74,15 +74,19 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_window(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
-    let course = course_page::CoursePage::new(db.clone());
+    let thumbs = paths::data_dir().map(|d| d.join(deskemy_core::courses::THUMBNAILS_DIR));
+    let course = course_page::CoursePage::new(db.clone(), thumbs);
 
     if let Mode::Snapshot { path, player, page } = mode {
         let window = offscreen.expect("snapshot platform installed");
         if let Some(menu) = player {
             snapshot::sample_playback(&ui, &menu, &db);
         }
-        if page.as_deref() == Some("course") {
+        // "course", or "course-cover" / "course-delete" with that dialog open.
+        if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
             snapshot::sample_course(&ui, &db, &course);
+            let dialog = page.strip_prefix("course-").unwrap_or_default();
+            ui.global::<Course>().set_dialog(dialog.into());
         }
         ui.show()?;
         snapshot::save(&window, &path).map_err(slint::PlatformError::Other)?;
@@ -183,6 +187,23 @@ fn wire_course(ui: &AppWindow, page: &std::rc::Rc<course_page::CoursePage>, sess
     action!(on_toggle_complete, |p, ui, id| p.toggle_complete(&ui, &id));
     action!(on_add_tag, |p, ui, tag| p.add_tag(&ui, &tag));
     action!(on_remove_tag, |p, ui, tag| p.remove_tag(&ui, &tag));
+    action!(on_pick_cover, |p, ui| p.pick_cover(&ui));
+    action!(on_paste_cover, |p, ui| p.paste_cover(&ui));
+    action!(on_clear_cover, |p, ui| p.clear_cover(&ui));
+    action!(on_relocate, |p, ui| p.relocate(&ui));
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_delete_course(move || {
+        let Some(ui) = weak.upgrade() else { return };
+        if p.delete(&ui) {
+            let course = ui.global::<Course>();
+            course.set_dialog("".into());
+            let nav = ui.global::<Nav>();
+            nav.set_page("library".into());
+            nav.set_crumbs(course_panel::model(vec!["Library".into()]));
+            nav.set_crumb_targets(course_panel::model(vec!["".into()]));
+            ui.invoke_refresh_library();
+        }
+    });
     let (p, weak) = (page.clone(), ui.as_weak());
     course.on_toggle_section(move |id| {
         if let Some(ui) = weak.upgrade() {

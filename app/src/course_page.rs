@@ -6,11 +6,13 @@ use crate::library::{format_duration, pct};
 use crate::session::Db;
 use crate::tracks::clock;
 use crate::{AppWindow, Course, CurriculumLecture, CurriculumSection, Nav, ResourceGroup, ResourceItem};
+use deskemy_core::courses;
 use deskemy_core::db::queries;
 use deskemy_core::domain::{Attachment, CourseDetail, Lecture, Section};
 use slint::ComponentHandle;
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 /// The lecture "Resume" / "Start" opens: where the course was left off, else
@@ -56,15 +58,18 @@ pub fn resource_groups<'a>(c: &CourseDetail, attachments: &'a [Attachment]) -> V
 /// The open course's state (UI thread only).
 pub struct CoursePage {
     db: Db,
+    /// Where covers are stored (None without a data directory).
+    thumbs_dir: Option<PathBuf>,
     id: RefCell<Option<String>>,
     expanded: RefCell<HashSet<String>>,
     image: RefCell<Option<(String, slint::Image)>>,
 }
 
 impl CoursePage {
-    pub fn new(db: Db) -> Rc<Self> {
+    pub fn new(db: Db, thumbs_dir: Option<PathBuf>) -> Rc<Self> {
         Rc::new(CoursePage {
             db,
+            thumbs_dir,
             id: RefCell::new(None),
             expanded: RefCell::new(HashSet::new()),
             image: RefCell::new(None),
@@ -241,6 +246,91 @@ impl CoursePage {
         self.refresh(ui);
     }
 
+    /// Upload a cover from an image file.
+    pub fn pick_cover(&self, ui: &AppWindow) {
+        let Some(file) = rfd::FileDialog::new()
+            .set_title("Choose a course cover")
+            .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif", "bmp"])
+            .set_parent(&ui.window().window_handle())
+            .pick_file()
+        else {
+            return;
+        };
+        let ext = file.extension().and_then(|e| e.to_str()).map(str::to_owned);
+        let stored = std::fs::read(&file)
+            .map_err(|e| format!("{}: {e}", file.display()))
+            .and_then(|bytes| self.store_cover(&bytes, ext.as_deref()));
+        self.cover_done(ui, stored);
+    }
+
+    /// Use the image on the clipboard as the cover (Ctrl+V in the editor).
+    pub fn paste_cover(&self, ui: &AppWindow) {
+        let stored = clipboard_png().and_then(|png| self.store_cover(&png, Some("png")));
+        self.cover_done(ui, stored);
+    }
+
+    pub fn clear_cover(&self, ui: &AppWindow) {
+        let Some(id) = self.id() else { return };
+        if let Err(e) = queries::set_thumbnail(&self.conn(), &id, None) {
+            ui.global::<Course>().set_cover_error(e.to_string().into());
+        }
+        self.refresh(ui);
+    }
+
+    fn store_cover(&self, bytes: &[u8], ext: Option<&str>) -> Result<String, String> {
+        let id = self.id().ok_or("no course is open")?;
+        let dir = self.thumbs_dir.as_ref().ok_or("no data directory to store covers in")?;
+        courses::set_cover(&self.conn(), dir, &id, bytes, ext).map_err(|e| e.to_string())
+    }
+
+    fn cover_done(&self, ui: &AppWindow, stored: Result<String, String>) {
+        let page = ui.global::<Course>();
+        match stored {
+            Ok(_) => page.set_cover_error("".into()),
+            Err(e) => {
+                tracing::warn!(error = %e, "set cover");
+                page.set_cover_error(e.into());
+            }
+        }
+        self.refresh(ui);
+    }
+
+    /// Point a Missing course at the folder it moved to.
+    pub fn relocate(&self, ui: &AppWindow) {
+        let Some(id) = self.id() else { return };
+        let Some(folder) = rfd::FileDialog::new()
+            .set_title("Where is this course now?")
+            .set_parent(&ui.window().window_handle())
+            .pick_folder()
+        else {
+            return;
+        };
+        let result = courses::relocate(&self.conn(), &id, &folder.to_string_lossy());
+        let page = ui.global::<Course>();
+        match result {
+            Ok(_) => page.set_relocate_error("".into()),
+            Err(e) => page.set_relocate_error(e.to_string().into()),
+        }
+        self.refresh(ui);
+    }
+
+    /// Remove the course from the library (its files stay on disk); returns
+    /// whether it went, so the caller can leave the page.
+    pub fn delete(&self, ui: &AppWindow) -> bool {
+        let Some(id) = self.id() else { return false };
+        let result = courses::delete(&mut self.conn(), &id);
+        match result {
+            Ok(()) => {
+                *self.id.borrow_mut() = None;
+                true
+            }
+            Err(e) => {
+                ui.global::<Course>().set_delete_error(e.to_string().into());
+                false
+            }
+        }
+    }
+
     /// Mark a lecture done / not done by hand.
     pub fn toggle_complete(&self, ui: &AppWindow, lecture: &str) {
         let done = {
@@ -254,6 +344,22 @@ impl CoursePage {
         tracing::debug!(lecture, done, "marked");
         self.refresh(ui);
     }
+}
+
+/// The clipboard's image, as PNG bytes.
+fn clipboard_png() -> Result<Vec<u8>, String> {
+    let image = arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.get_image())
+        .map_err(|_| "There's no image on the clipboard.".to_string())?;
+    let mut png = Vec::new();
+    let mut encoder = png::Encoder::new(&mut png, image.width as u32, image.height as u32);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .and_then(|mut writer| writer.write_image_data(&image.bytes))
+        .map_err(|e| e.to_string())?;
+    Ok(png)
 }
 
 #[cfg(test)]
