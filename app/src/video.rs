@@ -5,7 +5,7 @@
 
 use crate::session::{Db, Session, Sleep};
 use crate::tracks;
-use crate::{AppWindow, MenuItem, Playback};
+use crate::{AppWindow, BookmarkRow, MenuItem, Playback};
 use deskemy_core::config::AppConfig;
 use deskemy_core::mpv::{
     Mpv, MpvEventEndFile, MpvRenderContext, MPV_END_FILE_REASON_EOF, MPV_EVENT_END_FILE,
@@ -15,7 +15,9 @@ use deskemy_core::mpv::{
 use glow::HasContext;
 use slint::{ComponentHandle, GraphicsAPI, RenderingState};
 use std::ffi::c_void;
+use std::cell::Cell;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -421,6 +423,8 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
     let s = session.clone();
     playback.on_sleep_off(move || s.set_sleep(Sleep::Off));
 
+    wire_bookmarks(ui, session, mpv);
+
     let step = |session: &Arc<Session>, delta: i32| {
         let s = session.clone();
         move || {
@@ -451,6 +455,80 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
             ui.set_playing(false);
             // Progress changed while watching.
             ui.invoke_refresh_library();
+        }
+    });
+}
+
+/// "Bookmark this moment": opening the dialog captures the position and
+/// pauses; closing resumes if it was playing (as in the Tauri player).
+fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
+    let playback = ui.global::<Playback>();
+    // (position being bookmarked, resume on close) — UI thread only.
+    let draft = Rc::new(Cell::new((0.0_f64, false)));
+
+    let show = |playback: &Playback, session: &Session| {
+        let rows: Vec<BookmarkRow> = session
+            .bookmarks()
+            .into_iter()
+            .map(|b| BookmarkRow {
+                id: b.id.into(),
+                time: tracks::clock(b.position_seconds).into(),
+                label: b.label.unwrap_or_else(|| "Bookmark".into()).into(),
+                position: b.position_seconds as f32,
+            })
+            .collect();
+        playback.set_bookmarks(slint::ModelRc::new(slint::VecModel::from(rows)));
+    };
+    let close = {
+        let (draft, m, weak) = (draft.clone(), mpv.clone(), ui.as_weak());
+        move || {
+            let (_, resume) = draft.take();
+            if resume {
+                let _ = m.set_property("pause", "no");
+            }
+            if let Some(ui) = weak.upgrade() {
+                ui.global::<Playback>().set_open_menu("".into());
+            }
+        }
+    };
+
+    let (s, m, d, weak) = (session.clone(), mpv.clone(), draft.clone(), ui.as_weak());
+    playback.on_open_bookmark(move || {
+        let Some(ui) = weak.upgrade() else { return };
+        let position = m.get_f64("time-pos").unwrap_or(0.0);
+        let playing = m.get_property_string("pause").as_deref() == Some("no");
+        if playing {
+            let _ = m.set_property("pause", "yes");
+        }
+        d.set((position, playing));
+        let playback = ui.global::<Playback>();
+        playback.set_bookmark_time(tracks::clock(position).into());
+        show(&playback, &s);
+        playback.set_open_menu("bookmark".into());
+    });
+
+    let (s, d, done) = (session.clone(), draft.clone(), close.clone());
+    playback.on_save_bookmark(move |label| {
+        let label = label.trim();
+        if let Err(e) = s.add_bookmark(d.get().0, (!label.is_empty()).then_some(label)) {
+            tracing::warn!(error = %e, "add bookmark");
+        }
+        done();
+    });
+
+    let (m, done) = (mpv.clone(), close.clone());
+    playback.on_jump_to_bookmark(move |position| {
+        let _ = m.command(&["seek", &format!("{position:.3}"), "absolute"]);
+        done();
+    });
+
+    playback.on_close_bookmark(close);
+
+    let (s, weak) = (session.clone(), ui.as_weak());
+    playback.on_delete_bookmark(move |id| {
+        s.delete_bookmark(&id);
+        if let Some(ui) = weak.upgrade() {
+            show(&ui.global::<Playback>(), &s);
         }
     });
 }
@@ -565,6 +643,7 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
                 playback.set_up_next(np.up_next.unwrap_or_default().into());
                 playback.set_has_previous(np.has_previous);
                 playback.set_has_next(np.has_next);
+                playback.set_in_library(np.in_library);
             }
             playback.set_position(s.position as f32);
             playback.set_duration(s.duration as f32);

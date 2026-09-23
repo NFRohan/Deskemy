@@ -72,6 +72,16 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str) {
     playback.set_sleep_mode("minutes".into());
     playback.set_sleep_badge("27m".into());
     playback.set_sleep_minutes(30);
+    playback.set_in_library(true);
+    playback.set_bookmark_time("0:54".into());
+    let marks = [("0:18", "Root account warning", 18.0), ("1:41", "Policy JSON structure", 101.0)]
+        .map(|(time, label, position)| crate::BookmarkRow {
+            id: label.into(),
+            time: time.into(),
+            label: label.into(),
+            position,
+        });
+    playback.set_bookmarks(slint::ModelRc::new(slint::VecModel::from(marks.to_vec())));
     playback.set_open_menu(menu.into());
 }
 

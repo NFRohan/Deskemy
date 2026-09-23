@@ -5,6 +5,7 @@
 
 use deskemy_core::config::AppConfig;
 use deskemy_core::db::{queries, Connection};
+use deskemy_core::domain::Bookmark;
 use deskemy_core::importer::structure::clean_title;
 use deskemy_core::mpv::Mpv;
 use deskemy_core::playback::{resume_start, watched_enough};
@@ -26,6 +27,8 @@ pub struct NowPlaying {
     pub up_next: Option<String>,
     pub has_previous: bool,
     pub has_next: bool,
+    /// A library lecture (a bare file has no bookmarks or progress).
+    pub in_library: bool,
 }
 
 /// The sleep timer: pause after a while, or when the playing lecture ends.
@@ -227,6 +230,7 @@ impl Session {
             up_next,
             has_previous: inner.index > 0,
             has_next: inner.index + 1 < inner.items.len(),
+            in_library: true,
         };
         inner.revision += 1;
         inner.lecture_id = Some(item.lecture_id);
@@ -350,6 +354,31 @@ impl Session {
         let Some(course) = inner.course_id.as_deref() else { return };
         if let Err(e) = f(&self.db(), course) {
             tracing::warn!(error = %e, "save course pref");
+        }
+    }
+
+    /// Bookmarks of the playing lecture, in time order.
+    pub fn bookmarks(&self) -> Vec<Bookmark> {
+        let inner = self.inner();
+        let Some(lecture) = inner.lecture_id.as_deref() else { return Vec::new() };
+        queries::list_bookmarks(&self.db(), lecture).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "list bookmarks");
+            Vec::new()
+        })
+    }
+
+    /// Bookmark `position` in the playing lecture.
+    pub fn add_bookmark(&self, position: f64, label: Option<&str>) -> Result<(), String> {
+        let inner = self.inner();
+        let lecture = inner.lecture_id.as_deref().ok_or("nothing from the library is playing")?;
+        queries::add_bookmark(&self.db(), lecture, position, label)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn delete_bookmark(&self, id: &str) {
+        if let Err(e) = queries::delete_bookmark(&self.db(), id) {
+            tracing::warn!(error = %e, "delete bookmark");
         }
     }
 
@@ -563,6 +592,30 @@ mod tests {
         assert_eq!(minutes(Sleep::after(0)), 1);
         assert_eq!(minutes(Sleep::after(45)), 45);
         assert_eq!(minutes(Sleep::after(9999)), 600);
+    }
+
+    #[test]
+    fn bookmarks_belong_to_the_playing_lecture() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db, AppConfig::default());
+
+        assert!(session.add_bookmark(1.0, None).is_err(), "nothing playing yet");
+        session.open(&lectures[0]).unwrap();
+        session.add_bookmark(42.0, Some("Policy JSON")).unwrap();
+        session.add_bookmark(7.0, None).unwrap();
+
+        let marks = session.bookmarks();
+        let seen: Vec<(f64, Option<&str>)> =
+            marks.iter().map(|b| (b.position_seconds, b.label.as_deref())).collect();
+        assert_eq!(seen, vec![(7.0, None), (42.0, Some("Policy JSON"))]);
+
+        session.step(1).unwrap();
+        assert!(session.bookmarks().is_empty(), "the next lecture has its own");
+
+        session.step(-1).unwrap();
+        session.delete_bookmark(&marks[0].id);
+        assert_eq!(session.bookmarks().len(), 1);
     }
 
     #[test]

@@ -11,6 +11,15 @@ export struct MenuItem {
     selected: bool,
 }
 
+/// A saved bookmark in the playing lecture.
+export struct BookmarkRow {
+    id: string,
+    /// Position as `m:ss`.
+    time: string,
+    label: string,
+    position: float,
+}
+
 /// Playback state pushed from Rust, and the user's actions sent back to it.
 export global Playback {
     in property <string> title;
@@ -39,6 +48,11 @@ export global Playback {
     in property <string> sleep-mode: "off";
     in property <string> sleep-badge;
     in property <int> sleep-minutes;
+    /// Whether the playing file is a library lecture (bookmarks need one).
+    in property <bool> in-library;
+    /// The moment being bookmarked, and the lecture's saved bookmarks.
+    in property <string> bookmark-time;
+    in property <[BookmarkRow]> bookmarks;
 
     callback back();
     callback toggle-pause();
@@ -56,6 +70,11 @@ export global Playback {
     callback sleep-for(int);
     callback sleep-at-end();
     callback sleep-off();
+    callback open-bookmark();
+    callback save-bookmark(string);
+    callback close-bookmark();
+    callback jump-to-bookmark(float);
+    callback delete-bookmark(string);
 }
 
 component IconButton inherits Rectangle {
@@ -313,7 +332,8 @@ export component PlayerOverlay inherits Rectangle {
         }
 
         // Track / chapter / speed menu, floating above the bar at the right.
-        if Playback.open-menu != "" && Playback.open-menu != "sleep": Rectangle {
+        if Playback.open-menu == "speed" || Playback.open-menu == "sub"
+            || Playback.open-menu == "audio" || Playback.open-menu == "chapters": Rectangle {
             property <length> list-height: min(menu-list.preferred-height, 360px);
             x: parent.width - self.width - 20px;
             y: parent.height - 108px - self.height;
@@ -501,6 +521,26 @@ export component PlayerOverlay inherits Rectangle {
                     changed(v) => { Playback.set-volume(v * 100); }
                 }
                 Rectangle { width: 10px; }
+                if Playback.in-library: IconButton {
+                    icon: @image-url("icons/bookmark-plus.svg");
+                    active: Playback.open-menu == "bookmark";
+                    clicked => { Playback.open-bookmark(); }
+                }
+                if Playback.chapters.length > 0: IconButton {
+                    icon: @image-url("icons/list-video.svg");
+                    active: Playback.open-menu == "chapters";
+                    clicked => { root.toggle-menu("chapters"); }
+                }
+                if Playback.audio-tracks.length > 1: IconButton {
+                    icon: @image-url("icons/audio-lines.svg");
+                    active: Playback.open-menu == "audio";
+                    clicked => { root.toggle-menu("audio"); }
+                }
+                if Playback.subtitles.length > 1: IconButton {
+                    icon: @image-url("icons/captions.svg");
+                    active: Playback.open-menu == "sub" || Playback.subtitles-on;
+                    clicked => { root.toggle-menu("sub"); }
+                }
                 // Sleep timer: a moon, or the minutes left while counting down.
                 if Playback.sleep-mode == "minutes": Chip {
                     text: Playback.sleep-badge;
@@ -529,21 +569,6 @@ export component PlayerOverlay inherits Rectangle {
                         mouse-cursor: pointer;
                         clicked => { root.toggle-menu("speed"); }
                     }
-                }
-                if Playback.subtitles.length > 1: IconButton {
-                    icon: @image-url("icons/captions.svg");
-                    active: Playback.open-menu == "sub" || Playback.subtitles-on;
-                    clicked => { root.toggle-menu("sub"); }
-                }
-                if Playback.audio-tracks.length > 1: IconButton {
-                    icon: @image-url("icons/audio-lines.svg");
-                    active: Playback.open-menu == "audio";
-                    clicked => { root.toggle-menu("audio"); }
-                }
-                if Playback.chapters.length > 0: IconButton {
-                    icon: @image-url("icons/list-video.svg");
-                    active: Playback.open-menu == "chapters";
-                    clicked => { root.toggle-menu("chapters"); }
                 }
                 IconButton {
                     icon: Playback.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");
@@ -686,6 +711,160 @@ export component PlayerOverlay inherits Rectangle {
                         clicked => {
                             Playback.sleep-at-end();
                             Playback.open-menu = "";
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add-bookmark dialog. Opening it paused the video, so the moment
+        // holds while a label is typed; closing resumes if it was playing.
+        if Playback.open-menu == "bookmark": Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { Playback.close-bookmark(); }
+            }
+
+            Rectangle {
+                width: 380px;
+                height: bookmark-card.preferred-height;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 14px;
+                background: #16171b;
+                border-width: 1px;
+                border-color: #ffffff14;
+
+                TouchArea { }
+
+                bookmark-card := VerticalLayout {
+                    padding: 20px;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Image {
+                            source: @image-url("icons/bookmark-plus.svg");
+                            width: 18px;
+                            height: 18px;
+                            y: (parent.height - self.height) / 2;
+                            colorize: #ffffff;
+                        }
+                        Text {
+                            text: "Add bookmark";
+                            color: #ffffff;
+                            font-size: 16px;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: Playback.bookmark-time;
+                            color: #ffffffb3;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        height: 36px;
+                        border-radius: 8px;
+                        background: #0e0f12;
+                        border-width: 1px;
+                        border-color: label.has-focus ? #ffffff66 : #ffffff1f;
+
+                        label := TextInput {
+                            x: 10px;
+                            width: parent.width - 20px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            color: #ffffff;
+                            font-size: 13px;
+                            single-line: true;
+                            init => { self.focus(); }
+                            accepted => { Playback.save-bookmark(self.text); }
+                        }
+                        if label.text == "": Text {
+                            x: 10px;
+                            height: parent.height;
+                            text: "Label (optional)";
+                            color: #ffffff59;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: end;
+                        spacing: 8px;
+                        Chip {
+                            text: "Cancel";
+                            clicked => { Playback.close-bookmark(); }
+                        }
+                        Chip {
+                            text: "Save";
+                            selected: true;
+                            clicked => { Playback.save-bookmark(label.text); }
+                        }
+                    }
+
+                    if Playback.bookmarks.length > 0: VerticalLayout {
+                        spacing: 2px;
+                        Rectangle {
+                            height: 1px;
+                            background: #ffffff14;
+                        }
+                        Text {
+                            text: "SAVED BOOKMARKS";
+                            color: #ffffff80;
+                            font-size: 11px;
+                            font-weight: 600;
+                            height: 28px;
+                            vertical-alignment: center;
+                        }
+                        Flickable {
+                            height: min(saved.preferred-height, 220px);
+                            content-height: saved.preferred-height;
+                            saved := VerticalLayout {
+                                spacing: 2px;
+                                for mark in Playback.bookmarks: Rectangle {
+                                    height: 36px;
+                                    border-radius: 6px;
+                                    background: mark-touch.has-hover ? #ffffff1a : transparent;
+
+                                    mark-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { Playback.jump-to-bookmark(mark.position); }
+                                    }
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        spacing: 10px;
+                                        Text {
+                                            text: mark.time;
+                                            color: #ffffff99;
+                                            font-size: 12px;
+                                            vertical-alignment: center;
+                                            min-width: 52px;
+                                        }
+                                        Text {
+                                            text: mark.label;
+                                            color: #ffffff;
+                                            font-size: 13px;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                            overflow: elide;
+                                        }
+                                        IconButton {
+                                            icon: @image-url("icons/trash-2.svg");
+                                            icon-size: 16px;
+                                            width: 32px;
+                                            height: 32px;
+                                            y: 2px;
+                                            clicked => { Playback.delete-bookmark(mark.id); }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
