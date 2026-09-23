@@ -10,7 +10,7 @@ pub mod watcher;
 // old paths so `crate::db::…` etc. keep resolving (and the examples keep
 // working as `deskemy_lib::…`).
 pub use deskemy_core::{
-    backup, config, db, domain, error, hashing, importer, media, mpv, scanner, subtitles,
+    backup, config, db, domain, error, hashing, importer, media, mpv, playback, scanner, subtitles,
     thumbnails,
 };
 

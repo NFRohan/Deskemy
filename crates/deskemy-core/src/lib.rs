@@ -13,6 +13,7 @@ pub mod importer;
 pub mod media;
 pub mod mpv;
 pub mod paths;
+pub mod playback;
 pub mod scanner;
 pub mod subtitles;
 pub mod thumbnails;
