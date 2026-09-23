@@ -48,8 +48,8 @@ cargo run -- --snapshot-player out.png      # same, player overlay with sample s
 - ☑ Slint skeleton reading the library through the core; `--snapshot`
 - ☑ Bind mpv's OpenGL render API (`MpvRenderContext::new_gl` / `render_gl`)
 - ☑ Video surface: mpv → GL texture → `Image`, status bar drawn on top
-- ☐ **Run it** — picture correct (not flipped, not stretched, letterboxed),
-  overlay drawn over video, resizing works, closing exits cleanly
+- ☑ **Run it** (2026-09-24, Windows): picture upright, correct aspect,
+  overlay draws over the video, resizing works, closes cleanly
 - ☐ Measure CPU/GPU at 1080p: `DESKEMY_HWDEC=no` vs default, and vs the Tauri
   app. Note which decoder `auto-safe` picks (shown in the overlay).
 - ☐ Watch for Slint #12030 (rendering notifier forcing FemtoVG pipeline
@@ -65,12 +65,16 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
   thin seek bar with elapsed and −remaining, transport cluster, "Ends at",
   volume, fullscreen; auto-hides after 2.5 s idle (not while paused or
   dragging); click toggles pause, double-click toggles fullscreen
-- ☐ Keyboard shortcuts (the Tauri app's full map)
 - ☐ Lecture-aware playback: open by lecture id, progress saving + resume +
-  completion (95%), playlist / previous / next / autoplay
-- ☐ Speed, subtitles, audio tracks, chapters (buttons are placeholders),
-  per-course prefs
-- ☐ Bookmarks, keep-awake, stats overlay toggle
+  completion (95%), watch time, playlist / previous / next / autoplay,
+  "Up next"
+- ☐ Track menus — chapters, audio, subtitles (each only when present) — and
+  speed; per-course prefs
+- ☐ Bookmark this moment (pause, label, list + delete)
+- ☐ Sleep timer (N minutes / end of lecture, countdown badge)
+- ☐ Course content panel (P) with Content / Resources (R) tabs
+- ☐ Keyboard shortcuts (the Tauri app's full map) + cheat sheet (?)
+- ☐ Keep-awake, stats overlay toggle
 
 ## Later phases
 
