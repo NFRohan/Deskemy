@@ -24,6 +24,7 @@ png = "0.18"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 glow = "0.18.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 [build-dependencies]
 slint-build = "1.18"

@@ -14,7 +14,9 @@ enum Mode {
     /// The normal app.
     Window,
     /// `--snapshot <file.png>`: render one frame offscreen and exit.
-    Snapshot(PathBuf),
+    /// `--snapshot-player <file.png>` does the same for the player overlay,
+    /// filled with sample state (no mpv; the video area stays blank).
+    Snapshot { path: PathBuf, player: bool },
     /// `--play <file>`: open straight into playback (port spike).
     Play(PathBuf),
 }
@@ -22,7 +24,10 @@ enum Mode {
 fn parse_args() -> Mode {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some("--snapshot") => Mode::Snapshot(args.next().unwrap_or("snapshot.png".into()).into()),
+        Some(flag @ ("--snapshot" | "--snapshot-player")) => Mode::Snapshot {
+            player: flag == "--snapshot-player",
+            path: args.next().unwrap_or("snapshot.png".into()).into(),
+        },
         Some("--play") => match args.next() {
             Some(file) => Mode::Play(file.into()),
             None => Mode::Window,
@@ -41,7 +46,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let mode = parse_args();
     let offscreen = match &mode {
-        Mode::Snapshot(_) => Some(snapshot::install(1280, 800)?),
+        Mode::Snapshot { .. } => Some(snapshot::install(1280, 800)?),
         // Video is rendered by mpv through OpenGL, so real windows need an
         // OpenGL-backed renderer (FemtoVG by default).
         _ => {
@@ -64,8 +69,11 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     let player = match mode {
-        Mode::Snapshot(path) => {
+        Mode::Snapshot { path, player } => {
             let window = offscreen.expect("snapshot platform installed");
+            if player {
+                snapshot::sample_playback(&ui);
+            }
             ui.show()?;
             snapshot::save(&window, &path).map_err(slint::PlatformError::Other)?;
             tracing::info!(path = %path.display(), "snapshot written");

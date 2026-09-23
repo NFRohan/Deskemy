@@ -1,5 +1,9 @@
 // Deskemy — Slint frontend (port in progress; see docs/slint-port.md).
 
+import { Playback, PlayerOverlay } from "player.slint";
+
+export { Playback }
+
 export struct CourseRow {
     title: string,
     lectures: int,
@@ -12,7 +16,7 @@ export component AppWindow inherits Window {
     preferred-height: 800px;
     min-width: 900px;
     min-height: 600px;
-    background: #0e0f12;
+    background: root.playing ? #000000 : #0e0f12;
     default-font-size: 14px;
 
     in property <string> status;
@@ -22,7 +26,6 @@ export component AppWindow inherits Window {
     // the element's size back to render at exactly its physical resolution.
     in property <bool> playing;
     in property <image> video-frame;
-    in property <string> overlay-text;
     out property <length> video-width: video.width;
     out property <length> video-height: video.height;
 
@@ -37,19 +40,33 @@ export component AppWindow inherits Window {
     }
 
     // Anything after the video in the tree draws on top of it.
-    if root.playing: Rectangle {
-        x: 0;
-        y: parent.height - self.height;
+    if root.playing: PlayerOverlay {
         width: parent.width;
-        height: 44px;
-        background: #000000b3;
+        height: parent.height;
 
-        Text {
-            x: 16px;
-            text: root.overlay-text;
-            color: #f2f2f3;
-            vertical-alignment: center;
-        }
+        title: Playback.title;
+        subtitle: Playback.subtitle;
+        stats: Playback.stats;
+        clock: Playback.clock;
+        ends-at: Playback.ends-at;
+        position: Playback.position;
+        duration: Playback.duration;
+        paused: Playback.paused;
+        volume: Playback.volume;
+        muted: Playback.muted;
+        fullscreen: Playback.fullscreen;
+        has-previous: Playback.has-previous;
+        has-next: Playback.has-next;
+
+        back => { Playback.back(); }
+        toggle-pause => { Playback.toggle-pause(); }
+        seek(t) => { Playback.seek(t); }
+        seek-by(d) => { Playback.seek-by(d); }
+        previous => { Playback.previous(); }
+        next => { Playback.next(); }
+        set-volume(v) => { Playback.set-volume(v); }
+        toggle-mute => { Playback.toggle-mute(); }
+        toggle-fullscreen => { Playback.toggle-fullscreen(); }
     }
 
     if !root.playing: VerticalLayout {

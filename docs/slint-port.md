@@ -32,6 +32,7 @@ its `build.rs` and release flow. Each app has its own lockfile and target dir.
 cargo run                                   # the app
 cargo run -- --play "<video file>"          # straight into playback (spike)
 cargo run -- --snapshot out.png             # render one frame offscreen, no window
+cargo run -- --snapshot-player out.png      # same, player overlay with sample state
 ```
 
 - libmpv: `build.rs` copies `libmpv-2.dll` next to the exe from `app/vendor/`
@@ -58,11 +59,18 @@ cargo run -- --snapshot out.png             # render one frame offscreen, no win
 
 ## Phase 2 — player parity
 
-Port `src-tauri/src/player/mod.rs` behaviour onto the new surface: Plezy-style
-overlay controls (thin seek bar, elapsed / −remaining, "Ends at", transport
-cluster, auto-hide), keyboard shortcuts, progress saving + resume + completion
-(95%), playlist / next / autoplay, subtitles / audio / chapters, speed, per-course
-prefs, bookmarks, fullscreen, keep-awake.
+Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
+
+- ☑ Plezy-style overlay (`ui/player.slint`): title / section / wall clock,
+  thin seek bar with elapsed and −remaining, transport cluster, "Ends at",
+  volume, fullscreen; auto-hides after 2.5 s idle (not while paused or
+  dragging); click toggles pause, double-click toggles fullscreen
+- ☐ Keyboard shortcuts (the Tauri app's full map)
+- ☐ Lecture-aware playback: open by lecture id, progress saving + resume +
+  completion (95%), playlist / previous / next / autoplay
+- ☐ Speed, subtitles, audio tracks, chapters (buttons are placeholders),
+  per-course prefs
+- ☐ Bookmarks, keep-awake, stats overlay toggle
 
 ## Later phases
 

@@ -3,7 +3,8 @@
 //! anything declared after it in the `.slint` tree simply draws on top of the
 //! video. No native child window, no rect reporting, on any platform.
 
-use crate::AppWindow;
+use crate::{AppWindow, Playback};
+use deskemy_core::importer::structure::clean_title;
 use deskemy_core::mpv::{
     Mpv, MpvRenderContext, MPV_EVENT_FILE_LOADED, MPV_EVENT_PLAYBACK_RESTART, MPV_EVENT_SHUTDOWN,
     MPV_RENDER_UPDATE_FRAME,
@@ -12,7 +13,7 @@ use glow::HasContext;
 use slint::{ComponentHandle, GraphicsAPI, RenderingState};
 use std::ffi::c_void;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -50,6 +51,17 @@ impl Player {
             }
         }
         mpv.initialize().map_err(|e| e.to_string())?;
+
+        let playback = ui.global::<Playback>();
+        playback.set_title(display_name(&file).into());
+        playback.set_subtitle(
+            file.parent()
+                .and_then(Path::file_name)
+                .map(|s| clean_title(&s.to_string_lossy()))
+                .unwrap_or_default()
+                .into(),
+        );
+        wire_controls(ui, &mpv);
 
         let events = {
             let mpv = mpv.clone();
@@ -347,12 +359,89 @@ impl Drop for GlState<'_> {
     }
 }
 
-/// Drain mpv's event queue (it must be drained) and push a small status line
-/// — playback clock and which decoder is in use — to the overlay.
+/// Route the overlay's actions to mpv.
+fn wire_controls(ui: &AppWindow, mpv: &Arc<Mpv>) {
+    let playback = ui.global::<Playback>();
+    let run = |mpv: &Arc<Mpv>, args: &[&str]| {
+        if let Err(e) = mpv.command(args) {
+            tracing::warn!(error = %e, ?args, "mpv command");
+        }
+    };
+
+    let m = mpv.clone();
+    playback.on_toggle_pause(move || run(&m, &["cycle", "pause"]));
+    let m = mpv.clone();
+    playback.on_seek(move |t| run(&m, &["seek", &format!("{t:.3}"), "absolute"]));
+    let m = mpv.clone();
+    playback.on_seek_by(move |d| run(&m, &["seek", &format!("{d:.3}"), "relative"]));
+    let m = mpv.clone();
+    playback.on_toggle_mute(move || run(&m, &["cycle", "mute"]));
+    let m = mpv.clone();
+    playback.on_set_volume(move |v| {
+        let _ = m.set_property("mute", "no");
+        if let Err(e) = m.set_property("volume", &format!("{v:.0}")) {
+            tracing::warn!(error = %e, "set volume");
+        }
+    });
+
+    let weak = ui.as_weak();
+    playback.on_toggle_fullscreen(move || {
+        if let Some(ui) = weak.upgrade() {
+            let full = !ui.window().is_fullscreen();
+            ui.window().set_fullscreen(full);
+            ui.global::<Playback>().set_fullscreen(full);
+        }
+    });
+
+    let m = mpv.clone();
+    let weak = ui.as_weak();
+    playback.on_back(move || {
+        run(&m, &["stop"]);
+        if let Some(ui) = weak.upgrade() {
+            ui.window().set_fullscreen(false);
+            ui.global::<Playback>().set_fullscreen(false);
+            ui.set_playing(false);
+        }
+    });
+}
+
+/// Title for a bare file: its cleaned name, the way the library shows lectures.
+fn display_name(file: &Path) -> String {
+    file.file_name()
+        .map(|n| clean_title(&n.to_string_lossy()))
+        .unwrap_or_default()
+}
+
+/// What the overlay shows, sampled from mpv on the event thread.
+struct State {
+    position: f64,
+    duration: f64,
+    paused: bool,
+    volume: f64,
+    muted: bool,
+    speed: f64,
+}
+
+impl State {
+    fn sample(mpv: &Mpv) -> Self {
+        let flag = |name| mpv.get_property_string(name).as_deref() == Some("yes");
+        State {
+            position: mpv.get_f64("time-pos").unwrap_or(0.0),
+            duration: mpv.get_f64("duration").unwrap_or(0.0),
+            paused: flag("pause"),
+            volume: mpv.get_f64("volume").unwrap_or(100.0),
+            muted: flag("mute"),
+            speed: mpv.get_f64("speed").unwrap_or(1.0),
+        }
+    }
+}
+
+/// Drain mpv's event queue (it must be drained) and push playback state to
+/// the overlay about five times a second.
 fn pump_events(mpv: &Mpv, ui: slint::Weak<AppWindow>) {
-    let mut hwdec = String::from("…");
+    let mut decoder = String::from("…");
     loop {
-        let event = mpv.wait_event(0.5);
+        let event = mpv.wait_event(0.2);
         if !event.is_null() {
             match unsafe { (*event).event_id } {
                 MPV_EVENT_SHUTDOWN => break,
@@ -360,26 +449,37 @@ fn pump_events(mpv: &Mpv, ui: slint::Weak<AppWindow>) {
                     tracing::info!(duration = ?mpv.get_f64("duration"), "file loaded");
                 }
                 MPV_EVENT_PLAYBACK_RESTART => {
-                    hwdec = mpv.get_property_string("hwdec-current").unwrap_or_else(|| "no".into());
-                    tracing::info!(%hwdec, "decoding");
+                    decoder = mpv
+                        .get_property_string("hwdec-current")
+                        .unwrap_or_else(|| "software".into());
+                    tracing::info!(%decoder, "decoding");
                 }
                 _ => {}
             }
         }
-        let line = format!(
-            "{} / {}  ·  hwdec: {hwdec}",
-            clock(mpv.get_f64("time-pos")),
-            clock(mpv.get_f64("duration")),
-        );
-        let _ = ui.upgrade_in_event_loop(move |ui| ui.set_overlay_text(line.into()));
-    }
-}
 
-fn clock(seconds: Option<f64>) -> String {
-    let Some(s) = seconds else { return "--:--".into() };
-    let s = s.max(0.0) as u64;
-    match s / 3600 {
-        0 => format!("{}:{:02}", s / 60, s % 60),
-        h => format!("{h}:{:02}:{:02}", (s / 60) % 60, s % 60),
+        let s = State::sample(mpv);
+        let now = chrono::Local::now();
+        let remaining = (s.duration - s.position).max(0.0) / s.speed.max(0.01);
+        let ends = now + chrono::Duration::milliseconds((remaining * 1000.0) as i64);
+        let clock = now.format("%H:%M").to_string();
+        let ends_at = if s.duration > 0.0 {
+            format!("Ends at {}", ends.format("%H:%M"))
+        } else {
+            String::new()
+        };
+        let stats = format!("Decoder: {decoder}");
+
+        let _ = ui.upgrade_in_event_loop(move |ui| {
+            let playback = ui.global::<Playback>();
+            playback.set_position(s.position as f32);
+            playback.set_duration(s.duration as f32);
+            playback.set_paused(s.paused);
+            playback.set_volume(s.volume as f32);
+            playback.set_muted(s.muted);
+            playback.set_clock(clock.into());
+            playback.set_ends_at(ends_at.into());
+            playback.set_stats(stats.into());
+        });
     }
 }

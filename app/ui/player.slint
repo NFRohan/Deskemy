@@ -1,0 +1,339 @@
+// Player overlay. Design language after Plezy's player view: controls sit
+// directly on the video, monochrome, no panels — only soft scrims top and
+// bottom for legibility — with a thin seek bar and "Ends at" time.
+
+/// Playback state pushed from Rust, and the user's actions sent back to it.
+export global Playback {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> stats;
+    in property <string> clock;
+    in property <string> ends-at;
+    in property <float> position;
+    in property <float> duration;
+    in property <bool> paused;
+    in property <float> volume: 100;
+    in property <bool> muted;
+    in property <bool> fullscreen;
+    in property <bool> has-previous;
+    in property <bool> has-next;
+
+    callback back();
+    callback toggle-pause();
+    callback seek(float);
+    callback seek-by(float);
+    callback previous();
+    callback next();
+    callback set-volume(float);
+    callback toggle-mute();
+    callback toggle-fullscreen();
+}
+
+component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> icon-size: 22px;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    width: 38px;
+    height: 38px;
+    border-radius: self.width / 2;
+    background: touch.has-hover && root.enabled ? #ffffff1f : transparent;
+
+    Image {
+        source: root.icon;
+        width: root.icon-size;
+        height: root.icon-size;
+        colorize: !root.enabled ? #ffffff4d : touch.pressed ? #ffffffb3 : #ffffff;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A thin scrubbable track; `value` is 0..1. `changed` fires continuously while
+// dragging, `committed` once on release (seeking commits, volume follows live).
+component Scrubber inherits Rectangle {
+    in property <float> value;
+    out property <float> preview;
+    out property <bool> dragging: touch.pressed;
+    callback changed(float);
+    callback committed(float);
+
+    property <float> shown: max(0, min(1, touch.pressed ? root.preview : root.value));
+    property <length> track: touch.has-hover || touch.pressed ? 5px : 3px;
+
+    height: 20px;
+
+    Rectangle {
+        y: (parent.height - root.track) / 2;
+        width: parent.width;
+        height: root.track;
+        border-radius: root.track / 2;
+        background: #ffffff40;
+
+        Rectangle {
+            x: 0;
+            width: parent.width * root.shown;
+            height: parent.height;
+            border-radius: parent.border-radius;
+            background: #ffffff;
+        }
+    }
+
+    if touch.has-hover || touch.pressed: Rectangle {
+        x: root.width * root.shown - self.width / 2;
+        width: 13px;
+        height: 13px;
+        border-radius: self.width / 2;
+        background: #ffffff;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left {
+                if event.kind == PointerEventKind.down {
+                    root.preview = max(0, min(1, self.mouse-x / root.width));
+                    root.changed(root.preview);
+                } else if event.kind == PointerEventKind.up {
+                    root.committed(root.preview);
+                }
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.preview = max(0, min(1, self.mouse-x / root.width));
+                root.changed(root.preview);
+            }
+        }
+    }
+}
+
+export component PlayerOverlay inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    /// Diagnostics under the title (decoder in use) — for the port spike.
+    in property <string> stats;
+    in property <string> clock;
+    in property <string> ends-at;
+    in property <float> position;
+    in property <float> duration;
+    in property <bool> paused;
+    in property <float> volume;
+    in property <bool> muted;
+    in property <bool> fullscreen;
+    in property <bool> has-previous;
+    in property <bool> has-next;
+
+    callback back();
+    callback toggle-pause();
+    callback seek(float);
+    callback seek-by(float);
+    callback previous();
+    callback next();
+    callback set-volume(float);
+    callback toggle-mute();
+    callback toggle-fullscreen();
+
+    in-out property <bool> controls-shown: true;
+    // Never auto-hide while paused or mid-drag.
+    property <bool> pinned: root.paused || seek-bar.dragging || volume-bar.dragging;
+
+    pure function pad(n: float) -> string {
+        return (n < 10 ? "0" : "") + n;
+    }
+    pure function time(t: float) -> string {
+        return floor(t / 3600) > 0
+            ? floor(t / 3600) + ":" + pad(mod(floor(t / 60), 60)) + ":" + pad(mod(floor(t), 60))
+            : floor(t / 60) + ":" + pad(mod(floor(t), 60));
+    }
+    function wake() {
+        root.controls-shown = true;
+        idle.restart();
+    }
+
+    idle := Timer {
+        interval: 2.5s;
+        running: root.controls-shown && !root.pinned;
+        triggered => { root.controls-shown = false; }
+    }
+
+    // Below the controls: clicking the picture toggles pause, and any pointer
+    // movement brings the controls back.
+    TouchArea {
+        mouse-cursor: root.controls-shown ? MouseCursor.default : MouseCursor.none;
+        moved => { root.wake(); }
+        clicked => {
+            root.toggle-pause();
+            root.wake();
+        }
+        double-clicked => { root.toggle-fullscreen(); }
+    }
+
+    controls := Rectangle {
+        opacity: root.controls-shown ? 1 : 0;
+        visible: self.opacity > 0;
+        animate opacity { duration: 180ms; }
+
+        // Top: back, title, wall clock.
+        Rectangle {
+            y: 0;
+            height: 120px;
+            background: @linear-gradient(180deg, #000000b3 0%, #00000000 100%);
+        }
+        HorizontalLayout {
+            y: 0;
+            height: 96px;
+            padding: 16px;
+            spacing: 12px;
+            alignment: stretch;
+
+            IconButton {
+                y: 16px;
+                icon: @image-url("icons/arrow-left.svg");
+                clicked => { root.back(); }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: start;
+                spacing: 2px;
+                padding-top: 6px;
+                Text {
+                    text: root.title;
+                    color: #ffffff;
+                    font-size: 16px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.subtitle;
+                    color: #ffffffb3;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.stats;
+                    color: #ffffff80;
+                    font-size: 12px;
+                }
+            }
+            Text {
+                text: root.clock;
+                color: #ffffffcc;
+                font-size: 14px;
+                font-weight: 600;
+                vertical-alignment: top;
+                y: 16px;
+            }
+        }
+
+        // Bottom: seek bar, then transport and track/view controls.
+        Rectangle {
+            y: parent.height - self.height;
+            height: 170px;
+            background: @linear-gradient(0deg, #000000cc 0%, #00000000 100%);
+        }
+        VerticalLayout {
+            y: parent.height - self.height;
+            height: 104px;
+            padding-left: 20px;
+            padding-right: 20px;
+            padding-bottom: 14px;
+            spacing: 6px;
+
+            HorizontalLayout {
+                spacing: 14px;
+                Text {
+                    text: root.time(seek-bar.dragging ? seek-bar.preview * root.duration : root.position);
+                    color: #ffffff;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    min-width: 44px;
+                }
+                seek-bar := Scrubber {
+                    horizontal-stretch: 1;
+                    value: root.duration > 0 ? root.position / root.duration : 0;
+                    committed(v) => { root.seek(v * root.duration); }
+                }
+                Text {
+                    text: "-" + root.time(max(0, root.duration - root.position));
+                    color: #ffffff;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                    min-width: 52px;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: stretch;
+
+                IconButton {
+                    icon: @image-url("icons/skip-back.svg");
+                    enabled: root.has-previous;
+                    clicked => { root.previous(); }
+                }
+                IconButton {
+                    icon: @image-url("icons/rotate-ccw.svg");
+                    clicked => { root.seek-by(-10); }
+                }
+                IconButton {
+                    icon: root.paused ? @image-url("icons/play.svg") : @image-url("icons/pause.svg");
+                    icon-size: 26px;
+                    clicked => { root.toggle-pause(); }
+                }
+                IconButton {
+                    icon: @image-url("icons/rotate-cw.svg");
+                    clicked => { root.seek-by(10); }
+                }
+                IconButton {
+                    icon: @image-url("icons/skip-forward.svg");
+                    enabled: root.has-next;
+                    clicked => { root.next(); }
+                }
+                Text {
+                    text: root.ends-at;
+                    color: #ffffffcc;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                IconButton {
+                    icon: root.muted || root.volume == 0
+                        ? @image-url("icons/volume-x.svg")
+                        : @image-url("icons/volume-2.svg");
+                    clicked => { root.toggle-mute(); }
+                }
+                volume-bar := Scrubber {
+                    width: 96px;
+                    y: (38px - self.height) / 2;
+                    value: root.muted ? 0 : root.volume / 100;
+                    changed(v) => { root.set-volume(v * 100); }
+                }
+                Rectangle { width: 10px; }
+                IconButton {
+                    icon: @image-url("icons/gauge.svg");
+                }
+                IconButton {
+                    icon: @image-url("icons/captions.svg");
+                }
+                IconButton {
+                    icon: @image-url("icons/audio-lines.svg");
+                }
+                IconButton {
+                    icon: @image-url("icons/list-video.svg");
+                }
+                IconButton {
+                    icon: root.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");
+                    clicked => { root.toggle-fullscreen(); }
+                }
+            }
+        }
+    }
+}

@@ -30,6 +30,23 @@ pub fn install(width: u32, height: u32) -> Result<Rc<MinimalSoftwareWindow>, Pla
     Ok(window)
 }
 
+/// Put the player overlay on screen with plausible state, for layout checks.
+pub fn sample_playback(ui: &crate::AppWindow) {
+    use slint::ComponentHandle;
+    ui.set_playing(true);
+    let playback = ui.global::<crate::Playback>();
+    playback.set_title("IAM Introduction: Users, Groups, Policies".into());
+    playback.set_subtitle("IAM & AWS CLI".into());
+    playback.set_stats("Decoder: d3d11va-copy".into());
+    playback.set_clock("00:32".into());
+    playback.set_ends_at("Ends at 00:35".into());
+    playback.set_position(54.0);
+    playback.set_duration(202.0);
+    playback.set_paused(true);
+    playback.set_volume(80.0);
+    playback.set_has_next(true);
+}
+
 /// Draw the current frame of `window` and save it to `path`.
 pub fn save(window: &MinimalSoftwareWindow, path: &Path) -> Result<(), String> {
     slint::platform::update_timers_and_animations();
