@@ -4,8 +4,11 @@
 pub mod queries;
 
 use crate::error::Result;
-use rusqlite::Connection;
 use std::path::Path;
+
+/// The connection type every query takes — re-exported so frontends can hold
+/// one without depending on (and version-matching) rusqlite themselves.
+pub use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.

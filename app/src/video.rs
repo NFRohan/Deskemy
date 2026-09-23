@@ -3,31 +3,42 @@
 //! anything declared after it in the `.slint` tree simply draws on top of the
 //! video. No native child window, no rect reporting, on any platform.
 
+use crate::session::{Db, Session};
 use crate::{AppWindow, Playback};
-use deskemy_core::importer::structure::clean_title;
+use deskemy_core::config::AppConfig;
 use deskemy_core::mpv::{
-    Mpv, MpvRenderContext, MPV_EVENT_FILE_LOADED, MPV_EVENT_PLAYBACK_RESTART, MPV_EVENT_SHUTDOWN,
+    Mpv, MpvEventEndFile, MpvRenderContext, MPV_END_FILE_REASON_EOF, MPV_EVENT_END_FILE,
+    MPV_EVENT_FILE_LOADED, MPV_EVENT_PLAYBACK_RESTART, MPV_EVENT_SHUTDOWN,
     MPV_RENDER_UPDATE_FRAME,
 };
 use glow::HasContext;
 use slint::{ComponentHandle, GraphicsAPI, RenderingState};
 use std::ffi::c_void;
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-/// A running player: the mpv core plus its event thread. The render side
-/// lives in the window's rendering notifier (see [`Surface`]).
+/// Work to run once mpv can draw (vo=libmpv has no output before that).
+pub type OnReady = Box<dyn FnOnce(&Session)>;
+
+/// A running player: the mpv core, its playback session and its event
+/// thread. The render side lives in the window's rendering notifier (see
+/// [`Surface`]).
 pub struct Player {
+    session: Arc<Session>,
     mpv: Arc<Mpv>,
     events: Option<JoinHandle<()>>,
 }
 
 impl Player {
-    /// Create an mpv core, hook it up to `ui`'s rendering, and queue `file`
-    /// to start as soon as the GL render context exists.
-    pub fn start(ui: &AppWindow, file: PathBuf) -> Result<Self, String> {
+    /// Create the mpv core and session and hook them up to `ui`. `on_ready`
+    /// runs once the GL render context exists — the earliest a file can load.
+    pub fn start(
+        ui: &AppWindow,
+        db: Db,
+        config: AppConfig,
+        on_ready: Option<OnReady>,
+    ) -> Result<Self, String> {
         let mpv = Arc::new(Mpv::new().map_err(|e| e.to_string())?);
         // GPU decode by default; DESKEMY_HWDEC overrides (e.g. `no` to compare).
         let hwdec = std::env::var("DESKEMY_HWDEC").unwrap_or_else(|_| "auto-safe".into());
@@ -38,11 +49,15 @@ impl Player {
         // Nice-to-haves: some libmpv builds lack e.g. `osc` (no Lua), so a
         // missing one is logged rather than fatal.
         for (name, value) in [
-            ("keep-open", "yes"),
+            // End-of-file must fire END_FILE so the lecture completes/advances.
+            ("keep-open", "no"),
             ("idle", "yes"),
+            // Pick up sidecar subtitles (e.g. Udemy .srt) matching the video.
+            ("sub-auto", "fuzzy"),
             ("config", "no"),
             ("terminal", "no"),
             ("osc", "no"),
+            ("osd-level", "0"),
             ("input-default-bindings", "no"),
             ("input-vo-keyboard", "no"),
         ] {
@@ -52,23 +67,14 @@ impl Player {
         }
         mpv.initialize().map_err(|e| e.to_string())?;
 
-        let playback = ui.global::<Playback>();
-        playback.set_title(display_name(&file).into());
-        playback.set_subtitle(
-            file.parent()
-                .and_then(Path::file_name)
-                .map(|s| clean_title(&s.to_string_lossy()))
-                .unwrap_or_default()
-                .into(),
-        );
-        wire_controls(ui, &mpv);
+        let session = Arc::new(Session::new(mpv.clone(), db, config));
+        wire_controls(ui, &session, &mpv);
 
         let events = {
-            let mpv = mpv.clone();
-            let ui = ui.as_weak();
+            let (session, mpv, ui) = (session.clone(), mpv.clone(), ui.as_weak());
             std::thread::Builder::new()
                 .name("mpv-events".into())
-                .spawn(move || pump_events(&mpv, ui))
+                .spawn(move || pump_events(&mpv, &session, ui))
                 .map_err(|e| e.to_string())?
         };
 
@@ -77,9 +83,10 @@ impl Player {
             target: None,
             gl: None,
             rendered: false,
-            pending: Some(file),
+            on_ready,
             wake: Box::into_raw(Box::new(ui.as_weak())),
             ui: ui.as_weak(),
+            session: session.clone(),
             mpv: mpv.clone(),
         };
         ui.window()
@@ -87,13 +94,19 @@ impl Player {
             .map_err(|e| format!("rendering notifier: {e:?}"))?;
 
         Ok(Player {
+            session,
             mpv,
             events: Some(events),
         })
     }
 
-    /// Stop playback and wait for the event thread to see mpv shut down.
+    pub fn session(&self) -> &Arc<Session> {
+        &self.session
+    }
+
+    /// Save progress, stop mpv and wait for its event thread to finish.
     pub fn shutdown(mut self) {
+        self.session.save_now();
         let _ = self.mpv.command(&["quit"]);
         if let Some(events) = self.events.take() {
             let _ = events.join();
@@ -111,11 +124,12 @@ struct Surface {
     gl: Option<glow::Context>,
     /// Whether this frame drew a new video frame (→ report the swap).
     rendered: bool,
-    /// File to load once the render context exists (vo=libmpv needs it).
-    pending: Option<PathBuf>,
+    /// Runs once the render context exists (vo=libmpv needs it to load).
+    on_ready: Option<OnReady>,
     /// Handed to mpv's update callback; freed after the render context.
     wake: *mut slint::Weak<AppWindow>,
     ui: slint::Weak<AppWindow>,
+    session: Arc<Session>,
     mpv: Arc<Mpv>,
 }
 
@@ -155,11 +169,8 @@ impl Surface {
         self.gl = Some(gl);
         tracing::info!("mpv rendering into Slint's OpenGL context");
 
-        if let Some(file) = self.pending.take() {
-            let path = file.to_string_lossy();
-            if let Err(e) = self.mpv.command(&["loadfile", &path]) {
-                tracing::error!(error = %e, file = %path, "loadfile");
-            }
+        if let Some(ready) = self.on_ready.take() {
+            ready(&self.session);
         }
     }
 
@@ -359,8 +370,8 @@ impl Drop for GlState<'_> {
     }
 }
 
-/// Route the overlay's actions to mpv.
-fn wire_controls(ui: &AppWindow, mpv: &Arc<Mpv>) {
+/// Route the overlay's actions to mpv and the session.
+fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
     let playback = ui.global::<Playback>();
     let run = |mpv: &Arc<Mpv>, args: &[&str]| {
         if let Err(e) = mpv.command(args) {
@@ -368,8 +379,13 @@ fn wire_controls(ui: &AppWindow, mpv: &Arc<Mpv>) {
         }
     };
 
-    let m = mpv.clone();
-    playback.on_toggle_pause(move || run(&m, &["cycle", "pause"]));
+    let (s, m) = (session.clone(), mpv.clone());
+    playback.on_toggle_pause(move || {
+        // After the last lecture ends mpv is idle; play means "watch again".
+        if !s.replay_if_ended() {
+            run(&m, &["cycle", "pause"]);
+        }
+    });
     let m = mpv.clone();
     playback.on_seek(move |t| run(&m, &["seek", &format!("{t:.3}"), "absolute"]));
     let m = mpv.clone();
@@ -384,6 +400,17 @@ fn wire_controls(ui: &AppWindow, mpv: &Arc<Mpv>) {
         }
     });
 
+    let step = |session: &Arc<Session>, delta: i32| {
+        let s = session.clone();
+        move || {
+            if let Err(e) = s.step(delta) {
+                tracing::warn!(error = %e, delta, "change lecture");
+            }
+        }
+    };
+    playback.on_previous(step(session, -1));
+    playback.on_next(step(session, 1));
+
     let weak = ui.as_weak();
     playback.on_toggle_fullscreen(move || {
         if let Some(ui) = weak.upgrade() {
@@ -393,23 +420,18 @@ fn wire_controls(ui: &AppWindow, mpv: &Arc<Mpv>) {
         }
     });
 
-    let m = mpv.clone();
-    let weak = ui.as_weak();
+    let (s, m, weak) = (session.clone(), mpv.clone(), ui.as_weak());
     playback.on_back(move || {
+        s.save_now();
         run(&m, &["stop"]);
         if let Some(ui) = weak.upgrade() {
             ui.window().set_fullscreen(false);
             ui.global::<Playback>().set_fullscreen(false);
             ui.set_playing(false);
+            // Progress changed while watching.
+            ui.invoke_refresh_library();
         }
     });
-}
-
-/// Title for a bare file: its cleaned name, the way the library shows lectures.
-fn display_name(file: &Path) -> String {
-    file.file_name()
-        .map(|n| clean_title(&n.to_string_lossy()))
-        .unwrap_or_default()
 }
 
 /// What the overlay shows, sampled from mpv on the event thread.
@@ -436,10 +458,13 @@ impl State {
     }
 }
 
-/// Drain mpv's event queue (it must be drained) and push playback state to
-/// the overlay about five times a second.
-fn pump_events(mpv: &Mpv, ui: slint::Weak<AppWindow>) {
+/// The player's long-lived thread: drains mpv's events (they must be
+/// drained), drives the session (end of file, periodic saves), keeps the
+/// machine awake while playing, and pushes state to the overlay ~5×/s.
+fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
     let mut decoder = String::from("…");
+    let mut shown_revision = u64::MAX;
+    let mut awake = false;
     loop {
         let event = mpv.wait_event(0.2);
         if !event.is_null() {
@@ -454,11 +479,32 @@ fn pump_events(mpv: &Mpv, ui: slint::Weak<AppWindow>) {
                         .unwrap_or_else(|| "software".into());
                     tracing::info!(%decoder, "decoding");
                 }
+                MPV_EVENT_END_FILE => {
+                    let data = unsafe { (*event).data } as *const MpvEventEndFile;
+                    // Only a real end of file — not `stop` or a replacing loadfile.
+                    if !data.is_null() && unsafe { (*data).reason } == MPV_END_FILE_REASON_EOF {
+                        session.on_eof();
+                    }
+                }
                 _ => {}
             }
         }
 
         let s = State::sample(mpv);
+        session.tick(s.position, s.duration, s.paused);
+
+        let want_awake = !s.paused && session.is_loaded();
+        if want_awake != awake {
+            awake = want_awake;
+            set_keep_awake(awake);
+        }
+
+        let (revision, now_playing) = session.now_playing();
+        let now_playing = (revision != shown_revision).then(|| {
+            shown_revision = revision;
+            now_playing
+        });
+
         let now = chrono::Local::now();
         let remaining = (s.duration - s.position).max(0.0) / s.speed.max(0.01);
         let ends = now + chrono::Duration::milliseconds((remaining * 1000.0) as i64);
@@ -472,6 +518,13 @@ fn pump_events(mpv: &Mpv, ui: slint::Weak<AppWindow>) {
 
         let _ = ui.upgrade_in_event_loop(move |ui| {
             let playback = ui.global::<Playback>();
+            if let Some(np) = now_playing {
+                playback.set_title(np.title.into());
+                playback.set_subtitle(np.section.into());
+                playback.set_up_next(np.up_next.unwrap_or_default().into());
+                playback.set_has_previous(np.has_previous);
+                playback.set_has_next(np.has_next);
+            }
             playback.set_position(s.position as f32);
             playback.set_duration(s.duration as f32);
             playback.set_paused(s.paused);
@@ -482,4 +535,26 @@ fn pump_events(mpv: &Mpv, ui: slint::Weak<AppWindow>) {
             playback.set_stats(stats.into());
         });
     }
+    set_keep_awake(false);
 }
+
+/// Keep the machine and display awake while a video is actually playing.
+/// mpv can't do this itself here: with vo=libmpv it has no window for its
+/// stop-screensaver to act on. Windows scopes the request to the calling
+/// thread, so this is only called from the long-lived event thread.
+#[cfg(windows)]
+fn set_keep_awake(on: bool) {
+    use windows_sys::Win32::System::Power::{
+        SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
+    };
+    let flags = if on {
+        ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+    } else {
+        ES_CONTINUOUS
+    };
+    unsafe { SetThreadExecutionState(flags) };
+    tracing::debug!(on, "sleep inhibit");
+}
+
+#[cfg(not(windows))]
+fn set_keep_awake(_on: bool) {}

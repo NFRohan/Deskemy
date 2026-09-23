@@ -1,0 +1,455 @@
+//! Lecture-aware playback: which lecture of which course is playing, the
+//! course playlist, and everything persisted while watching — progress,
+//! completion, watch time, the resume pointer and per-course speed/track
+//! prefs. The rules match the Tauri player (`src-tauri/src/player/mod.rs`).
+
+use deskemy_core::config::AppConfig;
+use deskemy_core::db::{queries, Connection};
+use deskemy_core::importer::structure::clean_title;
+use deskemy_core::mpv::Mpv;
+use deskemy_core::playback::{resume_start, watched_enough};
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
+
+pub type Db = Arc<Mutex<Connection>>;
+
+/// How often progress and watch time are written while playing.
+const SAVE_EVERY: Duration = Duration::from_secs(5);
+
+/// Header / "Up next" text for the loaded lecture.
+#[derive(Clone, Default)]
+pub struct NowPlaying {
+    pub title: String,
+    pub section: String,
+    pub up_next: Option<String>,
+    pub has_previous: bool,
+    pub has_next: bool,
+}
+
+#[derive(Clone)]
+struct Item {
+    lecture_id: String,
+    path: String,
+}
+
+#[derive(Default)]
+struct Inner {
+    course_id: Option<String>,
+    items: Vec<Item>,
+    index: usize,
+    /// None for a bare file opened outside the library (nothing is saved).
+    lecture_id: Option<String>,
+    duration: f64,
+    now: NowPlaying,
+    /// Bumped whenever `now` changes, so the UI only re-reads it then.
+    revision: u64,
+    /// Reached the end without advancing; play restarts the lecture.
+    ended: bool,
+    last_save: Option<Instant>,
+    last_tick: Option<Instant>,
+    /// Real seconds watched since the last flush to `daily_activity`.
+    watch_accum: f64,
+    /// Lectures already counted as completed today (count each once).
+    completed: HashSet<String>,
+}
+
+pub struct Session {
+    mpv: Arc<Mpv>,
+    db: Db,
+    config: AppConfig,
+    // Lock order: `inner`, then `db`. Never the other way around.
+    inner: Mutex<Inner>,
+}
+
+impl Session {
+    pub fn new(mpv: Arc<Mpv>, db: Db, config: AppConfig) -> Self {
+        Session {
+            mpv,
+            db,
+            config,
+            inner: Mutex::new(Inner::default()),
+        }
+    }
+
+    fn inner(&self) -> MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn db(&self) -> MutexGuard<'_, Connection> {
+        self.db.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Open a lecture — resuming where it was left — with its course as the
+    /// playlist.
+    pub fn open(&self, lecture_id: &str) -> Result<(), String> {
+        self.save_now();
+        let (course_id, items) = {
+            let db = self.db();
+            let (_, course_id, _) = queries::get_lecture_playback(&db, lecture_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("lecture {lecture_id} not found"))?;
+            let items = queries::list_course_playlist(&db, &course_id).map_err(|e| e.to_string())?;
+            (course_id, items)
+        };
+        {
+            let mut inner = self.inner();
+            inner.index = items.iter().position(|(id, _)| id == lecture_id).unwrap_or(0);
+            inner.items = items
+                .into_iter()
+                .map(|(lecture_id, path)| Item { lecture_id, path })
+                .collect();
+            inner.course_id = Some(course_id);
+        }
+        self.load_current(true)
+    }
+
+    /// Play a file that isn't in the library. Nothing is persisted.
+    pub fn open_file(&self, path: &Path) -> Result<(), String> {
+        self.save_now();
+        let path = path.to_string_lossy().into_owned();
+        self.mpv.command(&["loadfile", &path]).map_err(|e| e.to_string())?;
+        let mut inner = self.inner();
+        *inner = Inner {
+            completed: std::mem::take(&mut inner.completed),
+            revision: inner.revision + 1,
+            now: NowPlaying {
+                title: file_title(&path),
+                ..NowPlaying::default()
+            },
+            ..Inner::default()
+        };
+        Ok(())
+    }
+
+    /// Previous / next lecture in the course, from the start.
+    pub fn step(&self, delta: i32) -> Result<(), String> {
+        let target = {
+            let inner = self.inner();
+            let target = inner.index as i64 + delta as i64;
+            if target < 0 || target as usize >= inner.items.len() {
+                return Ok(());
+            }
+            target as usize
+        };
+        self.save_now();
+        self.inner().index = target;
+        self.load_current(false)
+    }
+
+    /// Play again after reaching the end (mpv is idle by then).
+    pub fn replay_if_ended(&self) -> bool {
+        if !self.inner().ended {
+            return false;
+        }
+        self.load_current(false).is_ok()
+    }
+
+    fn load_current(&self, resume: bool) -> Result<(), String> {
+        let mut inner = self.inner();
+        let item = inner.items.get(inner.index).cloned().ok_or("empty playlist")?;
+        let course_id = inner.course_id.clone().unwrap_or_default();
+
+        let db = self.db();
+        let (saved, completed, duration) =
+            queries::get_progress(&db, &item.lecture_id).unwrap_or((0.0, false, None));
+        let start = resume_start(resume, saved, completed, duration);
+        // Per-course prefs override the global default speed where present.
+        let prefs = queries::get_course_prefs(&db, &course_id).ok().flatten();
+        let speed = prefs.and_then(|p| p.0).unwrap_or(self.config.default_speed);
+        let view = queries::get_lecture_view(&db, &item.lecture_id).ok().flatten();
+        let up_next = inner
+            .items
+            .get(inner.index + 1)
+            .and_then(|n| queries::get_lecture_view(&db, &n.lecture_id).ok().flatten())
+            .map(|v| v.0);
+        let _ = queries::set_last_lecture(&db, &course_id, &item.lecture_id);
+        drop(db);
+
+        // loadfile <url> [<flags> [<index> [<options>]]] — options is the 4th arg.
+        let loaded = if start > 1.0 {
+            self.mpv
+                .command(&["loadfile", &item.path, "replace", "0", &format!("start={start}")])
+        } else {
+            self.mpv.command(&["loadfile", &item.path])
+        };
+        loaded.map_err(|e| e.to_string())?;
+        let _ = self.mpv.set_property("pause", "no");
+        let _ = self.mpv.set_property("speed", &speed.to_string());
+        // Remembered audio/subtitle choice (mpv applies it once tracks load).
+        if let Some((_, sub_id, subs_on, audio_id)) = prefs {
+            if let Some(a) = audio_id {
+                let _ = self.mpv.set_property("aid", &a.to_string());
+            }
+            match (subs_on, sub_id) {
+                (true, Some(s)) => {
+                    let _ = self.mpv.set_property("sid", &s.to_string());
+                }
+                (false, _) => {
+                    let _ = self.mpv.set_property("sid", "no");
+                }
+                _ => {}
+            }
+        }
+
+        let (title, section) = match view {
+            Some((title, _, _, section)) => (title, section),
+            None => (file_title(&item.path), String::new()),
+        };
+        inner.now = NowPlaying {
+            title,
+            section,
+            up_next,
+            has_previous: inner.index > 0,
+            has_next: inner.index + 1 < inner.items.len(),
+        };
+        inner.revision += 1;
+        inner.lecture_id = Some(item.lecture_id);
+        inner.duration = duration.unwrap_or(0.0);
+        inner.ended = false;
+        let now = Instant::now();
+        inner.last_save = Some(now);
+        inner.last_tick = Some(now);
+        Ok(())
+    }
+
+    /// Called ~5×/s by the event thread with freshly sampled playback state:
+    /// accumulates watch time and persists periodically.
+    pub fn tick(&self, position: f64, duration: f64, paused: bool) {
+        let mut inner = self.inner();
+        if duration > 0.0 {
+            inner.duration = duration;
+        }
+        let now = Instant::now();
+        let elapsed = inner.last_tick.map_or(0.0, |t| now.duration_since(t).as_secs_f64());
+        inner.last_tick = Some(now);
+        if !paused && inner.lecture_id.is_some() {
+            // Capped so a system suspend or long stall doesn't count as watching.
+            inner.watch_accum += elapsed.min(2.0);
+        }
+        if inner.last_save.is_none_or(|t| now.duration_since(t) >= SAVE_EVERY) {
+            inner.last_save = Some(now);
+            self.save(&mut inner, position, false);
+            self.flush_watch(&mut inner);
+        }
+    }
+
+    /// The lecture played to its end: mark it done, then advance if autoplay
+    /// is on and there is a next lecture.
+    pub fn on_eof(&self) {
+        let advance = {
+            let mut inner = self.inner();
+            let duration = inner.duration;
+            self.save(&mut inner, duration, true);
+            self.flush_watch(&mut inner);
+            let advance = self.config.autoplay_next && inner.index + 1 < inner.items.len();
+            if advance {
+                inner.index += 1;
+            } else {
+                inner.ended = true;
+            }
+            advance
+        };
+        if advance {
+            if let Err(e) = self.load_current(false) {
+                tracing::warn!(error = %e, "autoplay next lecture");
+            }
+        }
+    }
+
+    /// Persist everything now — before switching lectures, leaving the player
+    /// or quitting. Reads the position live from mpv, so a seek made just
+    /// before is not lost.
+    pub fn save_now(&self) {
+        let position = self.mpv.get_f64("time-pos");
+        let mut inner = self.inner();
+        if let Some(position) = position {
+            self.save(&mut inner, position, false);
+        }
+        self.flush_watch(&mut inner);
+    }
+
+    /// `(revision, header)` — re-read the header when the revision changes.
+    pub fn now_playing(&self) -> (u64, NowPlaying) {
+        let inner = self.inner();
+        (inner.revision, inner.now.clone())
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.inner().lecture_id.is_some()
+    }
+
+    fn save(&self, inner: &mut Inner, position: f64, reached_end: bool) {
+        let Some(lecture_id) = inner.lecture_id.clone() else { return };
+        let done = reached_end || watched_enough(position, inner.duration);
+        let db = self.db();
+        if let Err(e) = queries::save_progress(&db, &lecture_id, position, done) {
+            tracing::warn!(error = %e, "save progress");
+        }
+        if done && inner.completed.insert(lecture_id) {
+            let _ = queries::add_completion(&db);
+        }
+    }
+
+    fn flush_watch(&self, inner: &mut Inner) {
+        let secs = std::mem::take(&mut inner.watch_accum);
+        if secs > 0.0 {
+            let _ = queries::add_watch_seconds(&self.db(), secs);
+        }
+    }
+}
+
+/// Title for a bare file: its cleaned name, the way the library shows lectures.
+fn file_title(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .map(|n| clean_title(&n.to_string_lossy()))
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deskemy_core::importer::Importer;
+    use deskemy_core::media::stub::StubProber;
+
+    /// A three-lecture course on disk, imported into a scratch database.
+    fn library() -> (tempfile::TempDir, Db, Vec<String>) {
+        let tmp = tempfile::tempdir().unwrap();
+        let course = tmp.path().join("Course");
+        std::fs::create_dir_all(&course).unwrap();
+        for name in ["001 First.mp4", "002 Second.mp4", "003 Third.mp4"] {
+            std::fs::write(course.join(name), b"x").unwrap();
+        }
+        let mut conn = deskemy_core::db::open(&tmp.path().join("deskemy.db")).unwrap();
+        let course_id = Importer::new(Box::new(StubProber))
+            .import_course(&mut conn, None, &course)
+            .unwrap();
+        let lectures = queries::list_course_playlist(&conn, &course_id)
+            .unwrap()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        (tmp, Arc::new(Mutex::new(conn)), lectures)
+    }
+
+    /// A real mpv core with no video/audio output, or None without libmpv.
+    fn headless_mpv() -> Option<Arc<Mpv>> {
+        if !deskemy_core::mpv::is_available() {
+            eprintln!("libmpv not found — skipping");
+            return None;
+        }
+        let mpv = Mpv::new().ok()?;
+        for (name, value) in [("vo", "null"), ("ao", "null"), ("idle", "yes"), ("config", "no")] {
+            mpv.set_option(name, value).ok()?;
+        }
+        mpv.initialize().ok()?;
+        Some(Arc::new(mpv))
+    }
+
+    fn progress(db: &Db, lecture: &str) -> (f64, bool) {
+        let (position, completed, _) = queries::get_progress(&db.lock().unwrap(), lecture).unwrap();
+        (position, completed)
+    }
+
+    /// (watch seconds, lectures completed) recorded today.
+    fn today(db: &Db) -> (f64, i64) {
+        let rows = queries::daily_activity(&db.lock().unwrap()).unwrap();
+        rows.last().map_or((0.0, 0), |r| (r.2, r.3))
+    }
+
+    #[test]
+    fn opening_a_lecture_sets_up_the_course_playlist() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db, AppConfig::default());
+
+        session.open(&lectures[1]).unwrap();
+        let (_, now) = session.now_playing();
+        assert_eq!(now.title, "Second");
+        assert_eq!(now.up_next.as_deref(), Some("Third"));
+        assert!(now.has_previous && now.has_next);
+
+        session.step(1).unwrap();
+        let (_, now) = session.now_playing();
+        assert_eq!(now.title, "Third");
+        assert!(now.up_next.is_none() && !now.has_next);
+
+        // Stepping past either end is a no-op.
+        session.step(1).unwrap();
+        assert_eq!(session.now_playing().1.title, "Third");
+    }
+
+    #[test]
+    fn end_of_file_completes_the_lecture_and_autoplays_the_next() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db.clone(), AppConfig::default());
+
+        session.open(&lectures[0]).unwrap();
+        session.tick(99.0, 100.0, false);
+        session.on_eof();
+
+        assert_eq!(progress(&db, &lectures[0]), (100.0, true));
+        assert_eq!(session.now_playing().1.title, "Second");
+        assert_eq!(today(&db).1, 1);
+        assert!(today(&db).0 > 0.0, "watch time is flushed at the end");
+    }
+
+    #[test]
+    fn a_completion_counts_once_per_session() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db.clone(), AppConfig::default());
+
+        session.open(&lectures[0]).unwrap();
+        session.tick(99.0, 100.0, false);
+        session.on_eof();
+        session.step(-1).unwrap();
+        session.tick(99.0, 100.0, false);
+        session.on_eof();
+
+        assert_eq!(today(&db).1, 1);
+    }
+
+    #[test]
+    fn without_autoplay_the_last_position_is_kept_and_play_restarts() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let config = AppConfig {
+            autoplay_next: false,
+            ..AppConfig::default()
+        };
+        let session = Session::new(mpv, db.clone(), config);
+
+        session.open(&lectures[0]).unwrap();
+        session.tick(99.0, 100.0, false);
+        session.on_eof();
+
+        assert_eq!(session.now_playing().1.title, "First", "stays on the lecture");
+        assert!(session.replay_if_ended());
+        assert!(!session.replay_if_ended(), "only once the lecture has ended");
+    }
+
+    #[test]
+    fn a_missing_resume_lecture_falls_back_to_the_first() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db.clone(), AppConfig::default());
+
+        let course_id = {
+            let conn = db.lock().unwrap();
+            queries::get_lecture_playback(&conn, &lectures[0]).unwrap().unwrap().1
+        };
+        let row = crate::CourseRow {
+            id: course_id.into(),
+            resume: "gone-after-a-rescan".into(),
+            ..Default::default()
+        };
+        let candidates = crate::library::lectures_to_open(&db, &row);
+        assert_eq!(candidates, vec!["gone-after-a-rescan".to_string(), lectures[0].clone()]);
+        assert!(session.open(&candidates[0]).is_err());
+        assert!(session.open(&candidates[1]).is_ok());
+    }
+}

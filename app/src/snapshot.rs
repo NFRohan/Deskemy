@@ -45,6 +45,7 @@ pub fn sample_playback(ui: &crate::AppWindow) {
     playback.set_paused(true);
     playback.set_volume(80.0);
     playback.set_has_next(true);
+    playback.set_up_next("IAM Users & Groups Hands On".into());
 }
 
 /// Draw the current frame of `window` and save it to `path`.

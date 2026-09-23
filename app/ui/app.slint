@@ -5,6 +5,9 @@ import { Playback, PlayerOverlay } from "player.slint";
 export { Playback }
 
 export struct CourseRow {
+    id: string,
+    /// Lecture to resume ("" = start from the first one).
+    resume: string,
     title: string,
     lectures: int,
     completed: int,
@@ -21,6 +24,8 @@ export component AppWindow inherits Window {
 
     in property <string> status;
     in property <[CourseRow]> courses;
+    callback open-course(CourseRow);
+    callback refresh-library();
 
     // Video: mpv renders into a GL texture that Rust hands us here. Rust reads
     // the element's size back to render at exactly its physical resolution.
@@ -49,6 +54,7 @@ export component AppWindow inherits Window {
         stats: Playback.stats;
         clock: Playback.clock;
         ends-at: Playback.ends-at;
+        up-next: Playback.up-next;
         position: Playback.position;
         duration: Playback.duration;
         paused: Playback.paused;
@@ -73,7 +79,7 @@ export component AppWindow inherits Window {
         width: parent.width;
         height: parent.height;
         padding: 32px;
-        spacing: 8px;
+        spacing: 2px;
         alignment: start;
 
         Text {
@@ -90,17 +96,27 @@ export component AppWindow inherits Window {
 
         Rectangle { height: 16px; }
 
-        for course in root.courses: HorizontalLayout {
-            spacing: 12px;
-            Text {
-                text: course.title;
-                color: #e4e5e8;
-                horizontal-stretch: 1;
-                overflow: elide;
+        for course in root.courses: Rectangle {
+            border-radius: 6px;
+            background: row-touch.has-hover ? #1b1d22 : transparent;
+
+            HorizontalLayout {
+                padding: 8px;
+                spacing: 12px;
+                Text {
+                    text: course.title;
+                    color: #e4e5e8;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: course.completed + " / " + course.lectures + " lectures";
+                    color: #8b8d94;
+                }
             }
-            Text {
-                text: course.completed + " / " + course.lectures + " lectures";
-                color: #8b8d94;
+            row-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.open-course(course); }
             }
         }
     }

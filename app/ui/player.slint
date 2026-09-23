@@ -9,6 +9,7 @@ export global Playback {
     in property <string> stats;
     in property <string> clock;
     in property <string> ends-at;
+    in property <string> up-next;
     in property <float> position;
     in property <float> duration;
     in property <bool> paused;
@@ -120,6 +121,7 @@ export component PlayerOverlay inherits Rectangle {
     in property <string> stats;
     in property <string> clock;
     in property <string> ends-at;
+    in property <string> up-next;
     in property <float> position;
     in property <float> duration;
     in property <bool> paused;
@@ -301,7 +303,42 @@ export component PlayerOverlay inherits Rectangle {
                     color: #ffffffcc;
                     font-size: 13px;
                     vertical-alignment: center;
+                }
+
+                // Up next: right-aligned in the free space; clicking it skips ahead.
+                HorizontalLayout {
                     horizontal-stretch: 1;
+                    alignment: end;
+                    padding-right: 12px;
+
+                    if root.up-next != "": Rectangle {
+                        max-width: 380px;
+                        border-radius: 6px;
+                        background: up-next-touch.has-hover ? #ffffff1f : transparent;
+
+                        VerticalLayout {
+                            alignment: center;
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            Text {
+                                text: "Up next";
+                                color: #ffffff99;
+                                font-size: 11px;
+                                horizontal-alignment: right;
+                            }
+                            Text {
+                                text: root.up-next;
+                                color: #ffffff;
+                                font-size: 13px;
+                                horizontal-alignment: right;
+                                overflow: elide;
+                            }
+                        }
+                        up-next-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.next(); }
+                        }
+                    }
                 }
 
                 IconButton {
