@@ -64,6 +64,8 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let ui = AppWindow::new()?;
     let (db, config) = open_library(&ui);
+    ui.global::<Theme>().set_mode(config.theme.as_str().into());
+    wire_window(&ui);
     library::show(&ui, &db);
 
     if let Mode::Snapshot { path, player } = mode {
@@ -123,6 +125,31 @@ fn main() -> Result<(), slint::PlatformError> {
     let result = ui.run();
     player.shutdown();
     result
+}
+
+/// Frameless-window actions for the custom title bars.
+fn wire_window(ui: &AppWindow) {
+    let chrome = ui.global::<WindowChrome>();
+    let weak = ui.as_weak();
+    chrome.on_minimize(move || {
+        if let Some(ui) = weak.upgrade() {
+            ui.window().set_minimized(true);
+        }
+    });
+    let weak = ui.as_weak();
+    chrome.on_toggle_maximize(move || {
+        if let Some(ui) = weak.upgrade() {
+            let window = ui.window();
+            window.set_maximized(!window.is_maximized());
+        }
+    });
+    // Hiding the only window ends the event loop, so shutdown saves as usual.
+    let weak = ui.as_weak();
+    chrome.on_close(move || {
+        if let Some(ui) = weak.upgrade() {
+            let _ = ui.hide();
+        }
+    });
 }
 
 /// Fix section titles broken by the old folder-name cleaner ("04. IAM" → "04").

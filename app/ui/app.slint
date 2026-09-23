@@ -1,14 +1,18 @@
 // Deskemy — Slint frontend (port in progress; see docs/slint-port.md).
 
+import "fonts/InterVariable.ttf";
+
 import {
     BookmarkRow, LectureRow, MenuItem, Playback, PlayerOverlay, ResourceGroup, ResourceItem, SectionRow,
     StatGroup, StatLine, StatRow,
 } from "player.slint";
 import { CoursePanel } from "course_panel.slint";
+import { Nav, NotPortedYet, Sidebar, TopBar, WindowChrome } from "shell.slint";
+import { Theme } from "theme.slint";
 
 export {
-    BookmarkRow, LectureRow, MenuItem, Playback, ResourceGroup, ResourceItem, SectionRow, StatGroup,
-    StatLine, StatRow,
+    BookmarkRow, LectureRow, MenuItem, Nav, Playback, ResourceGroup, ResourceItem, SectionRow, StatGroup,
+    StatLine, StatRow, Theme, WindowChrome,
 }
 
 export struct CourseRow {
@@ -26,8 +30,16 @@ export component AppWindow inherits Window {
     preferred-height: 800px;
     min-width: 900px;
     min-height: 600px;
-    background: root.playing ? #000000 : #0e0f12;
+    // Frameless: the top bar (and the player's header) are the title bar.
+    no-frame: true;
+    resize-border-width: root.maximized || Playback.fullscreen ? 0px : 6px;
+    background: root.playing ? #000000 : Theme.background;
+    default-font-family: "Inter Variable";
     default-font-size: 14px;
+
+    // Keep the maximize/restore glyph honest however the window changed
+    // (button, double-click, Win+↑, snapping).
+    changed maximized => { WindowChrome.maximized = root.maximized; }
 
     in property <string> status;
     in property <[CourseRow]> courses;
@@ -67,48 +79,71 @@ export component AppWindow inherits Window {
         height: parent.height;
     }
 
-    if !root.playing: VerticalLayout {
+    // Everything but the player: sidebar, top bar and the current page.
+    if !root.playing: HorizontalLayout {
         width: parent.width;
         height: parent.height;
-        padding: 32px;
-        spacing: 2px;
-        alignment: start;
 
-        Text {
-            text: "Deskemy";
-            font-size: 28px;
-            font-weight: 700;
-            color: #f2f2f3;
-        }
+        Sidebar { }
 
-        Text {
-            text: root.status;
-            color: #8b8d94;
-        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            TopBar { }
 
-        Rectangle { height: 16px; }
+            Rectangle {
+                vertical-stretch: 1;
+                background: Theme.background;
 
-        for course in root.courses: Rectangle {
-            border-radius: 6px;
-            background: row-touch.has-hover ? #1b1d22 : transparent;
+                if Nav.page == "library": Flickable {
+                    content-height: library.preferred-height;
+                    library := VerticalLayout {
+                        padding: 32px;
+                        spacing: 2px;
+                        alignment: start;
 
-            HorizontalLayout {
-                padding: 8px;
-                spacing: 12px;
-                Text {
-                    text: course.title;
-                    color: #e4e5e8;
-                    horizontal-stretch: 1;
-                    overflow: elide;
+                        Text {
+                            text: "Library";
+                            color: Theme.on-surface;
+                            font-size: Theme.display-sm;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.status;
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.body-sm;
+                        }
+                        Rectangle { height: 16px; }
+
+                        for course in root.courses: Rectangle {
+                            border-radius: 6px;
+                            background: row-touch.has-hover ? Theme.surface-container-high : transparent;
+
+                            HorizontalLayout {
+                                padding: 8px;
+                                spacing: 12px;
+                                Text {
+                                    text: course.title;
+                                    color: Theme.on-surface;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: course.completed + " / " + course.lectures + " lectures";
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.body-sm;
+                                }
+                            }
+                            row-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.open-course(course); }
+                            }
+                        }
+                    }
                 }
-                Text {
-                    text: course.completed + " / " + course.lectures + " lectures";
-                    color: #8b8d94;
+
+                if Nav.page != "library": NotPortedYet {
+                    title: Nav.crumbs[0];
                 }
-            }
-            row-touch := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.open-course(course); }
             }
         }
     }

@@ -2,6 +2,8 @@
 // directly on the video, monochrome, no panels — only soft scrims top and
 // bottom for legibility — with a thin seek bar and "Ends at" time.
 
+import { WindowButtons, WindowChrome } from "shell.slint";
+
 /// One entry in a track / chapter / speed menu.
 export struct MenuItem {
     id: int,
@@ -514,6 +516,16 @@ export component PlayerOverlay inherits Rectangle {
                 height: 120px;
                 background: @linear-gradient(180deg, #000000b3 0%, #00000000 100%);
             }
+            // The window is frameless, so the header doubles as its title bar:
+            // drag to move, double-click to maximize (not in fullscreen).
+            if !Playback.fullscreen: WindowMoveArea {
+                y: 0;
+                width: parent.width;
+                height: 72px;
+                TouchArea {
+                    double-clicked => { WindowChrome.toggle-maximize(); }
+                }
+            }
             HorizontalLayout {
                 y: 0;
                 height: 96px;
@@ -552,6 +564,12 @@ export component PlayerOverlay inherits Rectangle {
                     font-weight: 600;
                     vertical-alignment: top;
                     y: 16px;
+                }
+                if !Playback.fullscreen: WindowButtons {
+                    y: 8px;
+                    height: 32px;
+                    tint: #ffffff;
+                    hover: #ffffff26;
                 }
             }
 

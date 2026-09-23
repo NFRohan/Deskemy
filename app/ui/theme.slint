@@ -1,0 +1,45 @@
+// Deskemy's design tokens — the Tauri app's "Modern Utility" system
+// (src/app.css), dark-first with a light variant. Names follow the CSS
+// variables, so a page ports by reading its Tailwind classes straight across.
+
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    /// "dark", "light" or "system" (follows the OS, live) — from config.theme.
+    in-out property <string> mode: "dark";
+    out property <bool> dark: root.mode == "system" ? Palette.color-scheme != ColorScheme.light : root.mode != "light";
+
+    // Surfaces / tonal layers
+    out property <color> background: root.dark ? #0f1115 : #f6f6f9;
+    out property <color> surface: root.dark ? #111317 : #ffffff;
+    out property <color> surface-container-lowest: root.dark ? #0c0e12 : #ffffff;
+    out property <color> surface-container-low: root.dark ? #1a1c20 : #f3f2f7;
+    out property <color> surface-container: root.dark ? #1e2024 : #ededf2;
+    out property <color> surface-container-high: root.dark ? #282a2e : #e6e5ec;
+    out property <color> surface-container-highest: root.dark ? #333539 : #e0dfe7;
+
+    // Text / lines
+    out property <color> on-surface: root.dark ? #e2e2e8 : #1b1b1f;
+    out property <color> on-surface-variant: root.dark ? #d1c1d7 : #48454e;
+    out property <color> outline: root.dark ? #9a8ca0 : #79767f;
+    out property <color> outline-variant: root.dark ? #4e4354 : #cac5d1;
+    out property <color> border: root.dark ? #2d3139 : #dcdae2;
+
+    // Brand + accents
+    out property <color> primary: root.dark ? #e2b6ff : #7b1fa2;
+    out property <color> primary-container: #a435f0;
+    out property <color> on-primary-container: root.dark ? #fff5fe : #ffffff;
+    out property <color> inverse-primary: root.dark ? #8e10db : #8410cf;
+    out property <color> secondary-container: root.dark ? #3b93f1 : #1f6fd0;
+    out property <color> accent-blue: root.dark ? #0078d4 : #0067c0;
+    out property <color> error: root.dark ? #ffb4ab : #ba1a1a;
+
+    // Type scale — Inter everywhere (sizes; weights are set where used).
+    out property <length> display-sm: 24px;
+    out property <length> headline-md: 18px;
+    out property <length> headline-sm: 16px;
+    out property <length> body-md: 14px;
+    out property <length> body-sm: 13px;
+    out property <length> label-md: 12px;
+    out property <length> label-sm: 11px;
+}

@@ -1,0 +1,284 @@
+// The app shell: frameless-window chrome, the top bar and the sidebar — the
+// Tauri app's TopBar.svelte / Sidebar.svelte.
+
+import { Theme } from "theme.slint";
+
+/// Window actions (carried out in Rust) and the state their buttons show.
+export global WindowChrome {
+    in property <bool> maximized;
+    callback minimize();
+    callback toggle-maximize();
+    callback close();
+}
+
+/// Which page is showing, and the breadcrumbs for it.
+export global Nav {
+    in-out property <string> page: "library";
+    in-out property <[string]> crumbs: ["Library"];
+    in-out property <bool> sidebar-collapsed;
+}
+
+component WindowButton inherits Rectangle {
+    in property <string> label;
+    in property <string> commands;
+    in property <color> tint;
+    in property <color> hover;
+    callback clicked;
+
+    width: 40px;
+    height: 32px;
+    border-radius: 4px;
+    background: touch.has-hover ? root.hover : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    Path {
+        commands: root.commands;
+        stroke: root.tint;
+        stroke-width: 1px;
+        viewbox-width: 10;
+        viewbox-height: 10;
+        width: 10px;
+        height: 10px;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Minimize / maximize-restore / close. `tint` is the glyph colour, so the
+/// player can use them in white over video.
+export component WindowButtons inherits HorizontalLayout {
+    in property <color> tint: Theme.on-surface-variant;
+    in property <color> hover: Theme.surface-container-highest;
+    spacing: 2px;
+
+    WindowButton {
+        label: "Minimize";
+        tint: root.tint;
+        hover: root.hover;
+        commands: "M 0.5 5.5 L 9.5 5.5";
+        clicked => { WindowChrome.minimize(); }
+    }
+    WindowButton {
+        label: WindowChrome.maximized ? "Restore" : "Maximize";
+        tint: root.tint;
+        hover: root.hover;
+        commands: WindowChrome.maximized
+            ? "M 0.5 3.5 L 6.5 3.5 L 6.5 9.5 L 0.5 9.5 Z M 2.5 3.5 L 2.5 0.5 L 9.5 0.5 L 9.5 7.5 L 6.5 7.5"
+            : "M 0.5 0.5 L 9.5 0.5 L 9.5 9.5 L 0.5 9.5 Z";
+        clicked => { WindowChrome.toggle-maximize(); }
+    }
+    WindowButton {
+        label: "Close";
+        tint: root.tint;
+        hover: #e81123;
+        commands: "M 0.5 0.5 L 9.5 9.5 M 9.5 0.5 L 0.5 9.5";
+        clicked => { WindowChrome.close(); }
+    }
+}
+
+/// The 48px bar over the page: drag it to move the window, double-click to
+/// maximize; breadcrumbs on the left, window buttons on the right.
+export component TopBar inherits Rectangle {
+    height: 48px;
+    background: Theme.surface;
+
+    WindowMoveArea {
+        TouchArea {
+            double-clicked => { WindowChrome.toggle-maximize(); }
+        }
+
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 8px;
+            spacing: 6px;
+
+            for crumb[i] in Nav.crumbs: HorizontalLayout {
+                spacing: 6px;
+                if i > 0: Text {
+                    text: "/";
+                    color: Theme.outline-variant;
+                    font-size: Theme.label-md;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: crumb;
+                    color: i == Nav.crumbs.length - 1 ? Theme.on-surface : Theme.on-surface-variant;
+                    font-size: Theme.label-md;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            WindowButtons {
+                y: 8px;
+                height: 32px;
+            }
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.outline-variant;
+    }
+}
+
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> active;
+    in property <bool> collapsed;
+    callback clicked;
+
+    height: 40px;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    background: root.active ? Theme.surface-container-high : touch.has-hover ? Theme.surface-container-highest : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    // The active page's accent bar.
+    Rectangle {
+        x: 0;
+        width: 4px;
+        background: root.active ? Theme.secondary-container : transparent;
+    }
+
+    HorizontalLayout {
+        padding-left: root.collapsed ? 0px : 16px;
+        spacing: 12px;
+        alignment: root.collapsed ? center : start;
+
+        Image {
+            source: root.icon;
+            width: 20px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            colorize: root.active ? Theme.on-surface : Theme.on-surface-variant;
+        }
+        if !root.collapsed: Text {
+            text: root.label;
+            color: root.active ? Theme.on-surface : Theme.on-surface-variant;
+            font-size: Theme.body-md;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// The left sidebar: brand, collapse control and the page list.
+export component Sidebar inherits Rectangle {
+    width: Nav.sidebar-collapsed ? 64px : 240px;
+    animate width { duration: 200ms; }
+    background: Theme.surface-container-low;
+    clip: true;
+
+    property <[{ id: string, label: string, icon: image }]> items: [
+        { id: "library", label: "Library", icon: @image-url("icons/library.svg") },
+        { id: "search", label: "Search", icon: @image-url("icons/search.svg") },
+        { id: "tracks", label: "Career Tracks", icon: @image-url("icons/route.svg") },
+        { id: "favorites", label: "Favorites", icon: @image-url("icons/star.svg") },
+        { id: "bookmarks", label: "Bookmarks", icon: @image-url("icons/bookmark.svg") },
+        { id: "history", label: "History", icon: @image-url("icons/history.svg") },
+        { id: "stats", label: "Stats", icon: @image-url("icons/chart-column.svg") },
+        { id: "settings", label: "Settings", icon: @image-url("icons/settings.svg") },
+    ];
+
+    VerticalLayout {
+        padding-top: 24px;
+        padding-bottom: 24px;
+        spacing: 32px;
+
+        // Brand + collapse control. Collapsed, the expander stands in for the logo.
+        HorizontalLayout {
+            height: 32px;
+            padding-left: Nav.sidebar-collapsed ? 0px : 24px;
+            padding-right: Nav.sidebar-collapsed ? 0px : 16px;
+            spacing: 12px;
+            alignment: Nav.sidebar-collapsed ? center : stretch;
+
+            if !Nav.sidebar-collapsed: Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                clip: true;
+                Image {
+                    source: @image-url("logo.png");
+                    width: 32px;
+                    height: 32px;
+                }
+            }
+            if !Nav.sidebar-collapsed: Text {
+                text: "Deskemy";
+                color: Theme.primary;
+                font-size: Theme.headline-md;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 6px;
+                background: toggle-touch.has-hover ? Theme.surface-container-highest : transparent;
+                accessible-role: button;
+                accessible-label: Nav.sidebar-collapsed ? "Expand sidebar" : "Collapse sidebar";
+                Image {
+                    source: Nav.sidebar-collapsed ? @image-url("icons/panel-left-open.svg") : @image-url("icons/panel-left-close.svg");
+                    width: 18px;
+                    height: 18px;
+                    colorize: Theme.on-surface-variant;
+                }
+                toggle-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Nav.sidebar-collapsed = !Nav.sidebar-collapsed; }
+                }
+            }
+        }
+
+        VerticalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 4px;
+            alignment: start;
+            vertical-stretch: 1;
+
+            for item in root.items: NavItem {
+                label: item.label;
+                icon: item.icon;
+                collapsed: Nav.sidebar-collapsed;
+                // The course page counts as the library.
+                active: Nav.page == item.id || (item.id == "library" && Nav.page == "course");
+                clicked => {
+                    Nav.page = item.id;
+                    Nav.crumbs = [item.label];
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        background: Theme.outline-variant;
+    }
+}
+
+/// Stand-in for pages the port hasn't reached yet.
+export component NotPortedYet inherits Rectangle {
+    in property <string> title;
+    Text {
+        text: root.title + " hasn't been ported yet.";
+        color: Theme.on-surface-variant;
+        font-size: Theme.body-md;
+    }
+}
