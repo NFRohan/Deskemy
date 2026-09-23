@@ -65,16 +65,21 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
   thin seek bar with elapsed and −remaining, transport cluster, "Ends at",
   volume, fullscreen; auto-hides after 2.5 s idle (not while paused or
   dragging); click toggles pause, double-click toggles fullscreen
-- ☐ Lecture-aware playback: open by lecture id, progress saving + resume +
+- ☑ Lecture-aware playback: open by lecture id, progress saving + resume +
   completion (95%), watch time, playlist / previous / next / autoplay,
-  "Up next"
-- ☐ Track menus — chapters, audio, subtitles (each only when present) — and
+  "Up next"; saves on quit (the Tauri app doesn't)
+- ☑ Track menus — chapters, audio, subtitles (each only when present) — and
   speed; per-course prefs
-- ☐ Bookmark this moment (pause, label, list + delete)
-- ☐ Sleep timer (N minutes / end of lecture, countdown badge)
-- ☐ Course content panel (P) with Content / Resources (R) tabs
-- ☐ Keyboard shortcuts (the Tauri app's full map) + cheat sheet (?)
-- ☐ Keep-awake, stats overlay toggle
+- ☑ Bookmark this moment (pause, label, list + delete)
+- ☑ Sleep timer (N minutes / end of lecture, countdown badge)
+- ☑ Course content panel (P) with Content / Resources (R) tabs
+- ☑ Keyboard shortcuts (the Tauri app's full map) + cheat sheet (?)
+- ☑ Keep-awake
+- ☐ **Run it** — the controls above are verified offscreen and by tests, but
+  not yet clicked through in a real window
+- ☐ Stats overlay toggle (the decoder line is always on for now)
+- ☐ Fullscreen from a maximized window: the Tauri app stages this to avoid a
+  visible jump (`imm` in `src-tauri/src/lib.rs`); check whether winit needs it
 
 ## Later phases
 
