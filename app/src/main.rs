@@ -66,7 +66,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let (db, config) = open_library(&ui);
     ui.global::<Theme>().set_mode(config.theme.as_str().into());
     wire_window(&ui);
-    library::show(&ui, &db);
+    let library = library::LibraryPage::new(db.clone());
+    library.reload(&ui);
 
     if let Mode::Snapshot { path, player } = mode {
         let window = offscreen.expect("snapshot platform installed");
@@ -100,9 +101,9 @@ fn main() -> Result<(), slint::PlatformError> {
         .map_err(slint::PlatformError::Other)?;
 
     let (session, weak, library_db) = (player.session().clone(), ui.as_weak(), db.clone());
-    ui.on_open_course(move |row| {
+    ui.global::<Library>().on_open_course(move |course, resume| {
         let Some(ui) = weak.upgrade() else { return };
-        let opened = library::lectures_to_open(&library_db, &row)
+        let opened = library::lectures_to_open(&library_db, &course, &resume)
             .into_iter()
             .any(|id| match session.open(&id) {
                 Ok(()) => true,
@@ -115,10 +116,16 @@ fn main() -> Result<(), slint::PlatformError> {
             ui.set_playing(true);
         }
     });
-    let (weak, library_db) = (ui.as_weak(), db.clone());
+    let (weak, page) = (ui.as_weak(), library.clone());
+    ui.global::<Library>().on_apply(move || {
+        if let Some(ui) = weak.upgrade() {
+            page.apply(&ui);
+        }
+    });
+    let (weak, page) = (ui.as_weak(), library.clone());
     ui.on_refresh_library(move || {
         if let Some(ui) = weak.upgrade() {
-            library::show(&ui, &library_db);
+            page.reload(&ui);
         }
     });
 
@@ -180,7 +187,7 @@ fn open_library(ui: &AppWindow) -> (Db, AppConfig) {
         }
         Some(Err(e)) => {
             tracing::error!(error = %e, "could not open library");
-            ui.set_status(format!("Could not open library: {e}").into());
+            ui.global::<Library>().set_status_text(format!("Could not open the library: {e}").into());
             None
         }
         None => None,

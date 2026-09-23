@@ -8,20 +8,12 @@ import {
 } from "player.slint";
 import { CoursePanel } from "course_panel.slint";
 import { Nav, NotPortedYet, Sidebar, TopBar, WindowChrome } from "shell.slint";
+import { CourseCard, Hero, Library, LibraryPage, SelectOption } from "library.slint";
 import { Theme } from "theme.slint";
 
 export {
-    BookmarkRow, LectureRow, MenuItem, Nav, Playback, ResourceGroup, ResourceItem, SectionRow, StatGroup,
-    StatLine, StatRow, Theme, WindowChrome,
-}
-
-export struct CourseRow {
-    id: string,
-    /// Lecture to resume ("" = start from the first one).
-    resume: string,
-    title: string,
-    lectures: int,
-    completed: int,
+    BookmarkRow, CourseCard, Hero, LectureRow, Library, MenuItem, Nav, Playback, ResourceGroup, ResourceItem,
+    SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme, WindowChrome,
 }
 
 export component AppWindow inherits Window {
@@ -41,9 +33,7 @@ export component AppWindow inherits Window {
     // (button, double-click, Win+↑, snapping).
     changed maximized => { WindowChrome.maximized = root.maximized; }
 
-    in property <string> status;
-    in property <[CourseRow]> courses;
-    callback open-course(CourseRow);
+    /// Re-read the library (after watching, progress has changed).
     callback refresh-library();
 
     // Video: mpv renders into a GL texture that Rust hands us here. Rust reads
@@ -94,52 +84,7 @@ export component AppWindow inherits Window {
                 vertical-stretch: 1;
                 background: Theme.background;
 
-                if Nav.page == "library": Flickable {
-                    content-height: library.preferred-height;
-                    library := VerticalLayout {
-                        padding: 32px;
-                        spacing: 2px;
-                        alignment: start;
-
-                        Text {
-                            text: "Library";
-                            color: Theme.on-surface;
-                            font-size: Theme.display-sm;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: root.status;
-                            color: Theme.on-surface-variant;
-                            font-size: Theme.body-sm;
-                        }
-                        Rectangle { height: 16px; }
-
-                        for course in root.courses: Rectangle {
-                            border-radius: 6px;
-                            background: row-touch.has-hover ? Theme.surface-container-high : transparent;
-
-                            HorizontalLayout {
-                                padding: 8px;
-                                spacing: 12px;
-                                Text {
-                                    text: course.title;
-                                    color: Theme.on-surface;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
-                                }
-                                Text {
-                                    text: course.completed + " / " + course.lectures + " lectures";
-                                    color: Theme.on-surface-variant;
-                                    font-size: Theme.body-sm;
-                                }
-                            }
-                            row-touch := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { root.open-course(course); }
-                            }
-                        }
-                    }
-                }
+                if Nav.page == "library": LibraryPage { }
 
                 if Nav.page != "library": NotPortedYet {
                     title: Nav.crumbs[0];

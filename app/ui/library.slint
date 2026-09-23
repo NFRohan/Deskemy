@@ -1,0 +1,640 @@
+// The Library home — Continue Watching, filters and the course grid — as the
+// Tauri app's routes/+page.svelte and CourseCard.svelte.
+
+import { Theme } from "theme.slint";
+
+export struct CourseCard {
+    id: string,
+    /// Lecture to resume ("" = start from the first).
+    resume: string,
+    title: string,
+    lectures: int,
+    percent: int,
+    started: bool,
+    finished: bool,
+    /// Ready / Missing / Error / Scanning / Importing.
+    status: string,
+    /// "3h 12m", or "" when unknown.
+    duration: string,
+    thumbnail: image,
+    has-thumbnail: bool,
+}
+
+export struct Hero {
+    visible: bool,
+    id: string,
+    resume: string,
+    course: string,
+    lecture: string,
+    /// Whether `lecture` is a real resume point ("Continue where you left off").
+    resuming: bool,
+    percent: int,
+    completed: int,
+    lectures: int,
+    image: image,
+    has-image: bool,
+}
+
+/// One choice in a dropdown.
+export struct SelectOption {
+    value: string,
+    label: string,
+}
+
+/// The page's data (from Rust) and its filters (edited here, applied in Rust).
+export global Library {
+    in property <int> total;
+    in property <Hero> hero;
+    in property <[CourseCard]> cards;
+    in property <[string]> tags;
+    /// "All tracks" followed by each career track.
+    in property <[SelectOption]> track-options;
+    in property <string> track-label: "All tracks";
+    in property <string> status-text;
+
+    in-out property <string> query;
+    in-out property <string> sort: "recent";
+    in-out property <string> status: "all";
+    in-out property <string> tag;
+    in-out property <string> track;
+
+    /// A filter changed: recompute the grid.
+    callback apply();
+    callback open-course(string, string);
+}
+
+component ProgressBar inherits Rectangle {
+    in property <int> value;
+    in property <bool> complete;
+    height: 4px;
+    border-radius: self.height / 2;
+    background: Theme.border;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: parent.width * max(0, min(100, root.value)) / 100;
+        border-radius: parent.border-radius;
+        background: root.complete ? Theme.secondary-container : Theme.accent-blue;
+    }
+}
+
+component Pill inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+
+    height: 24px;
+    width: label.preferred-width + 20px;
+    border-radius: self.height / 2;
+    background: root.selected ? Theme.primary-container : Theme.surface-container-high;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.clicked(); }
+
+    label := Text {
+        text: root.text;
+        color: root.selected ? Theme.on-primary-container : touch.has-hover ? Theme.on-surface : Theme.on-surface-variant;
+        font-size: Theme.label-md;
+        font-weight: 600;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A dropdown in the page's own style (a native-looking one would clash).
+component Select inherits Rectangle {
+    in property <[SelectOption]> options;
+    in-out property <string> value;
+    /// What the closed dropdown shows (the label of `value`).
+    in property <string> label;
+    in property <length> least-width: 120px;
+    callback changed();
+
+    height: 32px;
+    width: max(root.least-width, text.preferred-width + 40px);
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: touch.has-hover ? Theme.outline : Theme.outline-variant;
+    background: Theme.background;
+    accessible-role: combobox;
+    accessible-value: root.label;
+
+    text := Text {
+        x: 12px;
+        text: root.label;
+        color: Theme.on-surface;
+        font-size: Theme.body-sm;
+        vertical-alignment: center;
+    }
+    Image {
+        x: parent.width - self.width - 10px;
+        source: @image-url("icons/chevron-down.svg");
+        width: 14px;
+        height: 14px;
+        colorize: Theme.on-surface-variant;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+
+    popup := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: max(root.width, 180px);
+
+        Rectangle {
+            background: Theme.surface-container;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.outline-variant;
+
+            VerticalLayout {
+                padding: 4px;
+                for option in root.options: Rectangle {
+                    height: 30px;
+                    border-radius: 6px;
+                    background: option-touch.has-hover ? Theme.surface-container-highest : transparent;
+                    Text {
+                        x: 10px;
+                        text: option.label;
+                        color: option.value == root.value ? Theme.primary : Theme.on-surface;
+                        font-size: Theme.body-sm;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        width: parent.width - 20px;
+                    }
+                    option-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.value = option.value;
+                            root.changed();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Badge inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <color> tint;
+    in property <color> fill;
+
+    height: 20px;
+    width: row.preferred-width;
+    border-radius: 4px;
+    background: root.fill;
+    border-width: 1px;
+    border-color: root.tint.transparentize(0.7);
+
+    row := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 4px;
+        Image {
+            source: root.icon;
+            width: 12px;
+            height: 12px;
+            y: (parent.height - self.height) / 2;
+            colorize: root.tint;
+        }
+        Text {
+            text: root.text;
+            color: root.tint;
+            font-size: Theme.label-sm;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component CourseCardView inherits Rectangle {
+    in property <CourseCard> course;
+    callback clicked;
+
+    property <bool> broken: root.course.status == "Missing" || root.course.status == "Error";
+    property <bool> busy: root.course.status == "Scanning" || root.course.status == "Importing";
+
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: touch.has-hover ? Theme.outline : Theme.outline-variant;
+    background: touch.has-hover ? Theme.surface-container-high : Theme.surface-container-low;
+    clip: true;
+    accessible-role: button;
+    accessible-label: root.course.title;
+    accessible-action-default => { root.clicked(); }
+
+    VerticalLayout {
+        // Thumbnail (16:9) with its badges and progress.
+        Rectangle {
+            height: self.width * 9 / 16;
+            background: Theme.surface-container-highest;
+            clip: true;
+
+            if root.course.has-thumbnail: Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.course.thumbnail;
+                image-fit: cover;
+                opacity: 0.9;
+            }
+            if !root.course.has-thumbnail: Rectangle {
+                background: @linear-gradient(135deg, Theme.surface-container-high 0%, Theme.surface-container-lowest 100%);
+                Image {
+                    source: @image-url("icons/video.svg");
+                    width: 40px;
+                    height: 40px;
+                    colorize: Theme.outline-variant;
+                }
+            }
+
+            if root.course.finished: Badge {
+                x: 8px;
+                y: 8px;
+                text: "Completed";
+                icon: @image-url("icons/check-check.svg");
+                tint: Theme.secondary-container;
+                fill: Theme.secondary-container.transparentize(0.8);
+            }
+            if !root.course.finished && root.broken: Badge {
+                x: 8px;
+                y: 8px;
+                text: root.course.status;
+                icon: @image-url("icons/triangle-alert.svg");
+                tint: Theme.error;
+                fill: Theme.error.transparentize(0.8);
+            }
+            if !root.course.finished && !root.broken && root.busy: Badge {
+                x: 8px;
+                y: 8px;
+                text: root.course.status;
+                icon: @image-url("icons/loader-circle.svg");
+                tint: Theme.on-surface;
+                fill: #00000099;
+            }
+
+            if root.course.duration != "": Rectangle {
+                x: parent.width - self.width - 8px;
+                y: parent.height - self.height - 8px;
+                height: 20px;
+                width: duration.preferred-width + 12px;
+                border-radius: 4px;
+                background: #000000cc;
+                duration := Text {
+                    text: root.course.duration;
+                    color: #e2e2e8;
+                    font-size: Theme.label-sm;
+                }
+            }
+
+            if root.course.started && !root.course.finished: ProgressBar {
+                y: parent.height - self.height;
+                width: parent.width;
+                value: root.course.percent;
+                border-radius: 0px;
+            }
+            if root.course.finished: Rectangle {
+                y: parent.height - self.height;
+                height: 4px;
+                background: Theme.secondary-container;
+            }
+
+            // Hover: play.
+            if touch.has-hover: Rectangle {
+                background: #0000004d;
+                Image {
+                    source: @image-url("icons/play.svg");
+                    width: 32px;
+                    height: 32px;
+                    colorize: #ffffff;
+                }
+            }
+        }
+
+        // Body.
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            vertical-stretch: 1;
+            Text {
+                text: root.course.title;
+                color: Theme.on-surface;
+                font-size: Theme.headline-sm;
+                font-weight: 600;
+                // Two lines at most, like the Tauri card's line-clamp-2.
+                wrap: word-wrap;
+                overflow: elide;
+                height: 40px;
+                vertical-alignment: top;
+            }
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                spacing: 4px;
+                Image {
+                    source: @image-url("icons/video.svg");
+                    width: 14px;
+                    height: 14px;
+                    y: (parent.height - self.height) / 2;
+                    colorize: Theme.on-surface-variant;
+                }
+                Text {
+                    text: root.course.lectures + " Lectures";
+                    color: Theme.on-surface-variant;
+                    font-size: Theme.label-sm;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.course.finished ? "100%" : root.course.started ? root.course.percent + "%" : "Not started";
+                    color: root.course.started || root.course.finished ? Theme.on-surface-variant : Theme.outline;
+                    font-size: Theme.label-sm;
+                }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component LibraryPage inherits Flickable {
+    // Scrolls vertically only: the content is exactly as wide as the view.
+    content-width: self.width;
+    content-height: page.preferred-height;
+
+    // Up to 4 columns, like the Tauri grid's breakpoints (container width).
+    property <length> page-width: min(self.width, 1280px) - 48px;
+    property <int> columns: root.page-width >= 1000px ? 4 : root.page-width >= 740px ? 3 : root.page-width >= 480px ? 2 : 1;
+    property <length> gap: 20px;
+    property <length> card-width: (root.page-width - (root.columns - 1) * root.gap) / root.columns;
+    property <length> card-height: root.card-width * 9 / 16 + 96px;
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 32px;
+        alignment: start;
+
+        // Empty library.
+        if Library.total == 0: VerticalLayout {
+            padding-top: 128px;
+            spacing: 12px;
+            alignment: center;
+            Rectangle {
+                width: 64px;
+                height: 64px;
+                border-radius: 12px;
+                background: Theme.surface-container;
+                Image {
+                    source: @image-url("icons/folder-open.svg");
+                    width: 30px;
+                    height: 30px;
+                    colorize: Theme.outline;
+                }
+            }
+            Text {
+                text: "Your library is empty";
+                color: Theme.on-surface;
+                font-size: Theme.headline-md;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: Library.status-text != "" ? Library.status-text
+                    : "Import a downloaded course and Deskemy will structure it into sections and lectures.";
+                color: Theme.on-surface-variant;
+                font-size: Theme.body-sm;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+
+        // Continue Watching.
+        if Library.total > 0 && Library.hero.visible: VerticalLayout {
+            spacing: 16px;
+            Text {
+                text: "Continue Watching";
+                color: Theme.on-surface;
+                font-size: Theme.headline-sm;
+                font-weight: 600;
+            }
+            Rectangle {
+                height: 180px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: hero-touch.has-hover ? Theme.primary-container : Theme.outline-variant;
+                background: Theme.surface-container-low;
+                clip: true;
+                accessible-role: button;
+                accessible-label: "Continue " + Library.hero.lecture;
+
+                HorizontalLayout {
+                    // A third image, two thirds text.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: @linear-gradient(135deg, Theme.surface-container-high 0%, Theme.surface-container-lowest 100%);
+                        clip: true;
+                        if Library.hero.has-image: Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: Library.hero.image;
+                            image-fit: cover;
+                        }
+                        if Library.hero.has-image: Rectangle {
+                            background: hero-touch.has-hover ? #0000001a : #00000040;
+                        }
+                        Image {
+                            source: @image-url("icons/play.svg");
+                            width: 44px;
+                            height: 44px;
+                            colorize: Library.hero.has-image ? #ffffffe6 : hero-touch.has-hover ? Theme.primary : Theme.outline-variant;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 2;
+                        padding: 24px;
+                        spacing: 4px;
+                        Text {
+                            text: Library.hero.course;
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.label-sm;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: Library.hero.lecture;
+                            color: Theme.on-surface;
+                            font-size: Theme.display-sm;
+                            font-weight: 700;
+                            wrap: word-wrap;
+                            overflow: elide;
+                            max-height: 64px;
+                        }
+                        if Library.hero.resuming: Text {
+                            text: "Continue where you left off";
+                            color: Theme.primary;
+                            font-size: Theme.label-sm;
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                        HorizontalLayout {
+                            Text {
+                                text: Library.hero.percent + "% Complete";
+                                color: Theme.on-surface;
+                                font-size: Theme.label-md;
+                                font-weight: 600;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: Library.hero.completed + " / " + Library.hero.lectures + " lectures";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                            }
+                        }
+                        ProgressBar {
+                            value: Library.hero.percent;
+                        }
+                    }
+                }
+                hero-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Library.open-course(Library.hero.id, Library.hero.resume); }
+                }
+            }
+        }
+
+        // All Courses.
+        if Library.total > 0: VerticalLayout {
+            spacing: 16px;
+
+            HorizontalLayout {
+                spacing: 12px;
+                Text {
+                    text: "All Courses";
+                    color: Theme.on-surface;
+                    font-size: Theme.headline-sm;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                // Search courses.
+                Rectangle {
+                    width: 192px;
+                    height: 32px;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: query.has-focus ? Theme.accent-blue : Theme.outline-variant;
+                    background: Theme.background;
+                    query := TextInput {
+                        x: 12px;
+                        width: parent.width - 36px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        text <=> Library.query;
+                        color: Theme.on-surface;
+                        font-size: Theme.body-sm;
+                        edited => { Library.apply(); }
+                    }
+                    if query.text == "": Text {
+                        x: 12px;
+                        height: parent.height;
+                        text: "Search courses…";
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.body-sm;
+                        vertical-alignment: center;
+                    }
+                    Image {
+                        x: parent.width - self.width - 10px;
+                        source: @image-url("icons/search.svg");
+                        width: 16px;
+                        height: 16px;
+                        colorize: Theme.on-surface-variant;
+                    }
+                }
+                if Library.track-options.length > 1: Select {
+                    options: Library.track-options;
+                    label: Library.track-label;
+                    value <=> Library.track;
+                    least-width: 140px;
+                    changed => { Library.apply(); }
+                }
+                Select {
+                    options: [
+                        { value: "recent", label: "Recent" },
+                        { value: "alpha", label: "Alphabetical" },
+                        { value: "progress", label: "Progress" },
+                        { value: "duration", label: "Longest" },
+                    ];
+                    value <=> Library.sort;
+                    label: Library.sort == "alpha" ? "Alphabetical"
+                        : Library.sort == "progress" ? "Progress"
+                        : Library.sort == "duration" ? "Longest" : "Recent";
+                    changed => { Library.apply(); }
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Theme.outline-variant;
+            }
+
+            // Status, then tags.
+            FlexboxLayout {
+                spacing: 8px;
+                for option in [
+                    { value: "all", label: "All" },
+                    { value: "recent", label: "Recently watched" },
+                    { value: "progress", label: "In progress" },
+                    { value: "finished", label: "Finished" },
+                    { value: "new", label: "Not started" },
+                    { value: "favorites", label: "Favorites" },
+                ]: Pill {
+                    text: option.label;
+                    selected: Library.status == option.value;
+                    clicked => {
+                        Library.status = option.value;
+                        Library.apply();
+                    }
+                }
+            }
+            if Library.tags.length > 0: FlexboxLayout {
+                spacing: 8px;
+                for tag in Library.tags: Pill {
+                    text: tag;
+                    selected: Library.tag == tag;
+                    clicked => {
+                        Library.tag = Library.tag == tag ? "" : tag;
+                        Library.apply();
+                    }
+                }
+            }
+
+            if Library.cards.length == 0: Text {
+                text: "No courses match your filters.";
+                color: Theme.on-surface-variant;
+                font-size: Theme.body-sm;
+                horizontal-alignment: center;
+                height: 64px;
+                vertical-alignment: center;
+            }
+            if Library.cards.length > 0: Rectangle {
+                height: ceil(Library.cards.length / root.columns) * (root.card-height + root.gap) - root.gap;
+                for card[i] in Library.cards: CourseCardView {
+                    x: mod(i, root.columns) * (root.card-width + root.gap);
+                    y: floor(i / root.columns) * (root.card-height + root.gap);
+                    width: root.card-width;
+                    height: root.card-height;
+                    course: card;
+                    clicked => { Library.open-course(card.id, card.resume); }
+                }
+            }
+        }
+    }
+}

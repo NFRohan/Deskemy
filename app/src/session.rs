@@ -645,12 +645,7 @@ mod tests {
             let conn = db.lock().unwrap();
             queries::get_lecture_playback(&conn, &lectures[0]).unwrap().unwrap().1
         };
-        let row = crate::CourseRow {
-            id: course_id.into(),
-            resume: "gone-after-a-rescan".into(),
-            ..Default::default()
-        };
-        let candidates = crate::library::lectures_to_open(&db, &row);
+        let candidates = crate::library::lectures_to_open(&db, &course_id, "gone-after-a-rescan");
         assert_eq!(candidates, vec!["gone-after-a-rescan".to_string(), lectures[0].clone()]);
         assert!(session.open(&candidates[0]).is_err());
         assert!(session.open(&candidates[1]).is_ok());
