@@ -270,6 +270,52 @@ impl Session {
         self.flush_watch(&mut inner);
     }
 
+    /// Change speed and remember it for this course.
+    pub fn set_speed(&self, speed: f64) {
+        if self.set("speed", &speed.to_string()) {
+            self.remember(|db, course| queries::set_pref_speed(db, course, speed));
+        }
+    }
+
+    /// Pick a subtitle track (None = off) and remember it for this course.
+    pub fn set_subtitle(&self, sid: Option<i64>) {
+        let value = sid.map_or_else(|| "no".to_string(), |s| s.to_string());
+        if self.set("sid", &value) {
+            self.remember(|db, course| queries::set_pref_subtitle(db, course, sid));
+        }
+    }
+
+    /// Pick an audio track and remember it for this course.
+    pub fn set_audio(&self, aid: i64) {
+        if self.set("aid", &aid.to_string()) {
+            self.remember(|db, course| queries::set_pref_audio(db, course, Some(aid)));
+        }
+    }
+
+    pub fn set_chapter(&self, index: i64) {
+        self.set("chapter", &index.to_string());
+    }
+
+    /// Set an mpv property; only a change mpv accepted is worth remembering.
+    fn set(&self, name: &str, value: &str) -> bool {
+        match self.mpv.set_property(name, value) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!(error = %e, "set {name}={value}");
+                false
+            }
+        }
+    }
+
+    /// Persist a per-course preference for the loaded course (best-effort).
+    fn remember(&self, f: impl FnOnce(&Connection, &str) -> deskemy_core::error::Result<()>) {
+        let inner = self.inner();
+        let Some(course) = inner.course_id.as_deref() else { return };
+        if let Err(e) = f(&self.db(), course) {
+            tracing::warn!(error = %e, "save course pref");
+        }
+    }
+
     /// `(revision, header)` — re-read the header when the revision changes.
     pub fn now_playing(&self) -> (u64, NowPlaying) {
         let inner = self.inner();

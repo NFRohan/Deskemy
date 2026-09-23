@@ -46,6 +46,30 @@ pub fn sample_playback(ui: &crate::AppWindow) {
     playback.set_volume(80.0);
     playback.set_has_next(true);
     playback.set_up_next("IAM Users & Groups Hands On".into());
+
+    // A file with chapters and two subtitle tracks, the chapter menu open.
+    let t = crate::tracks::Tracks {
+        subtitles: vec![
+            crate::tracks::Track { id: 1, lang: Some("en".into()), filename: Some("1. IAM Introduction.en.srt".into()), ..Default::default() },
+            crate::tracks::Track { id: 2, lang: Some("es".into()), filename: Some("1. IAM Introduction.es.srt".into()), ..Default::default() },
+        ],
+        chapters: ["Welcome", "Users and groups", "Policies", "Recap"]
+            .iter()
+            .enumerate()
+            .map(|(i, title)| crate::tracks::Chapter { title: Some(title.to_string()), time: i as f64 * 48.0 })
+            .collect(),
+        sid: Some(1),
+        chapter: 1,
+        speed: 1.25,
+        ..Default::default()
+    };
+    let model = |items: Vec<crate::MenuItem>| slint::ModelRc::new(slint::VecModel::from(items));
+    playback.set_speed_label(crate::tracks::speed_label(t.speed).into());
+    playback.set_subtitles_on(true);
+    playback.set_speeds(model(crate::tracks::speed_menu(&t)));
+    playback.set_subtitles(model(crate::tracks::subtitle_menu(&t)));
+    playback.set_chapters(model(crate::tracks::chapter_menu(&t)));
+    playback.set_open_menu("chapters".into());
 }
 
 /// Draw the current frame of `window` and save it to `path`.

@@ -4,7 +4,8 @@
 //! video. No native child window, no rect reporting, on any platform.
 
 use crate::session::{Db, Session};
-use crate::{AppWindow, Playback};
+use crate::tracks;
+use crate::{AppWindow, MenuItem, Playback};
 use deskemy_core::config::AppConfig;
 use deskemy_core::mpv::{
     Mpv, MpvEventEndFile, MpvRenderContext, MPV_END_FILE_REASON_EOF, MPV_EVENT_END_FILE,
@@ -400,6 +401,19 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
         }
     });
 
+    let s = session.clone();
+    playback.on_pick_speed(move |i| {
+        if let Some(&speed) = tracks::SPEEDS.get(i as usize) {
+            s.set_speed(speed);
+        }
+    });
+    let s = session.clone();
+    playback.on_pick_subtitle(move |id| s.set_subtitle((id >= 0).then_some(id as i64)));
+    let s = session.clone();
+    playback.on_pick_audio(move |id| s.set_audio(id as i64));
+    let s = session.clone();
+    playback.on_pick_chapter(move |i| s.set_chapter(i as i64));
+
     let step = |session: &Arc<Session>, delta: i32| {
         let s = session.clone();
         move || {
@@ -464,6 +478,7 @@ impl State {
 fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
     let mut decoder = String::from("…");
     let mut shown_revision = u64::MAX;
+    let mut shown_tracks = None;
     let mut awake = false;
     loop {
         let event = mpv.wait_event(0.2);
@@ -505,6 +520,14 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
             now_playing
         });
 
+        // Re-read tracks only when their fingerprint moves: a file loaded, a
+        // sidecar subtitle attached late, or a pick took effect.
+        let signature = tracks::signature(mpv);
+        let menus = (shown_tracks.as_ref() != Some(&signature)).then(|| {
+            shown_tracks = Some(signature);
+            Menus::from(&tracks::read(mpv))
+        });
+
         let now = chrono::Local::now();
         let remaining = (s.duration - s.position).max(0.0) / s.speed.max(0.01);
         let ends = now + chrono::Duration::milliseconds((remaining * 1000.0) as i64);
@@ -518,6 +541,9 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
 
         let _ = ui.upgrade_in_event_loop(move |ui| {
             let playback = ui.global::<Playback>();
+            if let Some(menus) = menus {
+                menus.apply(&playback);
+            }
             if let Some(np) = now_playing {
                 playback.set_title(np.title.into());
                 playback.set_subtitle(np.section.into());
@@ -536,6 +562,39 @@ fn pump_events(mpv: &Mpv, session: &Session, ui: slint::Weak<AppWindow>) {
         });
     }
     set_keep_awake(false);
+}
+
+/// The overlay's menus, built on the event thread and applied on the UI one.
+struct Menus {
+    speed_label: String,
+    subtitles_on: bool,
+    speeds: Vec<MenuItem>,
+    subtitles: Vec<MenuItem>,
+    audio: Vec<MenuItem>,
+    chapters: Vec<MenuItem>,
+}
+
+impl Menus {
+    fn from(t: &tracks::Tracks) -> Self {
+        Menus {
+            speed_label: tracks::speed_label(t.speed),
+            subtitles_on: t.sid.is_some(),
+            speeds: tracks::speed_menu(t),
+            subtitles: tracks::subtitle_menu(t),
+            audio: tracks::audio_menu(t),
+            chapters: tracks::chapter_menu(t),
+        }
+    }
+
+    fn apply(self, playback: &Playback) {
+        let model = |items: Vec<MenuItem>| slint::ModelRc::new(slint::VecModel::from(items));
+        playback.set_speed_label(self.speed_label.into());
+        playback.set_subtitles_on(self.subtitles_on);
+        playback.set_speeds(model(self.speeds));
+        playback.set_subtitles(model(self.subtitles));
+        playback.set_audio_tracks(model(self.audio));
+        playback.set_chapters(model(self.chapters));
+    }
 }
 
 /// Keep the machine and display awake while a video is actually playing.

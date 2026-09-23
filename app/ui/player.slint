@@ -2,6 +2,15 @@
 // directly on the video, monochrome, no panels — only soft scrims top and
 // bottom for legibility — with a thin seek bar and "Ends at" time.
 
+/// One entry in a track / chapter / speed menu.
+export struct MenuItem {
+    id: int,
+    label: string,
+    /// Secondary text before the label (a chapter's start time).
+    detail: string,
+    selected: bool,
+}
+
 /// Playback state pushed from Rust, and the user's actions sent back to it.
 export global Playback {
     in property <string> title;
@@ -18,6 +27,14 @@ export global Playback {
     in property <bool> fullscreen;
     in property <bool> has-previous;
     in property <bool> has-next;
+    in property <string> speed-label: "1×";
+    in property <bool> subtitles-on;
+    in property <[MenuItem]> speeds;
+    in property <[MenuItem]> subtitles;
+    in property <[MenuItem]> audio-tracks;
+    in property <[MenuItem]> chapters;
+    /// Which overlay menu is open ("" = none); two-way bound to the overlay.
+    in-out property <string> open-menu;
 
     callback back();
     callback toggle-pause();
@@ -28,18 +45,24 @@ export global Playback {
     callback set-volume(float);
     callback toggle-mute();
     callback toggle-fullscreen();
+    callback pick-speed(int);
+    callback pick-subtitle(int);
+    callback pick-audio(int);
+    callback pick-chapter(int);
 }
 
 component IconButton inherits Rectangle {
     in property <image> icon;
     in property <length> icon-size: 22px;
     in property <bool> enabled: true;
+    /// Highlighted while its menu is open or its feature is on.
+    in property <bool> active;
     callback clicked;
 
     width: 38px;
     height: 38px;
     border-radius: self.width / 2;
-    background: touch.has-hover && root.enabled ? #ffffff1f : transparent;
+    background: root.active ? #ffffff2e : touch.has-hover && root.enabled ? #ffffff1f : transparent;
 
     Image {
         source: root.icon;
@@ -114,6 +137,50 @@ component Scrubber inherits Rectangle {
     }
 }
 
+component MenuRow inherits Rectangle {
+    in property <MenuItem> item;
+    callback clicked;
+
+    height: 36px;
+    border-radius: 6px;
+    background: touch.has-hover ? #ffffff1a : transparent;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
+
+        if root.item.detail != "": Text {
+            text: root.item.detail;
+            color: #ffffff99;
+            font-size: 12px;
+            vertical-alignment: center;
+            min-width: 52px;
+        }
+        Text {
+            text: root.item.label;
+            color: #ffffff;
+            font-size: 13px;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Image {
+            source: @image-url("icons/check.svg");
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: #ffffff;
+            opacity: root.item.selected ? 1 : 0;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 export component PlayerOverlay inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
@@ -130,6 +197,12 @@ export component PlayerOverlay inherits Rectangle {
     in property <bool> fullscreen;
     in property <bool> has-previous;
     in property <bool> has-next;
+    in property <string> speed-label;
+    in property <bool> subtitles-on;
+    in property <[MenuItem]> speeds;
+    in property <[MenuItem]> subtitles;
+    in property <[MenuItem]> audio-tracks;
+    in property <[MenuItem]> chapters;
 
     callback back();
     callback toggle-pause();
@@ -140,10 +213,20 @@ export component PlayerOverlay inherits Rectangle {
     callback set-volume(float);
     callback toggle-mute();
     callback toggle-fullscreen();
+    callback pick-speed(int);
+    callback pick-subtitle(int);
+    callback pick-audio(int);
+    callback pick-chapter(int);
 
     in-out property <bool> controls-shown: true;
-    // Never auto-hide while paused or mid-drag.
-    property <bool> pinned: root.paused || seek-bar.dragging || volume-bar.dragging;
+    /// Which menu is open: "" (none), "speed", "sub", "audio" or "chapters".
+    in-out property <string> open-menu;
+    // Never auto-hide while paused, mid-drag or with a menu open.
+    property <bool> pinned: root.paused || seek-bar.dragging || volume-bar.dragging || root.open-menu != "";
+
+    function toggle-menu(name: string) {
+        root.open-menu = root.open-menu == name ? "" : name;
+    }
 
     pure function pad(n: float) -> string {
         return (n < 10 ? "0" : "") + n;
@@ -170,7 +253,11 @@ export component PlayerOverlay inherits Rectangle {
         mouse-cursor: root.controls-shown ? MouseCursor.default : MouseCursor.none;
         moved => { root.wake(); }
         clicked => {
-            root.toggle-pause();
+            if root.open-menu != "" {
+                root.open-menu = "";
+            } else {
+                root.toggle-pause();
+            }
             root.wake();
         }
         double-clicked => { root.toggle-fullscreen(); }
@@ -230,6 +317,74 @@ export component PlayerOverlay inherits Rectangle {
                 font-weight: 600;
                 vertical-alignment: top;
                 y: 16px;
+            }
+        }
+
+        // Track / chapter / speed menu, floating above the bar at the right.
+        if root.open-menu != "": Rectangle {
+            property <length> list-height: min(menu-list.preferred-height, 360px);
+            x: parent.width - self.width - 20px;
+            y: parent.height - 108px - self.height;
+            width: 320px;
+            height: self.list-height;
+            border-radius: 12px;
+            background: #141518f2;
+            border-width: 1px;
+            border-color: #ffffff14;
+            clip: true;
+
+            // Swallow clicks so they don't reach the picture (pause) behind.
+            TouchArea { }
+
+            Flickable {
+                content-height: menu-list.preferred-height;
+                menu-list := VerticalLayout {
+                    padding: 8px;
+                    spacing: 2px;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        Text {
+                            text: root.open-menu == "speed" ? "Playback speed"
+                                : root.open-menu == "sub" ? "Subtitles"
+                                : root.open-menu == "audio" ? "Audio track"
+                                : "Chapters";
+                            color: #ffffff99;
+                            font-size: 12px;
+                            font-weight: 600;
+                            height: 28px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    if root.open-menu == "speed": VerticalLayout {
+                        spacing: 2px;
+                        for item in root.speeds: MenuRow {
+                            item: item;
+                            clicked => { root.pick-speed(item.id); }
+                        }
+                    }
+                    if root.open-menu == "sub": VerticalLayout {
+                        spacing: 2px;
+                        for item in root.subtitles: MenuRow {
+                            item: item;
+                            clicked => { root.pick-subtitle(item.id); }
+                        }
+                    }
+                    if root.open-menu == "audio": VerticalLayout {
+                        spacing: 2px;
+                        for item in root.audio-tracks: MenuRow {
+                            item: item;
+                            clicked => { root.pick-audio(item.id); }
+                        }
+                    }
+                    if root.open-menu == "chapters": VerticalLayout {
+                        spacing: 2px;
+                        for item in root.chapters: MenuRow {
+                            item: item;
+                            clicked => { root.pick-chapter(item.id); }
+                        }
+                    }
+                }
             }
         }
 
@@ -354,17 +509,37 @@ export component PlayerOverlay inherits Rectangle {
                     changed(v) => { root.set-volume(v * 100); }
                 }
                 Rectangle { width: 10px; }
-                IconButton {
-                    icon: @image-url("icons/gauge.svg");
+                // Speed: shows the current rate, like the Tauri picker.
+                Rectangle {
+                    width: max(44px, speed-text.preferred-width + 16px);
+                    height: 38px;
+                    border-radius: 19px;
+                    background: root.open-menu == "speed" ? #ffffff2e : speed-touch.has-hover ? #ffffff1f : transparent;
+                    speed-text := Text {
+                        text: root.speed-label;
+                        color: #ffffff;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+                    speed-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.toggle-menu("speed"); }
+                    }
                 }
-                IconButton {
+                if root.subtitles.length > 1: IconButton {
                     icon: @image-url("icons/captions.svg");
+                    active: root.open-menu == "sub" || root.subtitles-on;
+                    clicked => { root.toggle-menu("sub"); }
                 }
-                IconButton {
+                if root.audio-tracks.length > 1: IconButton {
                     icon: @image-url("icons/audio-lines.svg");
+                    active: root.open-menu == "audio";
+                    clicked => { root.toggle-menu("audio"); }
                 }
-                IconButton {
+                if root.chapters.length > 0: IconButton {
                     icon: @image-url("icons/list-video.svg");
+                    active: root.open-menu == "chapters";
+                    clicked => { root.toggle-menu("chapters"); }
                 }
                 IconButton {
                     icon: root.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");

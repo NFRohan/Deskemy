@@ -1,8 +1,8 @@
 // Deskemy — Slint frontend (port in progress; see docs/slint-port.md).
 
-import { Playback, PlayerOverlay } from "player.slint";
+import { MenuItem, Playback, PlayerOverlay } from "player.slint";
 
-export { Playback }
+export { MenuItem, Playback }
 
 export struct CourseRow {
     id: string,
@@ -63,6 +63,13 @@ export component AppWindow inherits Window {
         fullscreen: Playback.fullscreen;
         has-previous: Playback.has-previous;
         has-next: Playback.has-next;
+        speed-label: Playback.speed-label;
+        subtitles-on: Playback.subtitles-on;
+        speeds: Playback.speeds;
+        subtitles: Playback.subtitles;
+        audio-tracks: Playback.audio-tracks;
+        chapters: Playback.chapters;
+        open-menu <=> Playback.open-menu;
 
         back => { Playback.back(); }
         toggle-pause => { Playback.toggle-pause(); }
@@ -73,6 +80,10 @@ export component AppWindow inherits Window {
         set-volume(v) => { Playback.set-volume(v); }
         toggle-mute => { Playback.toggle-mute(); }
         toggle-fullscreen => { Playback.toggle-fullscreen(); }
+        pick-speed(i) => { Playback.pick-speed(i); }
+        pick-subtitle(id) => { Playback.pick-subtitle(id); }
+        pick-audio(id) => { Playback.pick-audio(id); }
+        pick-chapter(i) => { Playback.pick-chapter(i); }
     }
 
     if !root.playing: VerticalLayout {

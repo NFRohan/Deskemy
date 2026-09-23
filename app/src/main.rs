@@ -4,6 +4,7 @@
 mod library;
 mod session;
 mod snapshot;
+mod tracks;
 mod video;
 
 use deskemy_core::config::AppConfig;
