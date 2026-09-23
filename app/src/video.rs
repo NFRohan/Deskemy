@@ -425,6 +425,21 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
 
     wire_bookmarks(ui, session, mpv);
 
+    let (s, m) = (session.clone(), mpv.clone());
+    playback.on_toggle_subtitles(move || {
+        let t = tracks::read(&m);
+        if t.sid.is_some() {
+            s.set_subtitle(None);
+        } else if let Some(first) = t.subtitles.first() {
+            s.set_subtitle(Some(first.id));
+        }
+    });
+    let (s, m) = (session.clone(), mpv.clone());
+    playback.on_step_speed(move |dir| {
+        let current = m.get_f64("speed").unwrap_or(1.0);
+        s.set_speed(tracks::stepped_speed(current, dir));
+    });
+
     let step = |session: &Arc<Session>, delta: i32| {
         let s = session.clone();
         move || {

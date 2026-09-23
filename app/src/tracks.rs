@@ -94,6 +94,17 @@ pub fn label(track: &Track) -> String {
     }
 }
 
+/// The preset `dir` steps from `current` (snapping an off-list speed to the
+/// nearest preset first), clamped at both ends — as the Tauri player's `< / >`.
+pub fn stepped_speed(current: f64, dir: i32) -> f64 {
+    let nearest = SPEEDS
+        .iter()
+        .enumerate()
+        .min_by(|a, b| (a.1 - current).abs().total_cmp(&(b.1 - current).abs()))
+        .map_or(2, |(i, _)| i);
+    SPEEDS[(nearest as i32 + dir).clamp(0, SPEEDS.len() as i32 - 1) as usize]
+}
+
 pub fn speed_label(speed: f64) -> String {
     format!("{speed}×")
 }
@@ -200,6 +211,16 @@ mod tests {
         assert_eq!((menu[0].label.as_str(), menu[0].detail.as_str()), ("Intro", "0:00"));
         assert_eq!((menu[1].label.as_str(), menu[1].detail.as_str()), ("Chapter 2", "1:02:05"));
         assert!(menu[1].selected && !menu[0].selected);
+    }
+
+    #[test]
+    fn speed_steps_through_the_presets_and_stops_at_the_ends() {
+        assert_eq!(stepped_speed(1.0, 1), 1.25);
+        assert_eq!(stepped_speed(1.0, -1), 0.75);
+        assert_eq!(stepped_speed(2.0, 1), 2.0);
+        assert_eq!(stepped_speed(0.5, -1), 0.5);
+        // An off-list speed snaps to the nearest preset before stepping.
+        assert_eq!(stepped_speed(1.1, 1), 1.25);
     }
 
     #[test]

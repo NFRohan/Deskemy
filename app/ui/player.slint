@@ -11,6 +11,16 @@ export struct MenuItem {
     selected: bool,
 }
 
+export struct Shortcut {
+    keys: string,
+    action: string,
+}
+
+export struct ShortcutGroup {
+    title: string,
+    items: [Shortcut],
+}
+
 /// A saved bookmark in the playing lecture.
 export struct BookmarkRow {
     id: string,
@@ -75,6 +85,10 @@ export global Playback {
     callback close-bookmark();
     callback jump-to-bookmark(float);
     callback delete-bookmark(string);
+    /// C: subtitles off, or on with the first track.
+    callback toggle-subtitles();
+    /// < / >: previous / next preset speed.
+    callback step-speed(int);
 }
 
 component IconButton inherits Rectangle {
@@ -252,482 +266,762 @@ export component PlayerOverlay inherits Rectangle {
         idle.restart();
     }
 
+    /// The Tauri player's shortcut map (docs/slint-port.md tracks P / R).
+    out property <[ShortcutGroup]> shortcuts: [
+        {
+            title: "Playback",
+            items: [
+                { keys: "Space / K", action: "Play / pause" },
+                { keys: "J / L", action: "Back / forward 10s" },
+                { keys: "← / →", action: "Back / forward 5s" },
+                { keys: "↑ / ↓", action: "Volume up / down" },
+                { keys: "M", action: "Mute" },
+                { keys: "C", action: "Toggle subtitles" },
+                { keys: "< / >", action: "Speed down / up" },
+                { keys: "0 – 9", action: "Jump to 0–90%" },
+                { keys: "Home / End", action: "Start / end" },
+            ],
+        },
+        {
+            title: "Navigation",
+            items: [
+                { keys: "N / ⇧N", action: "Next / previous lecture" },
+                { keys: "F", action: "Fullscreen" },
+                { keys: "Esc", action: "Exit / back" },
+            ],
+        },
+        {
+            title: "Panels",
+            items: [
+                { keys: "B", action: "Bookmark here" },
+                { keys: "?", action: "This cheat sheet" },
+            ],
+        },
+    ];
+
+    /// Esc peels back one layer at a time: an open dialog or menu, then
+    /// fullscreen, then leave the player.
+    function escape() {
+        if Playback.open-menu == "bookmark" {
+            Playback.close-bookmark();
+        } else if Playback.open-menu != "" {
+            Playback.open-menu = "";
+        } else if Playback.fullscreen {
+            Playback.toggle-fullscreen();
+        } else {
+            Playback.back();
+        }
+    }
+
+    function key(event: KeyEvent) -> EventResult {
+        // Leave system / editing chords alone.
+        if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
+            return reject;
+        }
+        if event.text == Key.Escape {
+            root.escape();
+            return accept;
+        }
+        if event.text == " " || event.text == "k" {
+            Playback.toggle-pause();
+        } else if event.text == "j" {
+            Playback.seek-by(-10);
+        } else if event.text == "l" {
+            Playback.seek-by(10);
+        } else if event.text == Key.LeftArrow {
+            Playback.seek-by(-5);
+        } else if event.text == Key.RightArrow {
+            Playback.seek-by(5);
+        } else if event.text == Key.UpArrow {
+            Playback.set-volume(min(100, (Playback.muted ? 0 : Playback.volume) + 5));
+        } else if event.text == Key.DownArrow {
+            if !Playback.muted {
+                Playback.set-volume(max(0, Playback.volume - 5));
+            }
+        } else if event.text == "m" {
+            Playback.toggle-mute();
+        } else if event.text == "f" {
+            Playback.toggle-fullscreen();
+        } else if event.text == "c" {
+            Playback.toggle-subtitles();
+        } else if event.text == "," || event.text == "<" {
+            Playback.step-speed(-1);
+        } else if event.text == "." || event.text == ">" {
+            Playback.step-speed(1);
+        } else if event.text == Key.Home {
+            Playback.seek(0);
+        } else if event.text == Key.End {
+            Playback.seek(Playback.duration * 0.999);
+        } else if event.text == "b" {
+            if Playback.in-library {
+                Playback.open-bookmark();
+            }
+        } else if event.text == "n" {
+            Playback.next();
+        } else if event.text == "N" {
+            Playback.previous();
+        } else if event.text == "?" {
+            root.toggle-menu("shortcuts");
+        } else if event.text.is-float() {
+            // A single digit: jump to that tenth of the lecture.
+            Playback.seek(Playback.duration * event.text.to-float() / 10);
+        } else {
+            return reject;
+        }
+        root.wake();
+        return accept;
+    }
+
+    // Closing a dialog destroys whatever had focus (e.g. the bookmark label),
+    // so hand it back to the shortcut scope.
+    property <string> menu: Playback.open-menu;
+    changed menu => {
+        if root.menu == "" {
+            keys.focus();
+        }
+    }
+
     idle := Timer {
         interval: 2.5s;
         running: root.controls-shown && !root.pinned;
         triggered => { root.controls-shown = false; }
     }
 
-    // Below the controls: clicking the picture toggles pause, and any pointer
-    // movement brings the controls back.
-    TouchArea {
-        mouse-cursor: root.controls-shown ? MouseCursor.default : MouseCursor.none;
-        moved => { root.wake(); }
-        clicked => {
-            if Playback.open-menu != "" {
-                Playback.open-menu = "";
-            } else {
-                Playback.toggle-pause();
-            }
-            root.wake();
-        }
-        double-clicked => { Playback.toggle-fullscreen(); }
-    }
+    // Wraps the whole overlay: keys typed into a field inside (the bookmark
+    // label) stay there, while ones it rejects (Esc) bubble up to here.
+    keys := FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => { return root.key(event); }
 
-    controls := Rectangle {
-        opacity: root.controls-shown ? 1 : 0;
-        visible: self.opacity > 0;
-        animate opacity { duration: 180ms; }
-
-        // Top: back, title, wall clock.
-        Rectangle {
-            y: 0;
-            height: 120px;
-            background: @linear-gradient(180deg, #000000b3 0%, #00000000 100%);
-        }
-        HorizontalLayout {
-            y: 0;
-            height: 96px;
-            padding: 16px;
-            spacing: 12px;
-            alignment: stretch;
-
-            IconButton {
-                y: 16px;
-                icon: @image-url("icons/arrow-left.svg");
-                clicked => { Playback.back(); }
-            }
-            VerticalLayout {
-                horizontal-stretch: 1;
-                alignment: start;
-                spacing: 2px;
-                padding-top: 6px;
-                Text {
-                    text: Playback.title;
-                    color: #ffffff;
-                    font-size: 16px;
-                    font-weight: 700;
-                    overflow: elide;
+        // Below the controls: clicking the picture toggles pause, and any pointer
+        // movement brings the controls back.
+        TouchArea {
+            mouse-cursor: root.controls-shown ? MouseCursor.default : MouseCursor.none;
+            moved => { root.wake(); }
+            clicked => {
+                if Playback.open-menu != "" {
+                    Playback.open-menu = "";
+                } else {
+                    Playback.toggle-pause();
                 }
-                Text {
-                    text: Playback.subtitle;
-                    color: #ffffffb3;
-                    font-size: 13px;
-                    overflow: elide;
-                }
-                Text {
-                    text: Playback.stats;
-                    color: #ffffff80;
-                    font-size: 12px;
-                }
+                root.wake();
             }
-            Text {
-                text: Playback.clock;
-                color: #ffffffcc;
-                font-size: 14px;
-                font-weight: 600;
-                vertical-alignment: top;
-                y: 16px;
-            }
+            double-clicked => { Playback.toggle-fullscreen(); }
         }
 
-        // Track / chapter / speed menu, floating above the bar at the right.
-        if Playback.open-menu == "speed" || Playback.open-menu == "sub"
-            || Playback.open-menu == "audio" || Playback.open-menu == "chapters": Rectangle {
-            property <length> list-height: min(menu-list.preferred-height, 360px);
-            x: parent.width - self.width - 20px;
-            y: parent.height - 108px - self.height;
-            width: 320px;
-            height: self.list-height;
-            border-radius: 12px;
-            background: #141518f2;
-            border-width: 1px;
-            border-color: #ffffff14;
-            clip: true;
+        controls := Rectangle {
+            opacity: root.controls-shown ? 1 : 0;
+            visible: self.opacity > 0;
+            animate opacity { duration: 180ms; }
 
-            // Swallow clicks so they don't reach the picture (pause) behind.
-            TouchArea { }
-
-            Flickable {
-                content-height: menu-list.preferred-height;
-                menu-list := VerticalLayout {
-                    padding: 8px;
-                    spacing: 2px;
-
-                    HorizontalLayout {
-                        padding-left: 12px;
-                        Text {
-                            text: Playback.open-menu == "speed" ? "Playback speed"
-                                : Playback.open-menu == "sub" ? "Subtitles"
-                                : Playback.open-menu == "audio" ? "Audio track"
-                                : "Chapters";
-                            color: #ffffff99;
-                            font-size: 12px;
-                            font-weight: 600;
-                            height: 28px;
-                            vertical-alignment: center;
-                        }
-                    }
-                    if Playback.open-menu == "speed": VerticalLayout {
-                        spacing: 2px;
-                        for item in Playback.speeds: MenuRow {
-                            item: item;
-                            clicked => { Playback.pick-speed(item.id); }
-                        }
-                    }
-                    if Playback.open-menu == "sub": VerticalLayout {
-                        spacing: 2px;
-                        for item in Playback.subtitles: MenuRow {
-                            item: item;
-                            clicked => { Playback.pick-subtitle(item.id); }
-                        }
-                    }
-                    if Playback.open-menu == "audio": VerticalLayout {
-                        spacing: 2px;
-                        for item in Playback.audio-tracks: MenuRow {
-                            item: item;
-                            clicked => { Playback.pick-audio(item.id); }
-                        }
-                    }
-                    if Playback.open-menu == "chapters": VerticalLayout {
-                        spacing: 2px;
-                        for item in Playback.chapters: MenuRow {
-                            item: item;
-                            clicked => { Playback.pick-chapter(item.id); }
-                        }
-                    }
-                }
+            // Top: back, title, wall clock.
+            Rectangle {
+                y: 0;
+                height: 120px;
+                background: @linear-gradient(180deg, #000000b3 0%, #00000000 100%);
             }
-        }
-
-        // Bottom: seek bar, then transport and track/view controls.
-        Rectangle {
-            y: parent.height - self.height;
-            height: 170px;
-            background: @linear-gradient(0deg, #000000cc 0%, #00000000 100%);
-        }
-        VerticalLayout {
-            y: parent.height - self.height;
-            height: 104px;
-            padding-left: 20px;
-            padding-right: 20px;
-            padding-bottom: 14px;
-            spacing: 6px;
-
             HorizontalLayout {
-                spacing: 14px;
-                Text {
-                    text: root.time(seek-bar.dragging ? seek-bar.preview * Playback.duration : Playback.position);
-                    color: #ffffff;
-                    font-size: 13px;
-                    vertical-alignment: center;
-                    min-width: 44px;
-                }
-                seek-bar := Scrubber {
-                    horizontal-stretch: 1;
-                    value: Playback.duration > 0 ? Playback.position / Playback.duration : 0;
-                    committed(v) => { Playback.seek(v * Playback.duration); }
-                }
-                Text {
-                    text: "-" + root.time(max(0, Playback.duration - Playback.position));
-                    color: #ffffff;
-                    font-size: 13px;
-                    vertical-alignment: center;
-                    horizontal-alignment: right;
-                    min-width: 52px;
-                }
-            }
-
-            HorizontalLayout {
-                spacing: 4px;
+                y: 0;
+                height: 96px;
+                padding: 16px;
+                spacing: 12px;
                 alignment: stretch;
 
                 IconButton {
-                    icon: @image-url("icons/skip-back.svg");
-                    enabled: Playback.has-previous;
-                    clicked => { Playback.previous(); }
+                    y: 16px;
+                    icon: @image-url("icons/arrow-left.svg");
+                    clicked => { Playback.back(); }
                 }
-                IconButton {
-                    icon: @image-url("icons/rotate-ccw.svg");
-                    clicked => { Playback.seek-by(-10); }
-                }
-                IconButton {
-                    icon: Playback.paused ? @image-url("icons/play.svg") : @image-url("icons/pause.svg");
-                    icon-size: 26px;
-                    clicked => { Playback.toggle-pause(); }
-                }
-                IconButton {
-                    icon: @image-url("icons/rotate-cw.svg");
-                    clicked => { Playback.seek-by(10); }
-                }
-                IconButton {
-                    icon: @image-url("icons/skip-forward.svg");
-                    enabled: Playback.has-next;
-                    clicked => { Playback.next(); }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: start;
+                    spacing: 2px;
+                    padding-top: 6px;
+                    Text {
+                        text: Playback.title;
+                        color: #ffffff;
+                        font-size: 16px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: Playback.subtitle;
+                        color: #ffffffb3;
+                        font-size: 13px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: Playback.stats;
+                        color: #ffffff80;
+                        font-size: 12px;
+                    }
                 }
                 Text {
-                    text: Playback.ends-at;
+                    text: Playback.clock;
                     color: #ffffffcc;
-                    font-size: 13px;
-                    vertical-alignment: center;
-                }
-
-                // Up next: right-aligned in the free space; clicking it skips ahead.
-                HorizontalLayout {
-                    horizontal-stretch: 1;
-                    alignment: end;
-                    padding-right: 12px;
-
-                    if Playback.up-next != "": Rectangle {
-                        max-width: 380px;
-                        border-radius: 6px;
-                        background: up-next-touch.has-hover ? #ffffff1f : transparent;
-
-                        VerticalLayout {
-                            alignment: center;
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            Text {
-                                text: "Up next";
-                                color: #ffffff99;
-                                font-size: 11px;
-                                horizontal-alignment: right;
-                            }
-                            Text {
-                                text: Playback.up-next;
-                                color: #ffffff;
-                                font-size: 13px;
-                                horizontal-alignment: right;
-                                overflow: elide;
-                            }
-                        }
-                        up-next-touch := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { Playback.next(); }
-                        }
-                    }
-                }
-
-                IconButton {
-                    icon: Playback.muted || Playback.volume == 0
-                        ? @image-url("icons/volume-x.svg")
-                        : @image-url("icons/volume-2.svg");
-                    clicked => { Playback.toggle-mute(); }
-                }
-                volume-bar := Scrubber {
-                    width: 96px;
-                    y: (38px - self.height) / 2;
-                    value: Playback.muted ? 0 : Playback.volume / 100;
-                    changed(v) => { Playback.set-volume(v * 100); }
-                }
-                Rectangle { width: 10px; }
-                if Playback.in-library: IconButton {
-                    icon: @image-url("icons/bookmark-plus.svg");
-                    active: Playback.open-menu == "bookmark";
-                    clicked => { Playback.open-bookmark(); }
-                }
-                if Playback.chapters.length > 0: IconButton {
-                    icon: @image-url("icons/list-video.svg");
-                    active: Playback.open-menu == "chapters";
-                    clicked => { root.toggle-menu("chapters"); }
-                }
-                if Playback.audio-tracks.length > 1: IconButton {
-                    icon: @image-url("icons/audio-lines.svg");
-                    active: Playback.open-menu == "audio";
-                    clicked => { root.toggle-menu("audio"); }
-                }
-                if Playback.subtitles.length > 1: IconButton {
-                    icon: @image-url("icons/captions.svg");
-                    active: Playback.open-menu == "sub" || Playback.subtitles-on;
-                    clicked => { root.toggle-menu("sub"); }
-                }
-                // Sleep timer: a moon, or the minutes left while counting down.
-                if Playback.sleep-mode == "minutes": Chip {
-                    text: Playback.sleep-badge;
-                    selected: false;
-                    clicked => { root.toggle-menu("sleep"); }
-                }
-                if Playback.sleep-mode != "minutes": IconButton {
-                    icon: @image-url("icons/moon.svg");
-                    active: Playback.open-menu == "sleep" || Playback.sleep-mode != "off";
-                    clicked => { root.toggle-menu("sleep"); }
-                }
-
-                // Speed: shows the current rate, like the Tauri picker.
-                Rectangle {
-                    width: max(44px, speed-text.preferred-width + 16px);
-                    height: 38px;
-                    border-radius: 19px;
-                    background: Playback.open-menu == "speed" ? #ffffff2e : speed-touch.has-hover ? #ffffff1f : transparent;
-                    speed-text := Text {
-                        text: Playback.speed-label;
-                        color: #ffffff;
-                        font-size: 13px;
-                        font-weight: 600;
-                    }
-                    speed-touch := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.toggle-menu("speed"); }
-                    }
-                }
-                IconButton {
-                    icon: Playback.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");
-                    clicked => { Playback.toggle-fullscreen(); }
+                    font-size: 14px;
+                    font-weight: 600;
+                    vertical-alignment: top;
+                    y: 16px;
                 }
             }
-        }
 
-        // Sleep timer dialog, centred over the dimmed player (as in the Tauri
-        // app). Last in the tree so its scrim covers the bars too.
-        if Playback.open-menu == "sleep": Rectangle {
-            background: #00000099;
-            TouchArea {
-                clicked => { Playback.open-menu = ""; }
-            }
-
-            Rectangle {
-                width: 340px;
-                height: sleep-card.preferred-height;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                border-radius: 14px;
-                background: #16171b;
+            // Track / chapter / speed menu, floating above the bar at the right.
+            if Playback.open-menu == "speed" || Playback.open-menu == "sub"
+                || Playback.open-menu == "audio" || Playback.open-menu == "chapters": Rectangle {
+                property <length> list-height: min(menu-list.preferred-height, 360px);
+                x: parent.width - self.width - 20px;
+                y: parent.height - 108px - self.height;
+                width: 320px;
+                height: self.list-height;
+                border-radius: 12px;
+                background: #141518f2;
                 border-width: 1px;
                 border-color: #ffffff14;
+                clip: true;
 
+                // Swallow clicks so they don't reach the picture (pause) behind.
                 TouchArea { }
 
-                sleep-card := VerticalLayout {
-                    padding: 20px;
-                    spacing: 14px;
+                Flickable {
+                    content-height: menu-list.preferred-height;
+                    menu-list := VerticalLayout {
+                        padding: 8px;
+                        spacing: 2px;
 
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            Text {
+                                text: Playback.open-menu == "speed" ? "Playback speed"
+                                    : Playback.open-menu == "sub" ? "Subtitles"
+                                    : Playback.open-menu == "audio" ? "Audio track"
+                                    : "Chapters";
+                                color: #ffffff99;
+                                font-size: 12px;
+                                font-weight: 600;
+                                height: 28px;
+                                vertical-alignment: center;
+                            }
+                        }
+                        if Playback.open-menu == "speed": VerticalLayout {
+                            spacing: 2px;
+                            for item in Playback.speeds: MenuRow {
+                                item: item;
+                                clicked => { Playback.pick-speed(item.id); }
+                            }
+                        }
+                        if Playback.open-menu == "sub": VerticalLayout {
+                            spacing: 2px;
+                            for item in Playback.subtitles: MenuRow {
+                                item: item;
+                                clicked => { Playback.pick-subtitle(item.id); }
+                            }
+                        }
+                        if Playback.open-menu == "audio": VerticalLayout {
+                            spacing: 2px;
+                            for item in Playback.audio-tracks: MenuRow {
+                                item: item;
+                                clicked => { Playback.pick-audio(item.id); }
+                            }
+                        }
+                        if Playback.open-menu == "chapters": VerticalLayout {
+                            spacing: 2px;
+                            for item in Playback.chapters: MenuRow {
+                                item: item;
+                                clicked => { Playback.pick-chapter(item.id); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Bottom: seek bar, then transport and track/view controls.
+            Rectangle {
+                y: parent.height - self.height;
+                height: 170px;
+                background: @linear-gradient(0deg, #000000cc 0%, #00000000 100%);
+            }
+            VerticalLayout {
+                y: parent.height - self.height;
+                height: 104px;
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-bottom: 14px;
+                spacing: 6px;
+
+                HorizontalLayout {
+                    spacing: 14px;
+                    Text {
+                        text: root.time(seek-bar.dragging ? seek-bar.preview * Playback.duration : Playback.position);
+                        color: #ffffff;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        min-width: 44px;
+                    }
+                    seek-bar := Scrubber {
+                        horizontal-stretch: 1;
+                        value: Playback.duration > 0 ? Playback.position / Playback.duration : 0;
+                        committed(v) => { Playback.seek(v * Playback.duration); }
+                    }
+                    Text {
+                        text: "-" + root.time(max(0, Playback.duration - Playback.position));
+                        color: #ffffff;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                        min-width: 52px;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: stretch;
+
+                    IconButton {
+                        icon: @image-url("icons/skip-back.svg");
+                        enabled: Playback.has-previous;
+                        clicked => { Playback.previous(); }
+                    }
+                    IconButton {
+                        icon: @image-url("icons/rotate-ccw.svg");
+                        clicked => { Playback.seek-by(-10); }
+                    }
+                    IconButton {
+                        icon: Playback.paused ? @image-url("icons/play.svg") : @image-url("icons/pause.svg");
+                        icon-size: 26px;
+                        clicked => { Playback.toggle-pause(); }
+                    }
+                    IconButton {
+                        icon: @image-url("icons/rotate-cw.svg");
+                        clicked => { Playback.seek-by(10); }
+                    }
+                    IconButton {
+                        icon: @image-url("icons/skip-forward.svg");
+                        enabled: Playback.has-next;
+                        clicked => { Playback.next(); }
+                    }
+                    Text {
+                        text: Playback.ends-at;
+                        color: #ffffffcc;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+
+                    // Up next: right-aligned in the free space; clicking it skips ahead.
                     HorizontalLayout {
-                        spacing: 8px;
-                        Image {
-                            source: @image-url("icons/moon.svg");
-                            width: 18px;
-                            height: 18px;
-                            y: (parent.height - self.height) / 2;
-                            colorize: #ffffff;
-                        }
-                        Text {
-                            text: "Sleep timer";
-                            color: #ffffff;
-                            font-size: 16px;
-                            font-weight: 700;
-                            horizontal-stretch: 1;
-                            vertical-alignment: center;
-                        }
-                        if Playback.sleep-mode != "off": Text {
-                            text: "Turn off";
-                            color: off-touch.has-hover ? #ffffff : #ffffffb3;
-                            font-size: 13px;
-                            vertical-alignment: center;
-                            off-touch := TouchArea {
+                        horizontal-stretch: 1;
+                        alignment: end;
+                        padding-right: 12px;
+
+                        if Playback.up-next != "": Rectangle {
+                            max-width: 380px;
+                            border-radius: 6px;
+                            background: up-next-touch.has-hover ? #ffffff1f : transparent;
+
+                            VerticalLayout {
+                                alignment: center;
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                Text {
+                                    text: "Up next";
+                                    color: #ffffff99;
+                                    font-size: 11px;
+                                    horizontal-alignment: right;
+                                }
+                                Text {
+                                    text: Playback.up-next;
+                                    color: #ffffff;
+                                    font-size: 13px;
+                                    horizontal-alignment: right;
+                                    overflow: elide;
+                                }
+                            }
+                            up-next-touch := TouchArea {
                                 mouse-cursor: pointer;
-                                clicked => { Playback.sleep-off(); }
+                                clicked => { Playback.next(); }
                             }
                         }
                     }
 
-                    if Playback.sleep-mode == "minutes": Text {
-                        text: "Pausing in " + Playback.sleep-badge + ".";
-                        color: #ffffffb3;
-                        font-size: 13px;
+                    IconButton {
+                        icon: Playback.muted || Playback.volume == 0
+                            ? @image-url("icons/volume-x.svg")
+                            : @image-url("icons/volume-2.svg");
+                        clicked => { Playback.toggle-mute(); }
                     }
-                    if Playback.sleep-mode == "lecture": Text {
-                        text: "Pausing at the end of this lecture.";
-                        color: #ffffffb3;
-                        font-size: 13px;
+                    volume-bar := Scrubber {
+                        width: 96px;
+                        y: (38px - self.height) / 2;
+                        value: Playback.muted ? 0 : Playback.volume / 100;
+                        changed(v) => { Playback.set-volume(v * 100); }
+                    }
+                    Rectangle { width: 10px; }
+                    if Playback.in-library: IconButton {
+                        icon: @image-url("icons/bookmark-plus.svg");
+                        active: Playback.open-menu == "bookmark";
+                        clicked => { Playback.open-bookmark(); }
+                    }
+                    if Playback.chapters.length > 0: IconButton {
+                        icon: @image-url("icons/list-video.svg");
+                        active: Playback.open-menu == "chapters";
+                        clicked => { root.toggle-menu("chapters"); }
+                    }
+                    if Playback.audio-tracks.length > 1: IconButton {
+                        icon: @image-url("icons/audio-lines.svg");
+                        active: Playback.open-menu == "audio";
+                        clicked => { root.toggle-menu("audio"); }
+                    }
+                    if Playback.subtitles.length > 1: IconButton {
+                        icon: @image-url("icons/captions.svg");
+                        active: Playback.open-menu == "sub" || Playback.subtitles-on;
+                        clicked => { root.toggle-menu("sub"); }
+                    }
+                    // Sleep timer: a moon, or the minutes left while counting down.
+                    if Playback.sleep-mode == "minutes": Chip {
+                        text: Playback.sleep-badge;
+                        selected: false;
+                        clicked => { root.toggle-menu("sleep"); }
+                    }
+                    if Playback.sleep-mode != "minutes": IconButton {
+                        icon: @image-url("icons/moon.svg");
+                        active: Playback.open-menu == "sleep" || Playback.sleep-mode != "off";
+                        clicked => { root.toggle-menu("sleep"); }
                     }
 
-                    HorizontalLayout {
-                        spacing: 8px;
-                        for minutes in [15, 30, 45, 60]: Chip {
-                            horizontal-stretch: 1;
-                            text: minutes + "m";
-                            selected: Playback.sleep-mode == "minutes" && Playback.sleep-minutes == minutes;
+                    // Speed: shows the current rate, like the Tauri picker.
+                    Rectangle {
+                        width: max(44px, speed-text.preferred-width + 16px);
+                        height: 38px;
+                        border-radius: 19px;
+                        background: Playback.open-menu == "speed" ? #ffffff2e : speed-touch.has-hover ? #ffffff1f : transparent;
+                        speed-text := Text {
+                            text: Playback.speed-label;
+                            color: #ffffff;
+                            font-size: 13px;
+                            font-weight: 600;
+                        }
+                        speed-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-menu("speed"); }
+                        }
+                    }
+                    IconButton {
+                        icon: @image-url("icons/keyboard.svg");
+                        active: Playback.open-menu == "shortcuts";
+                        clicked => { root.toggle-menu("shortcuts"); }
+                    }
+                    IconButton {
+                        icon: Playback.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");
+                        clicked => { Playback.toggle-fullscreen(); }
+                    }
+                }
+            }
+
+            // Sleep timer dialog, centred over the dimmed player (as in the Tauri
+            // app). Last in the tree so its scrim covers the bars too.
+            if Playback.open-menu == "sleep": Rectangle {
+                background: #00000099;
+                TouchArea {
+                    clicked => { Playback.open-menu = ""; }
+                }
+
+                Rectangle {
+                    width: 340px;
+                    height: sleep-card.preferred-height;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 14px;
+                    background: #16171b;
+                    border-width: 1px;
+                    border-color: #ffffff14;
+
+                    TouchArea { }
+
+                    sleep-card := VerticalLayout {
+                        padding: 20px;
+                        spacing: 14px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Image {
+                                source: @image-url("icons/moon.svg");
+                                width: 18px;
+                                height: 18px;
+                                y: (parent.height - self.height) / 2;
+                                colorize: #ffffff;
+                            }
+                            Text {
+                                text: "Sleep timer";
+                                color: #ffffff;
+                                font-size: 16px;
+                                font-weight: 700;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            if Playback.sleep-mode != "off": Text {
+                                text: "Turn off";
+                                color: off-touch.has-hover ? #ffffff : #ffffffb3;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                off-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { Playback.sleep-off(); }
+                                }
+                            }
+                        }
+
+                        if Playback.sleep-mode == "minutes": Text {
+                            text: "Pausing in " + Playback.sleep-badge + ".";
+                            color: #ffffffb3;
+                            font-size: 13px;
+                        }
+                        if Playback.sleep-mode == "lecture": Text {
+                            text: "Pausing at the end of this lecture.";
+                            color: #ffffffb3;
+                            font-size: 13px;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            for minutes in [15, 30, 45, 60]: Chip {
+                                horizontal-stretch: 1;
+                                text: minutes + "m";
+                                selected: Playback.sleep-mode == "minutes" && Playback.sleep-minutes == minutes;
+                                clicked => {
+                                    Playback.sleep-for(minutes);
+                                    Playback.open-menu = "";
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 36px;
+                                border-radius: 8px;
+                                background: #0e0f12;
+                                border-width: 1px;
+                                border-color: custom.has-focus ? #ffffff66 : #ffffff1f;
+
+                                custom := TextInput {
+                                    x: 10px;
+                                    width: parent.width - 20px;
+                                    height: parent.height;
+                                    vertical-alignment: center;
+                                    color: #ffffff;
+                                    font-size: 13px;
+                                    input-type: InputType.number;
+                                    accepted => {
+                                        if self.text.to-float() >= 1 {
+                                            Playback.sleep-for(floor(self.text.to-float()));
+                                            self.text = "";
+                                            Playback.open-menu = "";
+                                        }
+                                    }
+                                }
+                                if custom.text == "": Text {
+                                    x: 10px;
+                                    height: parent.height;
+                                    text: "Custom minutes";
+                                    color: #ffffff59;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            Chip {
+                                text: "Set";
+                                clicked => {
+                                    if custom.text.to-float() >= 1 {
+                                        Playback.sleep-for(floor(custom.text.to-float()));
+                                        custom.text = "";
+                                        Playback.open-menu = "";
+                                    }
+                                }
+                            }
+                        }
+
+                        MenuRow {
+                            item: {
+                                id: 0,
+                                label: "End of lecture",
+                                detail: "",
+                                selected: Playback.sleep-mode == "lecture",
+                            };
                             clicked => {
-                                Playback.sleep-for(minutes);
+                                Playback.sleep-at-end();
                                 Playback.open-menu = "";
                             }
                         }
                     }
+                }
+            }
 
-                    HorizontalLayout {
-                        spacing: 8px;
+            // Add-bookmark dialog. Opening it paused the video, so the moment
+            // holds while a label is typed; closing resumes if it was playing.
+            if Playback.open-menu == "bookmark": Rectangle {
+                background: #00000099;
+                TouchArea {
+                    clicked => { Playback.close-bookmark(); }
+                }
+
+                Rectangle {
+                    width: 380px;
+                    height: bookmark-card.preferred-height;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 14px;
+                    background: #16171b;
+                    border-width: 1px;
+                    border-color: #ffffff14;
+
+                    TouchArea { }
+
+                    bookmark-card := VerticalLayout {
+                        padding: 20px;
+                        spacing: 14px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Image {
+                                source: @image-url("icons/bookmark-plus.svg");
+                                width: 18px;
+                                height: 18px;
+                                y: (parent.height - self.height) / 2;
+                                colorize: #ffffff;
+                            }
+                            Text {
+                                text: "Add bookmark";
+                                color: #ffffff;
+                                font-size: 16px;
+                                font-weight: 700;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: Playback.bookmark-time;
+                                color: #ffffffb3;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                        }
+
                         Rectangle {
-                            horizontal-stretch: 1;
                             height: 36px;
                             border-radius: 8px;
                             background: #0e0f12;
                             border-width: 1px;
-                            border-color: custom.has-focus ? #ffffff66 : #ffffff1f;
+                            border-color: label.has-focus ? #ffffff66 : #ffffff1f;
 
-                            custom := TextInput {
+                            label := TextInput {
                                 x: 10px;
                                 width: parent.width - 20px;
                                 height: parent.height;
                                 vertical-alignment: center;
                                 color: #ffffff;
                                 font-size: 13px;
-                                input-type: InputType.number;
-                                accepted => {
-                                    if self.text.to-float() >= 1 {
-                                        Playback.sleep-for(floor(self.text.to-float()));
-                                        self.text = "";
-                                        Playback.open-menu = "";
-                                    }
-                                }
+                                single-line: true;
+                                init => { self.focus(); }
+                                accepted => { Playback.save-bookmark(self.text); }
                             }
-                            if custom.text == "": Text {
+                            if label.text == "": Text {
                                 x: 10px;
                                 height: parent.height;
-                                text: "Custom minutes";
+                                text: "Label (optional)";
                                 color: #ffffff59;
                                 font-size: 13px;
                                 vertical-alignment: center;
                             }
                         }
-                        Chip {
-                            text: "Set";
-                            clicked => {
-                                if custom.text.to-float() >= 1 {
-                                    Playback.sleep-for(floor(custom.text.to-float()));
-                                    custom.text = "";
-                                    Playback.open-menu = "";
-                                }
+
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            Chip {
+                                text: "Cancel";
+                                clicked => { Playback.close-bookmark(); }
+                            }
+                            Chip {
+                                text: "Save";
+                                selected: true;
+                                clicked => { Playback.save-bookmark(label.text); }
                             }
                         }
-                    }
 
-                    MenuRow {
-                        item: {
-                            id: 0,
-                            label: "End of lecture",
-                            detail: "",
-                            selected: Playback.sleep-mode == "lecture",
-                        };
-                        clicked => {
-                            Playback.sleep-at-end();
-                            Playback.open-menu = "";
+                        if Playback.bookmarks.length > 0: VerticalLayout {
+                            spacing: 2px;
+                            Rectangle {
+                                height: 1px;
+                                background: #ffffff14;
+                            }
+                            Text {
+                                text: "SAVED BOOKMARKS";
+                                color: #ffffff80;
+                                font-size: 11px;
+                                font-weight: 600;
+                                height: 28px;
+                                vertical-alignment: center;
+                            }
+                            Flickable {
+                                height: min(saved.preferred-height, 220px);
+                                content-height: saved.preferred-height;
+                                saved := VerticalLayout {
+                                    spacing: 2px;
+                                    for mark in Playback.bookmarks: Rectangle {
+                                        height: 36px;
+                                        border-radius: 6px;
+                                        background: mark-touch.has-hover ? #ffffff1a : transparent;
+
+                                        mark-touch := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { Playback.jump-to-bookmark(mark.position); }
+                                        }
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            spacing: 10px;
+                                            Text {
+                                                text: mark.time;
+                                                color: #ffffff99;
+                                                font-size: 12px;
+                                                vertical-alignment: center;
+                                                min-width: 52px;
+                                            }
+                                            Text {
+                                                text: mark.label;
+                                                color: #ffffff;
+                                                font-size: 13px;
+                                                vertical-alignment: center;
+                                                horizontal-stretch: 1;
+                                                overflow: elide;
+                                            }
+                                            IconButton {
+                                                icon: @image-url("icons/trash-2.svg");
+                                                icon-size: 16px;
+                                                width: 32px;
+                                                height: 32px;
+                                                y: 2px;
+                                                clicked => { Playback.delete-bookmark(mark.id); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Add-bookmark dialog. Opening it paused the video, so the moment
-        // holds while a label is typed; closing resumes if it was playing.
-        if Playback.open-menu == "bookmark": Rectangle {
+        // Keyboard cheat sheet (?), drawn over everything else, dimmed.
+        if Playback.open-menu == "shortcuts": Rectangle {
             background: #00000099;
             TouchArea {
-                clicked => { Playback.close-bookmark(); }
+                clicked => { Playback.open-menu = ""; }
             }
 
             Rectangle {
-                width: 380px;
-                height: bookmark-card.preferred-height;
+                width: min(760px, parent.width - 48px);
+                height: sheet.preferred-height;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 border-radius: 14px;
@@ -737,132 +1031,61 @@ export component PlayerOverlay inherits Rectangle {
 
                 TouchArea { }
 
-                bookmark-card := VerticalLayout {
-                    padding: 20px;
-                    spacing: 14px;
+                sheet := VerticalLayout {
+                    padding: 22px;
+                    spacing: 16px;
 
                     HorizontalLayout {
                         spacing: 8px;
                         Image {
-                            source: @image-url("icons/bookmark-plus.svg");
+                            source: @image-url("icons/keyboard.svg");
                             width: 18px;
                             height: 18px;
                             y: (parent.height - self.height) / 2;
                             colorize: #ffffff;
                         }
                         Text {
-                            text: "Add bookmark";
+                            text: "Keyboard shortcuts";
                             color: #ffffff;
                             font-size: 16px;
                             font-weight: 700;
-                            horizontal-stretch: 1;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: Playback.bookmark-time;
-                            color: #ffffffb3;
-                            font-size: 13px;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    Rectangle {
-                        height: 36px;
-                        border-radius: 8px;
-                        background: #0e0f12;
-                        border-width: 1px;
-                        border-color: label.has-focus ? #ffffff66 : #ffffff1f;
-
-                        label := TextInput {
-                            x: 10px;
-                            width: parent.width - 20px;
-                            height: parent.height;
-                            vertical-alignment: center;
-                            color: #ffffff;
-                            font-size: 13px;
-                            single-line: true;
-                            init => { self.focus(); }
-                            accepted => { Playback.save-bookmark(self.text); }
-                        }
-                        if label.text == "": Text {
-                            x: 10px;
-                            height: parent.height;
-                            text: "Label (optional)";
-                            color: #ffffff59;
-                            font-size: 13px;
                             vertical-alignment: center;
                         }
                     }
 
                     HorizontalLayout {
-                        alignment: end;
-                        spacing: 8px;
-                        Chip {
-                            text: "Cancel";
-                            clicked => { Playback.close-bookmark(); }
-                        }
-                        Chip {
-                            text: "Save";
-                            selected: true;
-                            clicked => { Playback.save-bookmark(label.text); }
-                        }
-                    }
-
-                    if Playback.bookmarks.length > 0: VerticalLayout {
-                        spacing: 2px;
-                        Rectangle {
-                            height: 1px;
-                            background: #ffffff14;
-                        }
-                        Text {
-                            text: "SAVED BOOKMARKS";
-                            color: #ffffff80;
-                            font-size: 11px;
-                            font-weight: 600;
-                            height: 28px;
-                            vertical-alignment: center;
-                        }
-                        Flickable {
-                            height: min(saved.preferred-height, 220px);
-                            content-height: saved.preferred-height;
-                            saved := VerticalLayout {
-                                spacing: 2px;
-                                for mark in Playback.bookmarks: Rectangle {
-                                    height: 36px;
-                                    border-radius: 6px;
-                                    background: mark-touch.has-hover ? #ffffff1a : transparent;
-
-                                    mark-touch := TouchArea {
-                                        mouse-cursor: pointer;
-                                        clicked => { Playback.jump-to-bookmark(mark.position); }
+                        spacing: 28px;
+                        for group in root.shortcuts: VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: start;
+                            spacing: 6px;
+                            Text {
+                                text: group.title;
+                                color: #ffffff80;
+                                font-size: 11px;
+                                font-weight: 600;
+                            }
+                            for shortcut in group.items: HorizontalLayout {
+                                spacing: 10px;
+                                Rectangle {
+                                    width: 88px;
+                                    height: 24px;
+                                    border-radius: 5px;
+                                    background: #ffffff14;
+                                    Text {
+                                        text: shortcut.keys;
+                                        color: #ffffff;
+                                        font-size: 12px;
+                                        font-weight: 600;
                                     }
-                                    HorizontalLayout {
-                                        padding-left: 8px;
-                                        spacing: 10px;
-                                        Text {
-                                            text: mark.time;
-                                            color: #ffffff99;
-                                            font-size: 12px;
-                                            vertical-alignment: center;
-                                            min-width: 52px;
-                                        }
-                                        Text {
-                                            text: mark.label;
-                                            color: #ffffff;
-                                            font-size: 13px;
-                                            vertical-alignment: center;
-                                            horizontal-stretch: 1;
-                                            overflow: elide;
-                                        }
-                                        IconButton {
-                                            icon: @image-url("icons/trash-2.svg");
-                                            icon-size: 16px;
-                                            width: 32px;
-                                            height: 32px;
-                                            y: 2px;
-                                            clicked => { Playback.delete-bookmark(mark.id); }
-                                        }
-                                    }
+                                }
+                                Text {
+                                    text: shortcut.action;
+                                    color: #ffffffcc;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
                                 }
                             }
                         }
