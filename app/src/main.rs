@@ -1,6 +1,7 @@
 // Release builds are GUI-only on Windows (no console window).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod course_page;
 mod course_panel;
 mod library;
 mod session;
@@ -22,11 +23,12 @@ slint::include_modules!();
 enum Mode {
     /// The normal app.
     Window,
-    /// `--snapshot <file.png>`: render one frame offscreen and exit.
+    /// `--snapshot <file.png> [course]`: render one frame offscreen and exit;
+    /// `course` shows the most recently opened course's page.
     /// `--snapshot-player <file.png> [menu]` does the same for the player
     /// overlay, filled with sample state and optionally a menu open ("sleep",
     /// "speed", …); no mpv, so the video area stays blank.
-    Snapshot { path: PathBuf, player: Option<String> },
+    Snapshot { path: PathBuf, player: Option<String>, page: Option<String> },
     /// `--play <lecture id | video file>`: open straight into playback.
     Play(String),
 }
@@ -34,10 +36,14 @@ enum Mode {
 fn parse_args() -> Mode {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some(flag @ ("--snapshot" | "--snapshot-player")) => Mode::Snapshot {
-            path: args.next().unwrap_or("snapshot.png".into()).into(),
-            player: (flag == "--snapshot-player").then(|| args.next().unwrap_or_default()),
-        },
+        Some(flag @ ("--snapshot" | "--snapshot-player")) => {
+            let path = args.next().unwrap_or("snapshot.png".into()).into();
+            let extra = args.next();
+            match flag {
+                "--snapshot-player" => Mode::Snapshot { path, player: Some(extra.unwrap_or_default()), page: None },
+                _ => Mode::Snapshot { path, player: None, page: extra },
+            }
+        }
         Some("--play") => args.next().map_or(Mode::Window, Mode::Play),
         _ => Mode::Window,
     }
@@ -68,11 +74,15 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_window(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
+    let course = course_page::CoursePage::new(db.clone());
 
-    if let Mode::Snapshot { path, player } = mode {
+    if let Mode::Snapshot { path, player, page } = mode {
         let window = offscreen.expect("snapshot platform installed");
         if let Some(menu) = player {
             snapshot::sample_playback(&ui, &menu, &db);
+        }
+        if page.as_deref() == Some("course") {
+            snapshot::sample_course(&ui, &db, &course);
         }
         ui.show()?;
         snapshot::save(&window, &path).map_err(slint::PlatformError::Other)?;
@@ -122,16 +132,68 @@ fn main() -> Result<(), slint::PlatformError> {
             page.apply(&ui);
         }
     });
-    let (weak, page) = (ui.as_weak(), library.clone());
+    // After watching or an edit, both views may be stale.
+    let (weak, page, course_view) = (ui.as_weak(), library.clone(), course.clone());
     ui.on_refresh_library(move || {
         if let Some(ui) = weak.upgrade() {
             page.reload(&ui);
+            course_view.refresh(&ui);
         }
     });
+    wire_course(&ui, &course, player.session());
 
     let result = ui.run();
     player.shutdown();
     result
+}
+
+/// The course page's actions.
+fn wire_course(ui: &AppWindow, page: &std::rc::Rc<course_page::CoursePage>, session: &std::sync::Arc<session::Session>) {
+    let library = ui.global::<Library>();
+    let (p, weak) = (page.clone(), ui.as_weak());
+    library.on_show_course(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            p.open(&ui, &id);
+        }
+    });
+
+    let course = ui.global::<Course>();
+    let (s, weak) = (session.clone(), ui.as_weak());
+    course.on_play(move |lecture| {
+        let Some(ui) = weak.upgrade() else { return };
+        match s.open(&lecture) {
+            Ok(()) => ui.set_playing(true),
+            Err(e) => tracing::warn!(error = %e, %lecture, "open lecture"),
+        }
+    });
+    // Each edit redraws the page and refreshes the library behind it.
+    macro_rules! action {
+        ($on:ident, |$page:ident, $ui:ident $(, $arg:ident)?| $body:expr) => {{
+            let (p, weak) = (page.clone(), ui.as_weak());
+            course.$on(move |$($arg)?| {
+                if let Some($ui) = weak.upgrade() {
+                    let $page = &p;
+                    $body;
+                    $ui.invoke_refresh_library();
+                }
+            });
+        }};
+    }
+    action!(on_toggle_favorite, |p, ui| p.toggle_favorite(&ui));
+    action!(on_toggle_complete, |p, ui, id| p.toggle_complete(&ui, &id));
+    action!(on_add_tag, |p, ui, tag| p.add_tag(&ui, &tag));
+    action!(on_remove_tag, |p, ui, tag| p.remove_tag(&ui, &tag));
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_toggle_section(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            p.toggle_section(&ui, &id);
+        }
+    });
+    course.on_open_resource(|path| {
+        if let Err(e) = open::that_detached(path.as_str()) {
+            tracing::warn!(error = %e, %path, "open resource");
+        }
+    });
 }
 
 /// Frameless-window actions for the custom title bars.

@@ -9,11 +9,13 @@ import {
 import { CoursePanel } from "course_panel.slint";
 import { Nav, NotPortedYet, Sidebar, TopBar, WindowChrome } from "shell.slint";
 import { CourseCard, Hero, Library, LibraryPage, SelectOption } from "library.slint";
+import { Course, CoursePage, CurriculumLecture, CurriculumSection } from "course.slint";
 import { Theme } from "theme.slint";
 
 export {
-    BookmarkRow, CourseCard, Hero, LectureRow, Library, MenuItem, Nav, Playback, ResourceGroup, ResourceItem,
-    SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme, WindowChrome,
+    BookmarkRow, Course, CourseCard, CurriculumLecture, CurriculumSection, Hero, LectureRow, Library, MenuItem,
+    Nav, Playback, ResourceGroup, ResourceItem, SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme,
+    WindowChrome,
 }
 
 export component AppWindow inherits Window {
@@ -85,8 +87,9 @@ export component AppWindow inherits Window {
                 background: Theme.background;
 
                 if Nav.page == "library": LibraryPage { }
+                if Nav.page == "course": CoursePage { }
 
-                if Nav.page != "library": NotPortedYet {
+                if Nav.page != "library" && Nav.page != "course": NotPortedYet {
                     title: Nav.crumbs[0];
                 }
             }

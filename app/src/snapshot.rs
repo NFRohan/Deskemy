@@ -108,6 +108,20 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
     }
 }
 
+/// The most recently opened course's page (read-only: no visit recorded).
+pub fn sample_course(ui: &crate::AppWindow, db: &crate::session::Db, page: &crate::course_page::CoursePage) {
+    let id = {
+        let conn = db.lock().unwrap_or_else(|e| e.into_inner());
+        deskemy_core::db::queries::list_course_summaries(&conn)
+            .ok()
+            .and_then(|cs| cs.into_iter().find(|c| c.last_opened_at.is_some()))
+            .map(|c| c.id)
+    };
+    if let Some(id) = id {
+        page.show(ui, &id);
+    }
+}
+
 fn sample_panel(playback: &crate::Playback, db: &crate::session::Db) {
     use crate::course_panel;
     use deskemy_core::db::queries;

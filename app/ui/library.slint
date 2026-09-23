@@ -60,7 +60,10 @@ export global Library {
 
     /// A filter changed: recompute the grid.
     callback apply();
+    /// Resume a course straight into the player (Continue Watching).
     callback open-course(string, string);
+    /// Show a course's page (the grid's cards).
+    callback show-course(string);
 }
 
 component ProgressBar inherits Rectangle {
@@ -632,7 +635,7 @@ export component LibraryPage inherits Flickable {
                     width: root.card-width;
                     height: root.card-height;
                     course: card;
-                    clicked => { Library.open-course(card.id, card.resume); }
+                    clicked => { Library.show-course(card.id); }
                 }
             }
         }

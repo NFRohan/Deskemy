@@ -15,6 +15,8 @@ export global WindowChrome {
 export global Nav {
     in-out property <string> page: "library";
     in-out property <[string]> crumbs: ["Library"];
+    /// The page each crumb leads back to ("" = not a link).
+    in-out property <[string]> crumb-targets: [""];
     in-out property <bool> sidebar-collapsed;
 }
 
@@ -104,11 +106,23 @@ export component TopBar inherits Rectangle {
                     vertical-alignment: center;
                 }
                 Text {
+                    property <bool> link: i < Nav.crumbs.length - 1 && i < Nav.crumb-targets.length
+                        && Nav.crumb-targets[i] != "";
                     text: crumb;
-                    color: i == Nav.crumbs.length - 1 ? Theme.on-surface : Theme.on-surface-variant;
+                    color: i == Nav.crumbs.length - 1 || (self.link && crumb-touch.has-hover)
+                        ? Theme.on-surface : Theme.on-surface-variant;
                     font-size: Theme.label-md;
                     font-weight: 600;
                     vertical-alignment: center;
+                    crumb-touch := TouchArea {
+                        enabled: parent.link;
+                        mouse-cursor: parent.link ? MouseCursor.pointer : MouseCursor.default;
+                        clicked => {
+                            Nav.page = Nav.crumb-targets[i];
+                            Nav.crumbs = [crumb];
+                            Nav.crumb-targets = [""];
+                        }
+                    }
                 }
             }
             Rectangle { horizontal-stretch: 1; }
@@ -261,6 +275,7 @@ export component Sidebar inherits Rectangle {
                 clicked => {
                     Nav.page = item.id;
                     Nav.crumbs = [item.label];
+                    Nav.crumb-targets = [""];
                 }
             }
         }

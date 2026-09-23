@@ -1,0 +1,591 @@
+// The course page — header, curriculum and resources — as the Tauri app's
+// routes/course/[id]/+page.svelte.
+
+import { Theme } from "theme.slint";
+import { ResourceGroup } from "player.slint";
+
+export struct CurriculumLecture {
+    id: string,
+    title: string,
+    /// `m:ss`, or "" when unknown.
+    duration: string,
+    completed: bool,
+    playable: bool,
+    /// The lecture Resume / Start opens ("Next up").
+    next: bool,
+}
+
+export struct CurriculumSection {
+    id: string,
+    title: string,
+    /// "3/12 · 1h 5m".
+    meta: string,
+    expanded: bool,
+    lectures: [CurriculumLecture],
+}
+
+/// The open course (from Rust) and what the page can do with it.
+export global Course {
+    in property <bool> found: true;
+    in property <string> id;
+    in property <string> title;
+    in property <image> thumbnail;
+    in property <bool> has-thumbnail;
+    in property <bool> favorite;
+    /// The folder can't be found (Missing / Error).
+    in property <bool> missing;
+    in property <[string]> tags;
+    in property <int> done;
+    in property <int> total;
+    in property <int> percent;
+    /// "27h 26m total", or "".
+    in property <string> duration;
+    in property <string> next;
+    in property <string> next-label;
+    in property <[CurriculumSection]> sections;
+    in property <[ResourceGroup]> resources;
+
+    callback play(string);
+    callback toggle-section(string);
+    callback toggle-complete(string);
+    callback toggle-favorite();
+    callback add-tag(string);
+    callback remove-tag(string);
+    callback open-resource(string);
+}
+
+component IconAction inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint: Theme.on-surface-variant;
+    in property <string> label;
+    callback clicked;
+
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.surface-container-highest : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    Image {
+        source: root.icon;
+        width: 20px;
+        height: 20px;
+        colorize: root.tint;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component ProgressBar inherits Rectangle {
+    in property <int> value;
+    in property <bool> complete;
+    height: 4px;
+    border-radius: 2px;
+    background: Theme.border;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: parent.width * max(0, min(100, root.value)) / 100;
+        border-radius: 2px;
+        background: root.complete ? Theme.secondary-container : Theme.accent-blue;
+    }
+}
+
+component TagChip inherits Rectangle {
+    in property <string> text;
+    callback remove;
+
+    height: 22px;
+    width: row.preferred-width;
+    border-radius: 11px;
+    background: Theme.surface-container-high;
+
+    row := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 4px;
+        spacing: 4px;
+        Text {
+            text: root.text;
+            color: Theme.on-surface;
+            font-size: Theme.label-sm;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: 16px;
+            height: 16px;
+            y: 3px;
+            border-radius: 8px;
+            background: x-touch.has-hover ? Theme.surface-container-highest : transparent;
+            accessible-role: button;
+            accessible-label: "Remove tag " + root.text;
+            Image {
+                source: @image-url("icons/x.svg");
+                width: 12px;
+                height: 12px;
+                colorize: x-touch.has-hover ? Theme.error : Theme.on-surface-variant;
+            }
+            x-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.remove(); }
+            }
+        }
+    }
+}
+
+component LectureRow inherits Rectangle {
+    in property <CurriculumLecture> lecture;
+
+    height: 38px;
+    background: root.lecture.next ? Theme.primary-container.transparentize(0.85) : row-touch.has-hover ? Theme.surface-container : transparent;
+
+    // The row itself opens the lecture; the tick is its own button above it.
+    row-touch := TouchArea {
+        enabled: root.lecture.playable;
+        mouse-cursor: pointer;
+        clicked => { Course.play(root.lecture.id); }
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+
+        Rectangle {
+            width: 18px;
+            accessible-role: button;
+            accessible-label: root.lecture.completed ? "Mark as not done" : "Mark as done";
+            Image {
+                source: root.lecture.completed ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
+                width: 18px;
+                height: 18px;
+                colorize: root.lecture.completed || tick.has-hover ? Theme.secondary-container : Theme.outline;
+            }
+            tick := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Course.toggle-complete(root.lecture.id); }
+            }
+        }
+        Image {
+            source: @image-url("icons/play-filled.svg");
+            width: 14px;
+            height: 14px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.primary;
+            opacity: row-touch.has-hover && root.lecture.playable ? 1 : 0;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            title := Text {
+                width: parent.width;
+                text: root.lecture.title;
+                color: root.lecture.completed ? Theme.on-surface-variant : Theme.on-surface;
+                font-size: Theme.body-md;
+                vertical-alignment: center;
+                overflow: elide;
+                opacity: root.lecture.playable ? 1 : 0.6;
+            }
+            // Done lectures are struck through (Text has no strikethrough).
+            if root.lecture.completed: Rectangle {
+                x: 0;
+                y: parent.height / 2;
+                width: min(title.preferred-width, parent.width);
+                height: 1px;
+                background: Theme.on-surface-variant;
+            }
+        }
+        if root.lecture.next: Rectangle {
+            width: next-text.preferred-width + 12px;
+            height: 20px;
+            y: 9px;
+            border-radius: 4px;
+            background: Theme.primary-container.transparentize(0.8);
+            next-text := Text {
+                text: "Next up";
+                color: Theme.primary;
+                font-size: Theme.label-sm;
+            }
+        }
+        if !root.lecture.playable: HorizontalLayout {
+            spacing: 4px;
+            Image {
+                source: @image-url("icons/triangle-alert.svg");
+                width: 12px;
+                height: 12px;
+                y: (parent.height - self.height) / 2;
+                colorize: Theme.error;
+            }
+            Text {
+                text: "Corrupted";
+                color: Theme.error;
+                font-size: Theme.label-sm;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            text: root.lecture.duration;
+            color: Theme.on-surface-variant;
+            font-size: Theme.label-sm;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component SectionHeading inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> text;
+    spacing: 8px;
+    Image {
+        source: root.icon;
+        width: 18px;
+        height: 18px;
+        y: (parent.height - self.height) / 2;
+        colorize: Theme.on-surface;
+    }
+    Text {
+        text: root.text;
+        color: Theme.on-surface;
+        font-size: Theme.headline-sm;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+}
+
+export component CoursePage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+
+    property <length> page-width: min(self.width - 48px, 1024px);
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 24px;
+        alignment: start;
+
+        if !Course.found: VerticalLayout {
+            padding-top: 128px;
+            spacing: 12px;
+            Text {
+                text: "Course not found";
+                color: Theme.on-surface;
+                font-size: Theme.headline-md;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "It may have been removed from your library.";
+                color: Theme.on-surface-variant;
+                font-size: Theme.body-sm;
+                horizontal-alignment: center;
+            }
+        }
+
+        // Header: cover, title, actions, tags, progress, resume.
+        if Course.found: Rectangle {
+            height: header.preferred-height;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.outline-variant;
+            background: Theme.surface-container-low;
+
+            header := HorizontalLayout {
+                padding: 16px;
+                spacing: 24px;
+
+                Rectangle {
+                    width: 256px;
+                    height: 144px;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.outline-variant;
+                    background: Theme.surface-container-highest;
+                    clip: true;
+                    if Course.has-thumbnail: Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: Course.thumbnail;
+                        image-fit: cover;
+                    }
+                    if !Course.has-thumbnail: VerticalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Image {
+                            source: @image-url("icons/image-plus.svg");
+                            width: 32px;
+                            height: 32px;
+                            colorize: Theme.outline-variant;
+                        }
+                        Text {
+                            text: "No thumbnail";
+                            color: Theme.outline-variant;
+                            font-size: Theme.label-sm;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        spacing: 16px;
+                        Text {
+                            text: Course.title;
+                            color: Theme.on-surface;
+                            font-size: Theme.display-sm;
+                            font-weight: 700;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1;
+                        }
+                        IconAction {
+                            label: Course.favorite ? "Unfavorite" : "Favorite";
+                            icon: Course.favorite ? @image-url("icons/star-filled.svg") : @image-url("icons/star.svg");
+                            tint: Course.favorite ? Theme.primary : Theme.on-surface-variant;
+                            clicked => { Course.toggle-favorite(); }
+                        }
+                    }
+
+                    // Tags, and a field to add one.
+                    FlexboxLayout {
+                        spacing: 6px;
+                        for tag in Course.tags: TagChip {
+                            text: tag;
+                            remove => { Course.remove-tag(tag); }
+                        }
+                        Rectangle {
+                            width: 96px;
+                            height: 22px;
+                            new-tag := TextInput {
+                                width: parent.width;
+                                height: parent.height;
+                                single-line: true;
+                                vertical-alignment: center;
+                                color: Theme.on-surface;
+                                font-size: Theme.label-sm;
+                                accepted => {
+                                    if self.text != "" {
+                                        Course.add-tag(self.text);
+                                        self.text = "";
+                                    }
+                                }
+                            }
+                            if new-tag.text == "": Text {
+                                x: 0;
+                                height: parent.height;
+                                text: "+ tag";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                                vertical-alignment: center;
+                            }
+                            Rectangle {
+                                y: parent.height - 1px;
+                                height: 1px;
+                                background: new-tag.has-focus ? Theme.accent-blue : Theme.outline-variant;
+                            }
+                        }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+
+                    HorizontalLayout {
+                        Text {
+                            text: Course.done + " / " + Course.total + " lectures completed";
+                            color: Theme.on-surface;
+                            font-size: Theme.label-md;
+                            font-weight: 600;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: Course.duration;
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.label-sm;
+                        }
+                    }
+                    ProgressBar {
+                        value: Course.percent;
+                        complete: Course.percent >= 100;
+                    }
+                    if Course.next != "": HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            height: 36px;
+                            width: resume-row.preferred-width;
+                            border-radius: 4px;
+                            background: resume-touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
+                            accessible-role: button;
+                            accessible-label: Course.next-label;
+                            resume-row := HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                spacing: 8px;
+                                Image {
+                                    source: @image-url("icons/play-filled.svg");
+                                    width: 16px;
+                                    height: 16px;
+                                    y: (parent.height - self.height) / 2;
+                                    colorize: Theme.on-primary-container;
+                                }
+                                Text {
+                                    text: Course.next-label;
+                                    color: Theme.on-primary-container;
+                                    font-size: Theme.label-md;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            resume-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Course.play(Course.next); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Curriculum.
+        if Course.found: VerticalLayout {
+            spacing: 16px;
+            SectionHeading {
+                icon: @image-url("icons/list-video.svg");
+                text: "Course Curriculum";
+            }
+            VerticalLayout {
+                spacing: 8px;
+                for section in Course.sections: Rectangle {
+                    height: body.preferred-height;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.outline-variant;
+                    background: Theme.surface-container-low;
+                    clip: true;
+
+                    body := VerticalLayout {
+                        Rectangle {
+                            height: 48px;
+                            background: head-touch.has-hover ? Theme.surface-container : transparent;
+                            head-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Course.toggle-section(section.id); }
+                            }
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                spacing: 8px;
+                                Image {
+                                    source: section.expanded ? @image-url("icons/chevron-down.svg") : @image-url("icons/chevron-right.svg");
+                                    width: 18px;
+                                    height: 18px;
+                                    y: (parent.height - self.height) / 2;
+                                    colorize: Theme.on-surface-variant;
+                                }
+                                Text {
+                                    text: section.title;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.headline-sm;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: section.meta;
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        if section.expanded: VerticalLayout {
+                            Rectangle {
+                                height: 1px;
+                                background: Theme.outline-variant;
+                            }
+                            for lecture in section.lectures: LectureRow {
+                                lecture: lecture;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Resources, grouped like the curriculum.
+        if Course.found && Course.resources.length > 0: VerticalLayout {
+            spacing: 16px;
+            SectionHeading {
+                icon: @image-url("icons/paperclip.svg");
+                text: "Resources";
+            }
+            for group in Course.resources: VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: group.title;
+                    color: Theme.on-surface-variant;
+                    font-size: Theme.label-md;
+                    font-weight: 600;
+                    x: 4px;
+                }
+                Rectangle {
+                    height: items.preferred-height;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.outline-variant;
+                    background: Theme.surface-container-low;
+                    clip: true;
+                    items := VerticalLayout {
+                        for item[i] in group.items: Rectangle {
+                            height: 42px;
+                            background: res-touch.has-hover ? Theme.surface-container : transparent;
+                            if i > 0: Rectangle {
+                                y: 0;
+                                height: 1px;
+                                background: Theme.outline-variant;
+                            }
+                            res-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Course.open-resource(item.path); }
+                            }
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                spacing: 12px;
+                                Image {
+                                    source: item.kind == "pdf" || item.kind == "text" ? @image-url("icons/file-text.svg")
+                                        : item.kind == "archive" ? @image-url("icons/file-archive.svg")
+                                        : item.kind == "code" || item.kind == "html" ? @image-url("icons/file-code.svg")
+                                        : @image-url("icons/file.svg");
+                                    width: 18px;
+                                    height: 18px;
+                                    y: (parent.height - self.height) / 2;
+                                    colorize: Theme.on-surface-variant;
+                                }
+                                Text {
+                                    text: item.name;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.body-md;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: item.kind;
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
