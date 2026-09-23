@@ -18,7 +18,7 @@ use crate::scanner::{FileKind, FilesystemScanner, ScannedFile, ScannedTree, Scan
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::path::Path;
-use structure::{clean_title, leading_number, sort_key};
+use structure::{clean_folder_title, clean_title, leading_number, sort_key};
 
 pub struct Importer {
     prober: Box<dyn MediaProber>,
@@ -470,7 +470,7 @@ impl Importer {
             let title = if key.is_empty() {
                 "Introduction".to_string()
             } else if clean_titles {
-                clean_title(&key)
+                clean_folder_title(&key)
             } else {
                 key.clone()
             };
@@ -722,4 +722,33 @@ fn attachment_kind(f: &ScannedFile) -> &'static str {
         "txt" => "text",
         _ => "other",
     }
+}
+
+/// One-off repair for libraries imported before [`clean_folder_title`]: the
+/// old code cleaned section folder names as if they were files, so
+/// `"04. IAM & AWS CLI"` came out as `"04"`. Only a title that is exactly what
+/// that produced from its folder name is rewritten — renamed titles, and ones
+/// imported with title cleaning off, are left alone — so it is safe to run on
+/// every start. Returns how many titles were fixed.
+pub fn repair_section_titles(conn: &mut Connection) -> Result<usize> {
+    let fixes: Vec<(String, String)> = queries::section_titles(conn)?
+        .into_iter()
+        .filter_map(|(id, title, folder)| {
+            let folder = folder.filter(|f| !f.is_empty())?;
+            let fixed = clean_folder_title(&folder);
+            (title == clean_title(&folder) && fixed != title && !fixed.is_empty())
+                .then_some((id, fixed))
+        })
+        .collect();
+    if fixes.is_empty() {
+        return Ok(0);
+    }
+    let tx = conn.transaction()?;
+    for (id, title) in &fixes {
+        queries::set_section_title(&tx, id, title)?;
+    }
+    // Section titles are searchable too.
+    queries::rebuild_search_index(&tx)?;
+    tx.commit()?;
+    Ok(fixes.len())
 }

@@ -19,15 +19,29 @@ pub fn leading_number(name: &str) -> Option<i64> {
     }
 }
 
-/// Display title: drop the extension, then strip a leading numeric prefix and
-/// its separator (`"001 Welcome.mp4"` → `"Welcome"`, `"1 - Intro"` → `"Intro"`).
-/// Leaves numeric-only titles like `"1984"` intact (no separator follows).
+/// Display title for a file: drop the extension, then strip a leading numeric
+/// prefix and its separator (`"001 Welcome.mp4"` → `"Welcome"`,
+/// `"1 - Intro.mp4"` → `"Intro"`). Leaves numeric-only titles like `"1984"`
+/// intact (no separator follows).
 pub fn clean_title(file_name: &str) -> String {
     let stem = match file_name.rfind('.') {
         Some(idx) if idx > 0 => &file_name[..idx],
         _ => file_name,
     };
+    strip_number_prefix(stem)
+}
 
+/// Display title for a folder (a section). Folders have no extension, so only
+/// the numeric prefix goes: `"04. IAM & AWS CLI"` → `"IAM & AWS CLI"`. Using
+/// [`clean_title`] here would treat everything after the `.` as an extension
+/// and leave just `"04"`.
+pub fn clean_folder_title(folder_name: &str) -> String {
+    strip_number_prefix(folder_name)
+}
+
+/// Strip a leading numeric prefix when a separator follows it
+/// (`"01 - Intro"` → `"Intro"`, `"1984"` → `"1984"`).
+fn strip_number_prefix(stem: &str) -> String {
     let bytes = stem.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] as char).is_whitespace() {
@@ -84,6 +98,20 @@ mod tests {
         assert_eq!(clean_title("01_setup_env.mp4"), "setup_env");
         assert_eq!(clean_title("Introduction.mp4"), "Introduction");
         assert_eq!(clean_title("1984.mp4"), "1984");
+    }
+
+    #[test]
+    fn cleans_folder_titles_without_treating_the_dot_as_an_extension() {
+        // The common Udemy layout — this used to come out as just "04".
+        assert_eq!(clean_folder_title("04. IAM & AWS CLI"), "IAM & AWS CLI");
+        assert_eq!(
+            clean_folder_title("01. Introduction - AWS Certified Solutions Architect Associate"),
+            "Introduction - AWS Certified Solutions Architect Associate"
+        );
+        assert_eq!(clean_folder_title("02 - Basics"), "Basics");
+        assert_eq!(clean_folder_title("Section 3"), "Section 3");
+        assert_eq!(clean_folder_title("Node.js Fundamentals"), "Node.js Fundamentals");
+        assert_eq!(clean_folder_title("2024"), "2024");
     }
 
     #[test]

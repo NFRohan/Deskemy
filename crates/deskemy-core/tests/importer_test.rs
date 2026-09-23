@@ -289,3 +289,67 @@ fn relocate_course_rewrites_paths_and_keeps_progress() {
         .unwrap();
     assert_eq!(status, "Ready", "course marked Ready again");
 }
+
+#[test]
+fn dotted_section_folders_keep_their_names() {
+    // "NN. Title" folders (the usual Udemy layout) used to import as just "NN".
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("AWS Course");
+    for section in ["03. Getting started with AWS", "04. IAM & AWS CLI"] {
+        fs::create_dir_all(course.join(section)).unwrap();
+        touch(&course.join(section).join("1. Lecture.mp4"));
+    }
+
+    let mut conn = db::open_in_memory().unwrap();
+    let course_id = Importer::new(Box::new(StubProber))
+        .import_course(&mut conn, None, &course)
+        .unwrap();
+    let detail = db::queries::get_course_detail(&conn, &course_id).unwrap().unwrap();
+
+    let titles: Vec<&str> = detail.sections.iter().map(|s| s.title.as_str()).collect();
+    assert_eq!(titles, vec!["Getting started with AWS", "IAM & AWS CLI"]);
+    assert_eq!(detail.sections[1].lectures[0].title, "Lecture");
+}
+
+#[test]
+fn repair_fixes_only_titles_the_old_cleaner_broke() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("AWS Course");
+    for section in ["04. IAM & AWS CLI", "05. EC2 Fundamentals", "06 - Networking"] {
+        fs::create_dir_all(course.join(section)).unwrap();
+        touch(&course.join(section).join("1. Lecture.mp4"));
+    }
+    let mut conn = db::open_in_memory().unwrap();
+    let course_id = Importer::new(Box::new(StubProber))
+        .import_course(&mut conn, None, &course)
+        .unwrap();
+    let ids: Vec<String> = db::queries::get_course_detail(&conn, &course_id)
+        .unwrap()
+        .unwrap()
+        .sections
+        .into_iter()
+        .map(|s| s.id)
+        .collect();
+
+    // As a library imported before the fix looks: "04" and "05"; plus one
+    // section the user renamed to something that happens to look similar.
+    db::queries::set_section_title(&conn, &ids[0], "04").unwrap();
+    db::queries::set_section_title(&conn, &ids[1], "05").unwrap();
+    db::queries::set_section_title(&conn, &ids[2], "06").unwrap();
+
+    assert_eq!(deskemy_core::importer::repair_section_titles(&mut conn).unwrap(), 2);
+    let titles: Vec<String> = db::queries::get_course_detail(&conn, &course_id)
+        .unwrap()
+        .unwrap()
+        .sections
+        .into_iter()
+        .map(|s| s.title)
+        .collect();
+    // "06 - Networking" was never broken by the bug, so "06" is the user's.
+    assert_eq!(titles, vec!["IAM & AWS CLI", "EC2 Fundamentals", "06"]);
+
+    // Searchable under the repaired title, and a second run is a no-op.
+    let hits = db::queries::search(&conn, "IAM", 10).unwrap();
+    assert!(hits.iter().any(|h| h.title == "IAM & AWS CLI"));
+    assert_eq!(deskemy_core::importer::repair_section_titles(&mut conn).unwrap(), 0);
+}

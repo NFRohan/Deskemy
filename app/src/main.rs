@@ -124,6 +124,15 @@ fn main() -> Result<(), slint::PlatformError> {
     result
 }
 
+/// Fix section titles broken by the old folder-name cleaner ("04. IAM" → "04").
+fn repair_titles(conn: &mut db::Connection) {
+    match deskemy_core::importer::repair_section_titles(conn) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(sections = n, "repaired section titles"),
+        Err(e) => tracing::warn!(error = %e, "repair section titles"),
+    }
+}
+
 /// Open the user's library and config. Without a library yet (fresh install)
 /// the app still runs on an empty in-memory one, so files can be played.
 fn open_library(ui: &AppWindow) -> (Db, AppConfig) {
@@ -136,8 +145,9 @@ fn open_library(ui: &AppWindow) -> (Db, AppConfig) {
 
     let db_path = dir.map(|d| d.join(paths::DB_FILE));
     let conn = match db_path.as_ref().filter(|p| p.exists()).map(|p| db::open(p)) {
-        Some(Ok(conn)) => {
+        Some(Ok(mut conn)) => {
             tracing::info!(db = %db_path.as_ref().unwrap().display(), "database ready");
+            repair_titles(&mut conn);
             Some(conn)
         }
         Some(Err(e)) => {

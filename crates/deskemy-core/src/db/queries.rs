@@ -278,6 +278,20 @@ pub fn all_thumbnail_paths(conn: &Connection) -> Result<Vec<String>> {
 // Sections / lectures / associated rows
 // ---------------------------------------------------------------------------
 
+/// (id, title, folder name) of every section — for title repairs.
+pub fn section_titles(conn: &Connection) -> Result<Vec<(String, String, Option<String>)>> {
+    let mut stmt = conn.prepare("SELECT id, title, folder_path FROM sections")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn set_section_title(conn: &Connection, id: &str, title: &str) -> Result<()> {
+    conn.execute("UPDATE sections SET title = ?2 WHERE id = ?1", params![id, title])?;
+    Ok(())
+}
+
 pub fn insert_section(
     conn: &Connection,
     id: &str,

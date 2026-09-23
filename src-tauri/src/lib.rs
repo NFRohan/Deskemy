@@ -317,13 +317,21 @@ pub fn run() {
             let db_path = data_dir.join("deskemy.db");
             let config_path = data_dir.join("config.json");
 
-            let conn = db::open(&db_path)?;
+            let mut conn = db::open(&db_path)?;
             let config = AppConfig::load(&config_path)?;
 
             // Rebuild the search index on startup — cheap for a local library
             // and keeps it consistent with the base tables (and any entities
             // indexed after they were first imported).
             db::queries::rebuild_search_index(&conn)?;
+
+            // Fix section titles the old folder-name cleaner broke ("04. IAM"
+            // → "04"); only exact matches of that bug are touched.
+            match importer::repair_section_titles(&mut conn) {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(sections = n, "repaired section titles"),
+                Err(e) => tracing::warn!(error = %e, "repair section titles"),
+            }
 
             tracing::info!(db = %db_path.display(), "database ready");
             app.manage(AppState::new(conn, config, data_dir, config_path));
