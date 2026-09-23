@@ -1,0 +1,3 @@
+/target/
+# Library crate: the apps that depend on it own the lockfile.
+/Cargo.lock

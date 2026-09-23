@@ -2,9 +2,9 @@
 //! course/section/lecture hierarchy, ordering, and resource association land in
 //! SQLite. Uses the stub prober (no native media deps).
 
-use deskemy_lib::db;
-use deskemy_lib::importer::Importer;
-use deskemy_lib::media::stub::StubProber;
+use deskemy_core::db;
+use deskemy_core::importer::Importer;
+use deskemy_core::media::stub::StubProber;
 use std::fs;
 use std::path::Path;
 

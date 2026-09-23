@@ -1,23 +1,18 @@
-mod backup;
 mod commands;
 #[cfg(windows)]
 mod compositor;
 mod state;
 
-// Exposed for integration tests (tests/ is a separate crate).
-pub mod config;
-pub mod db;
-pub mod domain;
-pub mod error;
-pub mod hashing;
-pub mod importer;
-pub mod media;
-pub mod mpv;
 pub mod player;
-pub mod scanner;
-pub mod subtitles;
-pub mod thumbnails;
 pub mod watcher;
+
+// The platform-agnostic core lives in `deskemy-core`; re-exported under the
+// old paths so `crate::db::…` etc. keep resolving (and the examples keep
+// working as `deskemy_lib::…`).
+pub use deskemy_core::{
+    backup, config, db, domain, error, hashing, importer, media, mpv, scanner, subtitles,
+    thumbnails,
+};
 
 use config::AppConfig;
 use state::AppState;

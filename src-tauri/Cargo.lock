@@ -838,8 +838,7 @@ name = "deskemy"
 version = "1.2.2"
 dependencies = [
  "base64 0.22.1",
- "blake3",
- "libloading 0.8.9",
+ "deskemy-core",
  "notify-debouncer-mini",
  "proptest",
  "rusqlite",
@@ -851,13 +850,25 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-updater",
  "tempfile",
- "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
- "uuid",
- "walkdir",
  "windows",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "deskemy-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "libloading 0.8.9",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+ "walkdir",
  "zip 2.4.2",
 ]
 
