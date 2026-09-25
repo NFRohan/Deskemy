@@ -397,3 +397,29 @@ fn delete_removes_the_course_and_nothing_on_disk() {
     assert!(db::queries::search(&conn, "Welcome", 10).unwrap().is_empty(), "search index cleaned");
     assert!(course.join("001 Welcome.mp4").exists(), "files stay on disk");
 }
+
+#[test]
+fn preview_counts_what_an_import_would_create() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Rust Course");
+    let s1 = course.join("01 - Basics");
+    fs::create_dir_all(&s1).unwrap();
+    touch(&s1.join("001 Hello.mp4"));
+    touch(&s1.join("001 Hello.srt"));
+    touch(&s1.join("002 Types.mp4"));
+    touch(&s1.join("notes.pdf"));
+
+    let mut conn = db::open_in_memory().unwrap();
+    let importer = Importer::new(Box::new(StubProber));
+    let snap = importer.read_snapshot(&conn, &course).unwrap();
+    let plan = importer.build(&course, &snap, true, |_, _| {}).unwrap();
+    let p = plan.preview(&snap);
+    assert_eq!(p.title, "Rust Course");
+    assert!(!p.is_reimport);
+    assert_eq!((p.sections, p.lectures, p.resources, p.subtitles, p.unplayable), (1, 2, 1, 1, 0));
+
+    // Once imported, the same folder previews as a re-import.
+    importer.persist(&mut conn, None, &snap, &plan).unwrap();
+    let again = importer.read_snapshot(&conn, &course).unwrap();
+    assert!(importer.build(&course, &again, true, |_, _| {}).unwrap().preview(&again).is_reimport);
+}

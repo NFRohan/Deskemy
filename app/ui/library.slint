@@ -412,16 +412,20 @@ export component LibraryPage inherits Flickable {
             padding-top: 128px;
             spacing: 12px;
             alignment: center;
-            Rectangle {
-                width: 64px;
-                height: 64px;
-                border-radius: 12px;
-                background: Theme.surface-container;
-                Image {
-                    source: @image-url("icons/folder-open.svg");
-                    width: 30px;
-                    height: 30px;
-                    colorize: Theme.outline;
+            // Centred by its own layout: a fixed-size child otherwise sits left.
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 64px;
+                    height: 64px;
+                    border-radius: 12px;
+                    background: Theme.surface-container;
+                    Image {
+                        source: @image-url("icons/folder-open.svg");
+                        width: 30px;
+                        height: 30px;
+                        colorize: Theme.outline;
+                    }
                 }
             }
             Text {
@@ -433,7 +437,7 @@ export component LibraryPage inherits Flickable {
             }
             Text {
                 text: Library.status-text != "" ? Library.status-text
-                    : "Import a downloaded course and Deskemy will structure it into sections and lectures.";
+                    : "Use Add Folder in the sidebar to import a downloaded course. Deskemy will auto-structure it into sections and lectures.";
                 color: Theme.on-surface-variant;
                 font-size: Theme.body-sm;
                 horizontal-alignment: center;

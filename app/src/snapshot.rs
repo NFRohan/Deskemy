@@ -150,6 +150,22 @@ pub fn sample_tracks(ui: &crate::AppWindow, page: &crate::career::TracksPage, wh
     tracks.set_dialog(dialog.into());
 }
 
+/// The import preview, filled with plausible figures.
+pub fn sample_import_preview(ui: &crate::AppWindow) {
+    use slint::ComponentHandle;
+    let preview = deskemy_core::domain::ImportPreview {
+        title: "Udemy - Rust Programming The Complete Developer's Guide (2025)".into(),
+        is_reimport: true,
+        sections: 18,
+        lectures: 212,
+        resources: 37,
+        subtitles: 205,
+        unplayable: 2,
+        total_duration: Some(31.5 * 3600.0),
+    };
+    crate::importing::show_preview(&ui.global::<crate::Import>(), &preview);
+}
+
 fn sample_panel(playback: &crate::Playback, db: &crate::session::Db) {
     use crate::course_panel;
     use deskemy_core::db::queries;

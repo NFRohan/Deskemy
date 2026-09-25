@@ -146,16 +146,7 @@ pub async fn library_preview_import(
         let _ = app.emit("import:progress", (done, total));
     })?;
 
-    let preview = ImportPreview {
-        title: snap.title().to_string(),
-        is_reimport: snap.is_reimport(),
-        sections: plan.section_count() as i64,
-        lectures: plan.lecture_count() as i64,
-        resources: plan.resource_count() as i64,
-        subtitles: plan.subtitle_count() as i64,
-        unplayable: plan.unplayable_count() as i64,
-        total_duration: plan.total_duration(),
-    };
+    let preview = plan.preview(&snap);
 
     // Stage this plan (only the latest preview is kept) for confirm-without-reprobe.
     if let Ok(mut pending) = state.pending_imports.lock() {

@@ -17,11 +17,12 @@ import { Search, SearchPage, SearchRow, SubtitleRow } from "search.slint";
 import { PickRow, TrackCard, TrackCourseRow, TrackDialogs, TrackPage, Tracks, TracksPage } from "career.slint";
 import { LearningStats, StatsPage, WeekBar } from "stats_page.slint";
 import { ImportConfirm, Prefs, SettingsPage } from "settings.slint";
+import { Import, ImportDialog } from "import.slint";
 import { Theme } from "theme.slint";
 
 export {
     BookmarkEntry, BookmarkGroup, HistoryGroup, HistoryRow, Lists, Search, SearchRow, SubtitleRow,
-    PickRow, TrackCard, TrackCourseRow, Tracks, LearningStats, WeekBar, Prefs,
+    PickRow, TrackCard, TrackCourseRow, Tracks, LearningStats, WeekBar, Prefs, Import,
     BookmarkRow, Course, CourseCard, CurriculumLecture, CurriculumSection, Hero, LectureRow, Library, MenuItem,
     Nav, Playback, ResourceGroup, ResourceItem, SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme,
     WindowChrome,
@@ -115,6 +116,10 @@ export component AppWindow inherits Window {
 
     // Page dialogs dim the whole window, sidebar included.
     if !root.playing && Nav.page == "course" && Course.dialog != "": CourseDialogs {
+        width: parent.width;
+        height: parent.height;
+    }
+    if !root.playing && Import.open: ImportDialog {
         width: parent.width;
         height: parent.height;
     }

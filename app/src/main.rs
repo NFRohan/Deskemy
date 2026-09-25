@@ -4,6 +4,7 @@
 mod career;
 mod course_page;
 mod course_panel;
+mod importing;
 mod library;
 mod pages;
 mod search;
@@ -111,6 +112,26 @@ fn main() -> Result<(), slint::PlatformError> {
             ui.global::<Prefs>().invoke_set_result(key.into(), message.into());
             prefs.show_storage(&ui);
         }
+        // "import-preview" / "import-scanning": the Add Folder flow, with sample
+        // figures (no folder is probed).
+        if page.as_deref() == Some("import-preview") {
+            snapshot::sample_import_preview(&ui);
+        }
+        // "import-probe:<folder>" probes a real folder (reading it only) and
+        // shows its preview.
+        if let Some(folder) = page.as_deref().and_then(|p| p.strip_prefix("import-probe:")) {
+            let importer = importing::Importing::new(db.clone(), config.clone());
+            let started = std::time::Instant::now();
+            match importing::probe(importer.importer(), &db, std::path::Path::new(folder), true, |_, _| {}) {
+                Ok((preview, ..)) => importing::show_preview(&ui.global::<Import>(), &preview),
+                Err(e) => ui.global::<Import>().set_error(e.into()),
+            }
+            tracing::info!(elapsed = ?started.elapsed(), "probed");
+        }
+        if page.as_deref() == Some("import-scanning") {
+            ui.global::<Import>().set_scanning(true);
+            ui.global::<Import>().set_progress(importing::progress_label(7, 42).into());
+        }
         // "settings-import": Settings with the import confirmation open.
         if page.as_deref() == Some("settings-import") {
             ui.global::<Nav>().set_page("settings".into());
@@ -210,6 +231,7 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     wire_tracks(&ui, &tracks);
+    wire_import(&ui, &std::rc::Rc::new(importing::Importing::new(db.clone(), config.clone())));
     let (p, weak) = (prefs.clone(), ui.as_weak());
     ui.global::<Prefs>().on_set(move |key, value| {
         if let Some(ui) = weak.upgrade() {
@@ -315,6 +337,29 @@ fn wire_search(
         match s.open_at(&lecture, Some(start as f64)) {
             Ok(()) => ui.set_playing(true),
             Err(e) => tracing::warn!(error = %e, %lecture, "open lecture"),
+        }
+    });
+}
+
+/// Add Folder: pick, probe, preview, import.
+fn wire_import(ui: &AppWindow, importing: &std::rc::Rc<importing::Importing>) {
+    let import = ui.global::<Import>();
+    let (i, weak) = (importing.clone(), ui.as_weak());
+    import.on_add_folder(move || {
+        if let Some(ui) = weak.upgrade() {
+            i.add_folder(&ui);
+        }
+    });
+    let (i, weak) = (importing.clone(), ui.as_weak());
+    import.on_confirm(move || {
+        if let Some(ui) = weak.upgrade() {
+            i.confirm(&ui);
+        }
+    });
+    let (i, weak) = (importing.clone(), ui.as_weak());
+    import.on_cancel(move || {
+        if let Some(ui) = weak.upgrade() {
+            i.cancel(&ui);
         }
     });
 }

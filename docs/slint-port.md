@@ -128,6 +128,14 @@ parent; wrapped `Text` is measured at its unwrapped width, so give it a
 `max-width` when its container sizes itself from content.
 `DESKEMY_SNAPSHOT_HEIGHT` renders a taller `--snapshot`, to see a long page whole.
 
+- ☑ Add Folder: pick → probe on a worker thread with live "Probing n/N" →
+  preview (counts, runtime, re-import, unplayable) → import; the probed plan
+  is kept so confirming doesn't probe again (`ui/import.slint`,
+  `src/importing.rs`). `--snapshot <png> import-probe:<folder>` probes a real
+  folder inline (reads only)
+- ☐ Run it: Add Folder in a real window (native picker, progress, import)
+- ☐ Folder watcher (auto-rescan)
+
 ## Later phases
 
 5. Import flow (preview + progress) and the filesystem watcher (callback instead of `tauri::Emitter`).

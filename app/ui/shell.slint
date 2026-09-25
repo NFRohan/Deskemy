@@ -2,6 +2,7 @@
 // Tauri app's TopBar.svelte / Sidebar.svelte.
 
 import { Theme } from "theme.slint";
+import { AddFolderButton, Import } from "import.slint";
 
 /// Window actions (carried out in Rust) and the state their buttons show.
 export global WindowChrome {
@@ -278,6 +279,25 @@ export component Sidebar inherits Rectangle {
                     Nav.crumbs = [item.label];
                     Nav.crumb-targets = [""];
                 }
+            }
+        }
+
+        // Add Folder, with the last failure above it (the preview shows its own).
+        VerticalLayout {
+            padding-left: Nav.sidebar-collapsed ? 8px : 16px;
+            padding-right: self.padding-left;
+            spacing: 8px;
+            if Import.error != "" && !Import.open && !Nav.sidebar-collapsed: Text {
+                text: Import.error;
+                color: Theme.error;
+                font-size: Theme.label-sm;
+                wrap: word-wrap;
+                overflow: elide;
+                max-height: 36px;
+                max-width: root.width - 32px;
+            }
+            AddFolderButton {
+                collapsed: Nav.sidebar-collapsed;
             }
         }
     }

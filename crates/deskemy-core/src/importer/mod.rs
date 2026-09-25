@@ -107,6 +107,20 @@ impl ImportSnapshot {
 }
 
 impl ImportPlan {
+    /// What importing this plan would create, for the confirmation dialog.
+    pub fn preview(&self, snap: &ImportSnapshot) -> crate::domain::ImportPreview {
+        crate::domain::ImportPreview {
+            title: snap.title().to_string(),
+            is_reimport: snap.is_reimport(),
+            sections: self.section_count() as i64,
+            lectures: self.lecture_count() as i64,
+            resources: self.resource_count() as i64,
+            subtitles: self.subtitle_count() as i64,
+            unplayable: self.unplayable_count() as i64,
+            total_duration: self.total_duration(),
+        }
+    }
+
     /// Total lectures across all sections (0 = nothing playable found).
     pub fn lecture_count(&self) -> usize {
         self.sections.iter().map(|s| s.lectures.len()).sum()

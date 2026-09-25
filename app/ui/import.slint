@@ -1,0 +1,328 @@
+// Adding a course — the sidebar's Add Folder, its progress and the import
+// preview — as the Tauri app's Sidebar.svelte.
+
+import { Theme } from "theme.slint";
+
+export global Import {
+    /// A picked folder is being probed.
+    in property <bool> scanning;
+    /// "Scanning…" / "Probing 3/12".
+    in property <string> progress;
+    /// The preview is confirmed and being written.
+    in property <bool> importing;
+    in property <string> error;
+
+    // The preview.
+    in property <bool> open;
+    in property <string> title;
+    in property <bool> reimport;
+    in property <int> sections;
+    in property <int> lectures;
+    in property <int> resources;
+    in property <int> subtitles;
+    /// "Total runtime · 5h 20m", or "".
+    in property <string> runtime;
+    /// The unplayable-videos warning, or "".
+    in property <string> unplayable;
+
+    callback add-folder();
+    callback confirm();
+    callback cancel();
+}
+
+/// The sidebar's Add Folder button (icon only when collapsed).
+export component AddFolderButton inherits Rectangle {
+    in property <bool> collapsed;
+    property <bool> busy: Import.scanning || Import.importing;
+
+    height: 36px;
+    border-radius: 4px;
+    background: !root.busy && touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
+    opacity: root.busy ? 0.6 : 1;
+    accessible-role: button;
+    accessible-label: "Add Folder";
+    accessible-enabled: !root.busy;
+    accessible-action-default => { Import.add-folder(); }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 8px;
+        Image {
+            source: root.busy ? @image-url("icons/loader-circle.svg") : @image-url("icons/folder-plus.svg");
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.on-primary-container;
+            transform-rotation: root.busy ? animation-tick() / 1s * 360deg : 0deg;
+        }
+        if !root.collapsed: Text {
+            text: Import.scanning ? Import.progress : Import.importing ? "Importing…" : "Add Folder";
+            color: Theme.on-primary-container;
+            font-size: Theme.label-md;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: !root.busy;
+        mouse-cursor: pointer;
+        clicked => { Import.add-folder(); }
+    }
+}
+
+component Count inherits Rectangle {
+    in property <image> icon;
+    in property <int> value;
+    in property <string> label;
+    height: 40px;
+    border-radius: 8px;
+    background: Theme.surface-container-low;
+    HorizontalLayout {
+        padding-left: 12px;
+        spacing: 8px;
+        Image {
+            source: root.icon;
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.on-surface-variant;
+        }
+        Text {
+            text: root.value;
+            color: Theme.on-surface;
+            font-size: Theme.body-md;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.label;
+            color: Theme.on-surface;
+            font-size: Theme.body-md;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+component Button inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <bool> active: true;
+    in property <bool> spinning;
+    callback clicked;
+    height: 36px;
+    width: row.preferred-width;
+    border-radius: 4px;
+    background: root.primary ? (root.active && touch.has-hover ? Theme.inverse-primary : Theme.primary-container)
+        : root.active && touch.has-hover ? Theme.surface-container-highest : transparent;
+    opacity: root.active ? 1 : 0.6;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.active;
+    accessible-action-default => { root.clicked(); }
+    row := HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 6px;
+        if root.spinning: Image {
+            source: @image-url("icons/loader-circle.svg");
+            width: 15px;
+            height: 15px;
+            y: (parent.height - self.height) / 2;
+            colorize: label.color;
+            transform-rotation: animation-tick() / 1s * 360deg;
+        }
+        label := Text {
+            text: root.text;
+            color: root.primary ? Theme.on-primary-container : Theme.on-surface;
+            font-size: Theme.label-md;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.active;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// What importing the picked folder would create, over the dimmed window.
+/// A stray click outside doesn't dismiss it (the probe would have to run
+/// again); Cancel or Esc does.
+export component ImportDialog inherits Rectangle {
+    background: #00000099;
+    property <length> card-width: min(448px, root.width - 32px);
+    property <length> text-width: root.card-width - 40px;
+
+    keys := FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape && !Import.importing {
+                Import.cancel();
+                return accept;
+            }
+            return reject;
+        }
+        TouchArea { }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: root.card-width;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: Theme.outline-variant;
+                    background: Theme.surface-container;
+
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 16px;
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text {
+                                    text: "Import course";
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                }
+                                Text {
+                                    text: Import.title;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.headline-sm;
+                                    font-weight: 600;
+                                    overflow: elide;
+                                }
+                            }
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: 6px;
+                                background: close.has-hover && !Import.importing ? Theme.surface-container-highest : transparent;
+                                opacity: Import.importing ? 0.5 : 1;
+                                accessible-role: button;
+                                accessible-label: "Cancel";
+                                Image {
+                                    source: @image-url("icons/x.svg");
+                                    width: 18px;
+                                    height: 18px;
+                                    colorize: Theme.on-surface-variant;
+                                }
+                                close := TouchArea {
+                                    enabled: !Import.importing;
+                                    mouse-cursor: pointer;
+                                    clicked => { Import.cancel(); }
+                                }
+                            }
+                        }
+
+                        if Import.reimport: Rectangle {
+                            height: note.preferred-height;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: Theme.secondary-container.transparentize(0.75);
+                            background: Theme.secondary-container.transparentize(0.9);
+                            note := HorizontalLayout {
+                                padding: 8px;
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: "Already in your library — re-importing keeps your progress, bookmarks and tags.";
+                                    color: Theme.secondary-container;
+                                    font-size: Theme.label-sm;
+                                    wrap: word-wrap;
+                                    max-width: root.text-width - 24px;
+                                }
+                            }
+                        }
+
+                        VerticalLayout {
+                            spacing: 8px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Count {
+                                    horizontal-stretch: 1;
+                                    icon: @image-url("icons/layers.svg");
+                                    value: Import.sections;
+                                    label: "sections";
+                                }
+                                Count {
+                                    horizontal-stretch: 1;
+                                    icon: @image-url("icons/video.svg");
+                                    value: Import.lectures;
+                                    label: "lectures";
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Count {
+                                    horizontal-stretch: 1;
+                                    icon: @image-url("icons/paperclip.svg");
+                                    value: Import.resources;
+                                    label: "resources";
+                                }
+                                Count {
+                                    horizontal-stretch: 1;
+                                    icon: @image-url("icons/captions.svg");
+                                    value: Import.subtitles;
+                                    label: "subtitles";
+                                }
+                            }
+                        }
+
+                        if Import.runtime != "": Text {
+                            text: Import.runtime;
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.label-sm;
+                        }
+                        if Import.unplayable != "": HorizontalLayout {
+                            spacing: 6px;
+                            Image {
+                                source: @image-url("icons/triangle-alert.svg");
+                                width: 14px;
+                                height: 14px;
+                                y: (parent.height - self.height) / 2;
+                                colorize: Theme.error;
+                            }
+                            Text {
+                                text: Import.unplayable;
+                                color: Theme.error;
+                                font-size: Theme.label-sm;
+                                wrap: word-wrap;
+                                max-width: root.text-width - 20px;
+                            }
+                        }
+                        if Import.error != "": Text {
+                            text: Import.error;
+                            color: Theme.error;
+                            font-size: Theme.label-sm;
+                            wrap: word-wrap;
+                            max-width: root.text-width;
+                        }
+
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            Button {
+                                text: "Cancel";
+                                active: !Import.importing;
+                                clicked => { Import.cancel(); }
+                            }
+                            Button {
+                                text: Import.reimport ? "Re-import" : "Import";
+                                primary: true;
+                                active: !Import.importing;
+                                spinning: Import.importing;
+                                clicked => { Import.confirm(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
