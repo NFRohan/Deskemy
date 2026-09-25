@@ -450,3 +450,45 @@ fn subtitle_search_marks_matched_words() {
     let plain = db::queries::subtitle_search(&conn, "cluster", 10).unwrap();
     assert_eq!(plain[0].snippet, "A [Music] pod runs on a [cluster] node.");
 }
+
+#[test]
+fn exercise_pdfs_pair_with_their_lessons() {
+    // A real course layout (from a user): numbered lessons, some with a PDF of
+    // exercises sharing the lesson's name.
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Matematica");
+    let s = course.join("DAI NUMERI NATURALI ALLE PRIME EQUAZIONI");
+    fs::create_dir_all(&s).unwrap();
+    for name in [
+        "1. NAT01 – Espressioni con i numeri naturali (1).mp4",
+        "1. NAT01 – Espressioni con i numeri naturali (1).pdf",
+        "2. NAT02 – Espressioni con i numeri naturali (2).mp4",
+        "4. NAT04 – Espressioni con i numeri naturali (4).mp4",
+        "4. NAT04 – Espressioni con i numeri naturali (4).pdf",
+        "9. POT01 – Proprietà delle potenze (1).mp4",
+        "9. POT01 – Proprietà delle potenze (1).pdf",
+        "10. POT02 – Proprietà delle potenze (2).mp4",
+    ] {
+        touch(&s.join(name));
+    }
+    let mut conn = db::open_in_memory().unwrap();
+    let id = Importer::new(Box::new(StubProber)).import_course(&mut conn, None, &course).unwrap();
+    let detail = db::queries::get_course_detail(&conn, &id).unwrap().unwrap();
+    let lecture_title = |lid: &str| {
+        detail.sections.iter().flat_map(|s| &s.lectures).find(|l| l.id == lid).map(|l| l.title.clone())
+    };
+    let mut pairs: Vec<(String, Option<String>)> = db::queries::list_course_attachments(&conn, &id)
+        .unwrap()
+        .into_iter()
+        .map(|a| (a.name, a.lecture_id.as_deref().and_then(lecture_title)))
+        .collect();
+    pairs.sort();
+    assert_eq!(
+        pairs,
+        vec![
+            ("1. NAT01 – Espressioni con i numeri naturali (1).pdf".into(), Some("NAT01 – Espressioni con i numeri naturali (1)".into())),
+            ("4. NAT04 – Espressioni con i numeri naturali (4).pdf".into(), Some("NAT04 – Espressioni con i numeri naturali (4)".into())),
+            ("9. POT01 – Proprietà delle potenze (1).pdf".into(), Some("POT01 – Proprietà delle potenze (1)".into())),
+        ]
+    );
+}
