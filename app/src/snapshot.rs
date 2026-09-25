@@ -54,6 +54,12 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
             item("1. NAT01 – Soluzioni.pdf", false),
         ]));
     }
+    // "light": a bright frame behind the controls, to check they read over it.
+    if menu == "light" {
+        let mut frame = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(1280, 720);
+        frame.make_mut_slice().fill(slint::Rgba8Pixel { r: 236, g: 238, b: 242, a: 255 });
+        ui.set_video_frame(slint::Image::from_rgba8(frame));
+    }
     // "fullscreen": the player as it looks fullscreen (header over the picture).
     playback.set_fullscreen(menu == "fullscreen");
     // Playback info as it looks for a typical course lecture.

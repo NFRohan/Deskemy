@@ -689,10 +689,11 @@ export component PlayerOverlay inherits Rectangle {
             }
 
             // Bottom: seek bar, then transport and track/view controls.
+            // Dark enough behind the white controls to read over bright frames.
             Rectangle {
                 y: parent.height - self.height;
-                height: 170px;
-                background: @linear-gradient(0deg, #000000cc 0%, #00000000 100%);
+                height: 190px;
+                background: @linear-gradient(0deg, #000000e6 0%, #000000a6 45%, #00000000 100%);
             }
             VerticalLayout {
                 y: parent.height - self.height;
