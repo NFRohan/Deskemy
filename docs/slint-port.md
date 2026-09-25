@@ -159,3 +159,8 @@ parent; wrapped `Text` is measured at its unwrapped width, so give it a
 - FemtoVG text quality is "sometimes sub-optimal" per Slint; Skia is better but heavy to build on Windows.
 - macOS OpenGL is deprecated; nobody has shipped mpv + Slint there yet.
 - Accessibility gaps in virtualized `ListView`s — prefer plain `for` loops (our lists are small).
+- Text: FemtoVG and stock Skia both draw grayscale text, which looks rough at 100%
+  scaling next to ClearType. The app renders with Skia and patches Slint's Skia
+  renderer for subpixel text on Windows (`app/patches/i-slint-renderer-skia`,
+  applied by `[patch.crates-io]`); the patch must be re-applied on every Slint
+  upgrade. `cargo run --example text_aa -- out.png` compares the modes offscreen.

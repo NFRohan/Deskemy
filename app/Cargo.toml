@@ -43,8 +43,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # SetThreadExecutionState — keep the machine awake during playback.
 windows-sys = { version = "0.61", features = ["Win32_System_Power"] }
 
+# Slint's Skia renderer with subpixel (ClearType-style) text on Windows; see
+# patches/i-slint-renderer-skia/README.md. Must match the slint version.
+[patch.crates-io]
+i-slint-renderer-skia = { path = "patches/i-slint-renderer-skia" }
+
 [build-dependencies]
 slint-build = "1.18"
 
 [dev-dependencies]
 tempfile = "3"
+# examples/text_aa.rs — the same skia-safe build Slint uses (no Skia rebuild)
+skia-safe = { version = "0.153.3", features = ["gl", "d3d"] }
