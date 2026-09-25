@@ -405,9 +405,12 @@ struct GlState<'a> {
 }
 
 /// Put the GL state mpv relies on back to GL's defaults before it draws.
-/// Skia leaves its own sampler objects bound (they override the filtering of
-/// mpv's textures — with a mipmapping filter the chroma planes sample as
-/// zero and the picture turns green), and may leave a pixel buffer bound,
+/// mpv's renderer assumes blending is off unless a pass turns it on, and
+/// Skia leaves it on: the intermediate chroma-scaling pass then blends
+/// instead of writing, the chroma comes out zero and the picture turns
+/// green (until a size where mpv skips that pass, e.g. fullscreen). Skia
+/// also leaves its sampler objects bound, which would override the
+/// filtering of mpv's textures, and may leave a pixel buffer bound,
 /// scissoring on or a partial colour mask. `GlState` restores Skia's state
 /// afterwards.
 unsafe fn reset_for_mpv(gl: &glow::Context) {
@@ -421,9 +424,11 @@ unsafe fn reset_for_mpv(gl: &glow::Context) {
     gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 4);
     gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, 0);
     gl.pixel_store_i32(glow::PACK_ALIGNMENT, 4);
-    for cap in [glow::SCISSOR_TEST, glow::STENCIL_TEST, glow::DEPTH_TEST, glow::CULL_FACE] {
+    for cap in [glow::BLEND, glow::SCISSOR_TEST, glow::STENCIL_TEST, glow::DEPTH_TEST, glow::CULL_FACE] {
         gl.disable(cap);
     }
+    gl.blend_func(glow::ONE, glow::ZERO);
+    gl.blend_equation(glow::FUNC_ADD);
     if !gl.version().is_embedded {
         gl.disable(glow::FRAMEBUFFER_SRGB);
     }
