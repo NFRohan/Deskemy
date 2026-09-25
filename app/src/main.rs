@@ -94,9 +94,12 @@ fn main() -> Result<(), slint::PlatformError> {
             Some(snapshot::install(1280, height.unwrap_or(800))?)
         }
         // Video is rendered by mpv through OpenGL, so real windows need an
-        // OpenGL-backed renderer (FemtoVG by default).
+        // OpenGL-backed renderer: Skia, for its text, or FemtoVG with
+        // DESKEMY_RENDERER=femtovg.
         _ => {
-            slint::BackendSelector::new().require_opengl().select()?;
+            let renderer = std::env::var("DESKEMY_RENDERER").unwrap_or_else(|_| "skia-opengl".into());
+            tracing::info!(%renderer, "renderer");
+            slint::BackendSelector::new().renderer_name(renderer).require_opengl().select()?;
             None
         }
     };

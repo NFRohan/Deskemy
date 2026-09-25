@@ -324,41 +324,103 @@ impl Target {
     }
 }
 
+/// Texture units whose bindings are saved (mpv's shaders use the first few).
+const UNITS: u32 = 8;
+
 /// Saves the GL state Slint's renderer relies on and restores it on drop, so
-/// mpv drawing into our framebuffer can't leak state into Slint's frame.
+/// mpv drawing into our framebuffer can't leak state into Slint's frame. Skia
+/// caches GL state between draws rather than re-setting it, so this covers
+/// everything mpv's renderer is known to touch.
 struct GlState<'a> {
     gl: &'a glow::Context,
     draw_fbo: i32,
     read_fbo: i32,
     viewport: [i32; 4],
-    scissor: bool,
-    blend: bool,
+    scissor_box: [i32; 4],
+    caps: Vec<(u32, bool)>,
+    blend_func: [i32; 4],
+    blend_equation: [i32; 2],
+    color_mask: [i32; 4],
     program: i32,
     active_texture: i32,
-    texture_2d: i32,
+    /// (TEXTURE_2D, sampler) per unit.
+    units: Vec<(i32, i32)>,
     vertex_array: i32,
     array_buffer: i32,
+    element_buffer: i32,
     unpack_alignment: i32,
+    unpack_row_length: i32,
+    pack_alignment: i32,
 }
+
+/// Sampler objects arrived in OpenGL 3.3 (and ES 3.0); older contexts lack
+/// the entry points entirely.
+fn has_samplers(gl: &glow::Context) -> bool {
+    let v = gl.version();
+    (v.major, v.minor) >= (if v.is_embedded { (3, 0) } else { (3, 3) })
+}
+
+/// Capabilities saved and restored as on/off.
+const CAPS: [u32; 7] = [
+    glow::SCISSOR_TEST,
+    glow::BLEND,
+    glow::DEPTH_TEST,
+    glow::STENCIL_TEST,
+    glow::CULL_FACE,
+    glow::DITHER,
+    glow::FRAMEBUFFER_SRGB,
+];
 
 impl<'a> GlState<'a> {
     fn save(gl: &'a glow::Context) -> Self {
         unsafe {
-            let mut viewport = [0; 4];
-            gl.get_parameter_i32_slice(glow::VIEWPORT, &mut viewport);
+            let slice = |name| {
+                let mut v = [0; 4];
+                gl.get_parameter_i32_slice(name, &mut v);
+                v
+            };
+            let active_texture = gl.get_parameter_i32(glow::ACTIVE_TEXTURE);
+            let samplers = has_samplers(gl);
+            let units = (0..UNITS)
+                .map(|i| {
+                    gl.active_texture(glow::TEXTURE0 + i);
+                    let sampler = if samplers { gl.get_parameter_i32(glow::SAMPLER_BINDING) } else { 0 };
+                    (gl.get_parameter_i32(glow::TEXTURE_BINDING_2D), sampler)
+                })
+                .collect();
+            gl.active_texture(active_texture as u32);
             GlState {
                 gl,
                 draw_fbo: gl.get_parameter_i32(glow::DRAW_FRAMEBUFFER_BINDING),
                 read_fbo: gl.get_parameter_i32(glow::READ_FRAMEBUFFER_BINDING),
-                viewport,
-                scissor: gl.is_enabled(glow::SCISSOR_TEST),
-                blend: gl.is_enabled(glow::BLEND),
+                viewport: slice(glow::VIEWPORT),
+                scissor_box: slice(glow::SCISSOR_BOX),
+                // sRGB framebuffer control is desktop GL only.
+                caps: CAPS
+                    .iter()
+                    .filter(|&&cap| cap != glow::FRAMEBUFFER_SRGB || !gl.version().is_embedded)
+                    .map(|&cap| (cap, gl.is_enabled(cap)))
+                    .collect(),
+                blend_func: [
+                    gl.get_parameter_i32(glow::BLEND_SRC_RGB),
+                    gl.get_parameter_i32(glow::BLEND_DST_RGB),
+                    gl.get_parameter_i32(glow::BLEND_SRC_ALPHA),
+                    gl.get_parameter_i32(glow::BLEND_DST_ALPHA),
+                ],
+                blend_equation: [
+                    gl.get_parameter_i32(glow::BLEND_EQUATION_RGB),
+                    gl.get_parameter_i32(glow::BLEND_EQUATION_ALPHA),
+                ],
+                color_mask: slice(glow::COLOR_WRITEMASK),
                 program: gl.get_parameter_i32(glow::CURRENT_PROGRAM),
-                active_texture: gl.get_parameter_i32(glow::ACTIVE_TEXTURE),
-                texture_2d: gl.get_parameter_i32(glow::TEXTURE_BINDING_2D),
+                active_texture,
+                units,
                 vertex_array: gl.get_parameter_i32(glow::VERTEX_ARRAY_BINDING),
                 array_buffer: gl.get_parameter_i32(glow::ARRAY_BUFFER_BINDING),
+                element_buffer: gl.get_parameter_i32(glow::ELEMENT_ARRAY_BUFFER_BINDING),
                 unpack_alignment: gl.get_parameter_i32(glow::UNPACK_ALIGNMENT),
+                unpack_row_length: gl.get_parameter_i32(glow::UNPACK_ROW_LENGTH),
+                pack_alignment: gl.get_parameter_i32(glow::PACK_ALIGNMENT),
             }
         }
     }
@@ -375,15 +437,37 @@ impl Drop for GlState<'_> {
             gl.bind_framebuffer(glow::READ_FRAMEBUFFER, name(self.read_fbo).map(glow::NativeFramebuffer));
             let [x, y, w, h] = self.viewport;
             gl.viewport(x, y, w, h);
-            let toggle = |cap, on: bool| if on { gl.enable(cap) } else { gl.disable(cap) };
-            toggle(glow::SCISSOR_TEST, self.scissor);
-            toggle(glow::BLEND, self.blend);
+            let [x, y, w, h] = self.scissor_box;
+            gl.scissor(x, y, w, h);
+            for &(cap, on) in &self.caps {
+                if on {
+                    gl.enable(cap)
+                } else {
+                    gl.disable(cap)
+                }
+            }
+            let [src_rgb, dst_rgb, src_a, dst_a] = self.blend_func.map(|v| v as u32);
+            gl.blend_func_separate(src_rgb, dst_rgb, src_a, dst_a);
+            gl.blend_equation_separate(self.blend_equation[0] as u32, self.blend_equation[1] as u32);
+            let [r, g, b, a] = self.color_mask.map(|v| v != 0);
+            gl.color_mask(r, g, b, a);
             gl.use_program(name(self.program).map(glow::NativeProgram));
+            let samplers = has_samplers(gl);
+            for (i, &(texture, sampler)) in self.units.iter().enumerate() {
+                gl.active_texture(glow::TEXTURE0 + i as u32);
+                gl.bind_texture(glow::TEXTURE_2D, name(texture).map(glow::NativeTexture));
+                if samplers {
+                    gl.bind_sampler(i as u32, name(sampler).map(glow::NativeSampler));
+                }
+            }
             gl.active_texture(self.active_texture as u32);
-            gl.bind_texture(glow::TEXTURE_2D, name(self.texture_2d).map(glow::NativeTexture));
+            // The element buffer belongs to the vertex array: bind that first.
             gl.bind_vertex_array(name(self.vertex_array).map(glow::NativeVertexArray));
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, name(self.element_buffer).map(glow::NativeBuffer));
             gl.bind_buffer(glow::ARRAY_BUFFER, name(self.array_buffer).map(glow::NativeBuffer));
             gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, self.unpack_alignment);
+            gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, self.unpack_row_length);
+            gl.pixel_store_i32(glow::PACK_ALIGNMENT, self.pack_alignment);
         }
     }
 }

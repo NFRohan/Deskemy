@@ -314,11 +314,14 @@ component MenuRow inherits Rectangle {
 /// The player overlay. Reads and drives the `Playback` global directly.
 export component PlayerOverlay inherits Rectangle {
     in-out property <bool> controls-shown: true;
-    // Never auto-hide while paused, mid-drag or with a menu open.
+    // Never auto-hide while paused, mid-drag, with a menu open, or while the
+    // pointer is on the controls (it left the picture for one of them).
     property <bool> pinned: Playback.paused || seek-bar.dragging || volume-bar.dragging || Playback.open-menu != ""
-        // In a window the controls always tuck away (they sit over the video);
-        // in fullscreen only with the setting on, as the Tauri player.
-        || (Playback.fullscreen && !Playback.autohide-fullscreen);
+        || !picture.has-hover;
+    // In a window the controls always tuck away (they sit over the video); in
+    // fullscreen only with the setting on, as the Tauri player.
+    property <bool> may-hide: !Playback.fullscreen || Playback.autohide-fullscreen;
+    property <bool> shown: root.controls-shown || !root.may-hide;
 
     function toggle-menu(name: string) {
         Playback.open-menu = Playback.open-menu == name ? "" : name;
@@ -417,6 +420,11 @@ export component PlayerOverlay inherits Rectangle {
             root.escape();
             return accept;
         }
+        // While the bookmark dialog is open, keys are for its label, never
+        // shortcuts (Space would resume the video underneath).
+        if Playback.open-menu == "bookmark" {
+            return accept;
+        }
         if event.text == " " || event.text == "k" {
             Playback.toggle-pause();
         } else if event.text == "j" {
@@ -484,7 +492,7 @@ export component PlayerOverlay inherits Rectangle {
 
     idle := Timer {
         interval: 2.5s;
-        running: root.controls-shown && !root.pinned;
+        running: root.controls-shown && root.may-hide && !root.pinned;
         triggered => { root.controls-shown = false; }
     }
 
@@ -495,9 +503,12 @@ export component PlayerOverlay inherits Rectangle {
         key-pressed(event) => { return root.key(event); }
 
         // Below the controls: clicking the picture toggles pause, and any pointer
-        // movement brings the controls back.
-        TouchArea {
-            mouse-cursor: root.controls-shown ? MouseCursor.default : MouseCursor.none;
+        // movement brings the controls back. (`moved` only fires mid-press, so
+        // hover movement is read from the pointer position.)
+        picture := TouchArea {
+            mouse-cursor: root.shown ? MouseCursor.default : MouseCursor.none;
+            changed mouse-x => { root.wake(); }
+            changed mouse-y => { root.wake(); }
             moved => { root.wake(); }
             clicked => {
                 if Playback.open-menu != "" {
@@ -511,7 +522,7 @@ export component PlayerOverlay inherits Rectangle {
         }
 
         controls := Rectangle {
-            opacity: root.controls-shown ? 1 : 0;
+            opacity: root.shown ? 1 : 0;
             visible: self.opacity > 0;
             animate opacity { duration: 180ms; }
 
@@ -992,7 +1003,11 @@ export component PlayerOverlay inherits Rectangle {
                     border-width: 1px;
                     border-color: #ffffff14;
 
-                    TouchArea { }
+                    // A click anywhere on the card goes back to the label, so
+                    // typing keeps landing there.
+                    TouchArea {
+                        clicked => { label.focus(); }
+                    }
 
                     bookmark-card := VerticalLayout {
                         padding: 20px;
@@ -1117,7 +1132,10 @@ export component PlayerOverlay inherits Rectangle {
                                                 width: 32px;
                                                 height: 32px;
                                                 y: 2px;
-                                                clicked => { Playback.delete-bookmark(mark.id); }
+                                                clicked => {
+                                                    Playback.delete-bookmark(mark.id);
+                                                    label.focus();
+                                                }
                                             }
                                         }
                                     }
