@@ -52,6 +52,8 @@ i-slint-renderer-skia = { path = "patches/i-slint-renderer-skia" }
 
 [build-dependencies]
 slint-build = "1.18"
+# The exe's icon and version info on Windows (Explorer, shortcuts, Task Manager)
+winresource = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

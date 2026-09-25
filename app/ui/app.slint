@@ -30,6 +30,8 @@ export {
 
 export component AppWindow inherits Window {
     title: "Deskemy";
+    // The taskbar / Alt-Tab icon (the exe's own icon is embedded by build.rs).
+    icon: @image-url("logo.png");
     preferred-width: 1280px;
     preferred-height: 800px;
     min-width: 900px;

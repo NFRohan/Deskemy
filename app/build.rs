@@ -3,6 +3,23 @@ use std::{env, fs, path::PathBuf};
 fn main() {
     slint_build::compile("ui/app.slint").expect("compile .slint UI");
 
+    // Windows: embed the icon and version info in the exe, so Explorer,
+    // shortcuts and Task Manager show Deskemy rather than a generic program.
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rerun-if-changed=icons/deskemy.ico");
+        let mut res = winresource::WindowsResource::new();
+        res.set_icon("icons/deskemy.ico")
+            .set("ProductName", "Deskemy")
+            .set("FileDescription", "Deskemy")
+            .set("CompanyName", "Spooksy")
+            .set("LegalCopyright", "© 2026 Nayeem Fardin")
+            .set("OriginalFilename", "deskemy.exe");
+        if let Err(e) = res.compile() {
+            // A missing resource compiler shouldn't stop the build.
+            println!("cargo:warning=could not embed the Windows icon: {e}");
+        }
+    }
+
     // Stage libmpv next to the built executable (Windows searches the exe's
     // own directory first). The DLL is too large for git; drop a copy in
     // app/vendor/, or reuse the one the Tauri app keeps in src-tauri/vendor/.
