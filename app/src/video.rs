@@ -235,6 +235,7 @@ impl Surface {
         if new_frame || resized {
             let Some(target) = &self.target else { return };
             let _state = GlState::save(gl);
+            unsafe { reset_for_mpv(gl) };
             if let Err(e) = unsafe { render.render_gl(target.fbo.0.get(), w, h) } {
                 tracing::warn!(error = %e, "mpv render");
                 return;
@@ -351,6 +352,35 @@ struct GlState<'a> {
     unpack_alignment: i32,
     unpack_row_length: i32,
     pack_alignment: i32,
+    pixel_unpack_buffer: i32,
+    pixel_pack_buffer: i32,
+}
+
+/// Put the GL state mpv relies on back to GL's defaults before it draws.
+/// Skia leaves its own sampler objects bound (they override the filtering of
+/// mpv's textures — with a mipmapping filter the chroma planes sample as
+/// zero and the picture turns green), and may leave a pixel buffer bound,
+/// scissoring on or a partial colour mask. `GlState` restores Skia's state
+/// afterwards.
+unsafe fn reset_for_mpv(gl: &glow::Context) {
+    if has_samplers(gl) {
+        for unit in 0..UNITS {
+            gl.bind_sampler(unit, None);
+        }
+    }
+    gl.bind_buffer(glow::PIXEL_UNPACK_BUFFER, None);
+    gl.bind_buffer(glow::PIXEL_PACK_BUFFER, None);
+    gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 4);
+    gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, 0);
+    gl.pixel_store_i32(glow::PACK_ALIGNMENT, 4);
+    for cap in [glow::SCISSOR_TEST, glow::STENCIL_TEST, glow::DEPTH_TEST, glow::CULL_FACE] {
+        gl.disable(cap);
+    }
+    if !gl.version().is_embedded {
+        gl.disable(glow::FRAMEBUFFER_SRGB);
+    }
+    gl.color_mask(true, true, true, true);
+    gl.active_texture(glow::TEXTURE0);
 }
 
 /// Sampler objects arrived in OpenGL 3.3 (and ES 3.0); older contexts lack
@@ -421,6 +451,8 @@ impl<'a> GlState<'a> {
                 unpack_alignment: gl.get_parameter_i32(glow::UNPACK_ALIGNMENT),
                 unpack_row_length: gl.get_parameter_i32(glow::UNPACK_ROW_LENGTH),
                 pack_alignment: gl.get_parameter_i32(glow::PACK_ALIGNMENT),
+                pixel_unpack_buffer: gl.get_parameter_i32(glow::PIXEL_UNPACK_BUFFER_BINDING),
+                pixel_pack_buffer: gl.get_parameter_i32(glow::PIXEL_PACK_BUFFER_BINDING),
             }
         }
     }
@@ -468,6 +500,8 @@ impl Drop for GlState<'_> {
             gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, self.unpack_alignment);
             gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, self.unpack_row_length);
             gl.pixel_store_i32(glow::PACK_ALIGNMENT, self.pack_alignment);
+            gl.bind_buffer(glow::PIXEL_UNPACK_BUFFER, name(self.pixel_unpack_buffer).map(glow::NativeBuffer));
+            gl.bind_buffer(glow::PIXEL_PACK_BUFFER, name(self.pixel_pack_buffer).map(glow::NativeBuffer));
         }
     }
 }
