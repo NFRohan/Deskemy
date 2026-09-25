@@ -96,6 +96,8 @@ export global Playback {
     in property <float> volume: 100;
     in property <bool> muted;
     in property <bool> fullscreen;
+    /// Settings' "Auto-hide controls in fullscreen".
+    in property <bool> autohide-fullscreen;
     in property <bool> has-previous;
     in property <bool> has-next;
     in property <string> speed-label: "1×";
@@ -313,7 +315,10 @@ component MenuRow inherits Rectangle {
 export component PlayerOverlay inherits Rectangle {
     in-out property <bool> controls-shown: true;
     // Never auto-hide while paused, mid-drag or with a menu open.
-    property <bool> pinned: Playback.paused || seek-bar.dragging || volume-bar.dragging || Playback.open-menu != "";
+    property <bool> pinned: Playback.paused || seek-bar.dragging || volume-bar.dragging || Playback.open-menu != ""
+        // In a window the controls always tuck away (they sit over the video);
+        // in fullscreen only with the setting on, as the Tauri player.
+        || (Playback.fullscreen && !Playback.autohide-fullscreen);
 
     function toggle-menu(name: string) {
         Playback.open-menu = Playback.open-menu == name ? "" : name;

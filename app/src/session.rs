@@ -3,7 +3,7 @@
 //! completion, watch time, the resume pointer and per-course speed/track
 //! prefs. The rules match the Tauri player (`src-tauri/src/player/mod.rs`).
 
-use deskemy_core::config::AppConfig;
+use crate::settings::{self, Config};
 use deskemy_core::db::{queries, Connection};
 use deskemy_core::domain::{Attachment, Bookmark, CourseDetail};
 use deskemy_core::importer::structure::clean_title;
@@ -94,13 +94,13 @@ struct Inner {
 pub struct Session {
     mpv: Arc<Mpv>,
     db: Db,
-    config: AppConfig,
+    config: Config,
     // Lock order: `inner`, then `db`. Never the other way around.
     inner: Mutex<Inner>,
 }
 
 impl Session {
-    pub fn new(mpv: Arc<Mpv>, db: Db, config: AppConfig) -> Self {
+    pub fn new(mpv: Arc<Mpv>, db: Db, config: Config) -> Self {
         Session {
             mpv,
             db,
@@ -204,7 +204,7 @@ impl Session {
         };
         // Per-course prefs override the global default speed where present.
         let prefs = queries::get_course_prefs(&db, &course_id).ok().flatten();
-        let speed = prefs.and_then(|p| p.0).unwrap_or(self.config.default_speed);
+        let speed = prefs.and_then(|p| p.0).unwrap_or_else(|| settings::lock(&self.config).default_speed);
         let view = queries::get_lecture_view(&db, &item.lecture_id).ok().flatten();
         let up_next = inner
             .items
@@ -304,7 +304,7 @@ impl Session {
                 inner.sleep = Sleep::Off;
             }
             let advance =
-                !sleep_here && self.config.autoplay_next && inner.index + 1 < inner.items.len();
+                !sleep_here && settings::lock(&self.config).autoplay_next && inner.index + 1 < inner.items.len();
             if advance {
                 inner.index += 1;
             } else {
@@ -468,6 +468,7 @@ fn file_title(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskemy_core::config::AppConfig;
     use deskemy_core::importer::Importer;
     use deskemy_core::media::stub::StubProber;
 
@@ -520,7 +521,7 @@ mod tests {
     fn opening_a_lecture_sets_up_the_course_playlist() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
-        let session = Session::new(mpv, db, AppConfig::default());
+        let session = Session::new(mpv, db, settings::shared(AppConfig::default()));
 
         session.open(&lectures[1]).unwrap();
         let (_, now) = session.now_playing();
@@ -542,7 +543,7 @@ mod tests {
     fn end_of_file_completes_the_lecture_and_autoplays_the_next() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
-        let session = Session::new(mpv, db.clone(), AppConfig::default());
+        let session = Session::new(mpv, db.clone(), settings::shared(AppConfig::default()));
 
         session.open(&lectures[0]).unwrap();
         session.tick(99.0, 100.0, false);
@@ -558,7 +559,7 @@ mod tests {
     fn a_completion_counts_once_per_session() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
-        let session = Session::new(mpv, db.clone(), AppConfig::default());
+        let session = Session::new(mpv, db.clone(), settings::shared(AppConfig::default()));
 
         session.open(&lectures[0]).unwrap();
         session.tick(99.0, 100.0, false);
@@ -578,7 +579,7 @@ mod tests {
             autoplay_next: false,
             ..AppConfig::default()
         };
-        let session = Session::new(mpv, db.clone(), config);
+        let session = Session::new(mpv, db.clone(), settings::shared(config));
 
         session.open(&lectures[0]).unwrap();
         session.tick(99.0, 100.0, false);
@@ -593,7 +594,7 @@ mod tests {
     fn sleep_at_end_of_lecture_stops_instead_of_autoplaying() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
-        let session = Session::new(mpv, db.clone(), AppConfig::default());
+        let session = Session::new(mpv, db.clone(), settings::shared(AppConfig::default()));
 
         session.open(&lectures[0]).unwrap();
         session.set_sleep(Sleep::EndOfLecture);
@@ -609,7 +610,7 @@ mod tests {
     fn a_sleep_countdown_pauses_when_it_runs_out() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
-        let session = Session::new(mpv.clone(), db, AppConfig::default());
+        let session = Session::new(mpv.clone(), db, settings::shared(AppConfig::default()));
 
         session.open(&lectures[0]).unwrap();
         mpv.set_property("pause", "no").unwrap();
@@ -635,7 +636,7 @@ mod tests {
     fn bookmarks_belong_to_the_playing_lecture() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
-        let session = Session::new(mpv, db, AppConfig::default());
+        let session = Session::new(mpv, db, settings::shared(AppConfig::default()));
 
         assert!(session.add_bookmark(1.0, None).is_err(), "nothing playing yet");
         session.open(&lectures[0]).unwrap();
@@ -659,7 +660,7 @@ mod tests {
     fn a_missing_resume_lecture_falls_back_to_the_first() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
-        let session = Session::new(mpv, db.clone(), AppConfig::default());
+        let session = Session::new(mpv, db.clone(), settings::shared(AppConfig::default()));
 
         let course_id = {
             let conn = db.lock().unwrap();

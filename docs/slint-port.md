@@ -109,7 +109,11 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
 - ☐ Run it: create / edit a track, the picker, reorder, typing in dialogs
 - ☑ Stats: goal ring, streak, focus course, totals, 26-week heatmap, this
   week (`ui/stats_page.slint`, `src/stats_page.rs`)
-- ☐ Settings
+- ☑ Settings — preferences: theme, default speed, autoplay, fullscreen
+  auto-hide, daily goal, title cleanup, auto-rescan; saved to config.json and
+  shared live with the player (`ui/settings.slint`, `src/settings.rs`)
+- ☐ Settings — maintenance (missing files, search / subtitle index), backup
+  export / import, storage, version
 
 Slint gotchas met so far: a fixed-size child with no `x` is centred in its
 parent; wrapped `Text` is measured at its unwrapped width, so give it a

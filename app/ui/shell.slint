@@ -288,13 +288,3 @@ export component Sidebar inherits Rectangle {
         background: Theme.outline-variant;
     }
 }
-
-/// Stand-in for pages the port hasn't reached yet.
-export component NotPortedYet inherits Rectangle {
-    in property <string> title;
-    Text {
-        text: root.title + " hasn't been ported yet.";
-        color: Theme.on-surface-variant;
-        font-size: Theme.body-md;
-    }
-}

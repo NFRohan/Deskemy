@@ -1,0 +1,257 @@
+// Settings, as the Tauri app's routes/settings.
+
+import { Theme } from "theme.slint";
+import { Select, SelectOption } from "library.slint";
+
+/// Preferences from config.json. Every change goes through `set(key, value)`
+/// and comes back once saved.
+export global Prefs {
+    in property <[SelectOption]> themes;
+    in property <[SelectOption]> speeds;
+    in property <[SelectOption]> goals;
+    in-out property <string> theme;
+    in property <string> theme-label;
+    in-out property <string> speed;
+    in property <string> speed-label;
+    in-out property <string> goal;
+    in property <string> goal-label;
+    in property <bool> autoplay;
+    in property <bool> autohide;
+    in property <bool> clean-titles;
+    in property <bool> auto-rescan;
+
+    callback set(string, string);
+}
+
+component Switch inherits Rectangle {
+    in property <bool> checked;
+    in property <string> label;
+    callback toggled;
+
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: root.checked ? Theme.primary-container : Theme.surface-container-highest;
+    animate background { duration: 150ms; }
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-checked: root.checked;
+    accessible-action-default => { root.toggled(); }
+
+    Rectangle {
+        x: root.checked ? 22px : 2px;
+        animate x { duration: 150ms; }
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: #ffffff;
+        // Keeps the knob visible on the light theme's pale track.
+        drop-shadow-blur: 2px;
+        drop-shadow-color: #00000040;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(); }
+    }
+}
+
+/// A setting: its name and what it does, with the control on the right.
+component Row inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> description;
+    /// Room for the text (the page sets it; see TextWidth below).
+    in property <length> text-width;
+
+    padding: 16px;
+    spacing: 16px;
+
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.title;
+            color: Theme.on-surface;
+            font-size: Theme.body-md;
+        }
+        // max-width: wrapped text is measured at its one-line width.
+        Text {
+            text: root.description;
+            color: Theme.on-surface-variant;
+            font-size: Theme.label-sm;
+            wrap: word-wrap;
+            max-width: root.text-width;
+        }
+    }
+    // The text's max-width leaves spare room here: keep the control flush right.
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: end;
+            @children
+        }
+    }
+}
+
+component Group inherits Rectangle {
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+    background: Theme.surface-container-low;
+    clip: true;
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.outline-variant;
+}
+
+component Heading inherits Text {
+    color: Theme.on-surface-variant;
+    font-size: Theme.label-md;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+export component SettingsPage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+    property <length> page-width: min(self.width - 48px, 672px);
+    // Row text beside a control up to ~140px wide.
+    property <length> text-width: root.page-width - 32px - 16px - 140px;
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 32px;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Image {
+                source: @image-url("icons/settings.svg");
+                width: 18px;
+                height: 18px;
+                y: (parent.height - self.height) / 2;
+                colorize: Theme.on-surface;
+            }
+            Text {
+                text: "Settings";
+                color: Theme.on-surface;
+                font-size: Theme.headline-sm;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 12px;
+            Heading { text: "APPEARANCE"; }
+            Group {
+                height: appearance.preferred-height;
+                appearance := VerticalLayout {
+                    Row {
+                        title: "Theme";
+                        description: "Follow the system or force light/dark.";
+                        text-width: root.text-width;
+                        Select {
+                            options: Prefs.themes;
+                            value <=> Prefs.theme;
+                            label: Prefs.theme-label;
+                            changed => { Prefs.set("theme", self.value); }
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 12px;
+            Heading { text: "PLAYBACK"; }
+            Group {
+                height: playback.preferred-height;
+                playback := VerticalLayout {
+                    Row {
+                        title: "Default playback speed";
+                        description: "Applied when a lecture opens.";
+                        text-width: root.text-width;
+                        Select {
+                            options: Prefs.speeds;
+                            value <=> Prefs.speed;
+                            label: Prefs.speed-label;
+                            changed => { Prefs.set("speed", self.value); }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Autoplay next lecture";
+                        description: "Advance automatically when one ends.";
+                        text-width: root.text-width;
+                        Switch {
+                            label: "Autoplay next lecture";
+                            checked: Prefs.autoplay;
+                            toggled => { Prefs.set("autoplay", Prefs.autoplay ? "false" : "true"); }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Auto-hide controls in fullscreen";
+                        description: "Hide the controls and cursor after a few seconds without mouse movement while fullscreen (VLC-style). Off keeps them visible in fullscreen; in a window they always tuck away, as they sit over the video.";
+                        text-width: root.text-width;
+                        Switch {
+                            label: "Auto-hide controls in fullscreen";
+                            checked: Prefs.autohide;
+                            toggled => { Prefs.set("autohide", Prefs.autohide ? "false" : "true"); }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Daily goal";
+                        description: "Target watch time per day (Stats).";
+                        text-width: root.text-width;
+                        Select {
+                            options: Prefs.goals;
+                            value <=> Prefs.goal;
+                            label: Prefs.goal-label;
+                            changed => { Prefs.set("goal", self.value); }
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 12px;
+            Heading { text: "LIBRARY"; }
+            Group {
+                height: library.preferred-height;
+                library := VerticalLayout {
+                    Row {
+                        title: "Clean up lecture titles";
+                        description: "Strip leading numbers and file extensions on import (e.g. \"01. Intro.mp4\" → \"Intro\"). Off keeps the raw file and folder names. Applies to new imports.";
+                        text-width: root.text-width;
+                        Switch {
+                            label: "Clean up lecture titles";
+                            checked: Prefs.clean-titles;
+                            toggled => { Prefs.set("clean-titles", Prefs.clean-titles ? "false" : "true"); }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Auto-rescan folders";
+                        description: "Re-import a course when its folder changes on disk. May briefly pause the UI while it re-scans; the course you're watching is never touched.";
+                        text-width: root.text-width;
+                        Switch {
+                            label: "Auto-rescan folders";
+                            checked: Prefs.auto-rescan;
+                            toggled => { Prefs.set("auto-rescan", Prefs.auto-rescan ? "false" : "true"); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

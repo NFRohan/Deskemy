@@ -8,13 +8,13 @@ mod library;
 mod pages;
 mod search;
 mod session;
+mod settings;
 mod snapshot;
 mod stats;
 mod stats_page;
 mod tracks;
 mod video;
 
-use deskemy_core::config::AppConfig;
 use deskemy_core::{db, paths};
 use session::Db;
 use slint::ComponentHandle;
@@ -78,8 +78,12 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let ui = AppWindow::new()?;
     let (db, config) = open_library(&ui);
-    ui.global::<Theme>().set_mode(config.theme.as_str().into());
-    let goal = config.daily_goal_minutes;
+    let prefs = std::rc::Rc::new(settings::SettingsPage::new(
+        config.clone(),
+        paths::data_dir().map(|d| d.join(paths::CONFIG_FILE)),
+    ));
+    // Theme, and what the player reads from config.
+    prefs.show(&ui);
     wire_window(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
@@ -92,12 +96,12 @@ fn main() -> Result<(), slint::PlatformError> {
         if let Some(menu) = player {
             snapshot::sample_playback(&ui, &menu, &db);
         }
-        if let Some(list @ ("favorites" | "history" | "bookmarks" | "stats")) = page.as_deref() {
+        if let Some(list @ ("favorites" | "history" | "bookmarks" | "stats" | "settings")) = page.as_deref() {
             let nav = ui.global::<Nav>();
             nav.set_page(list.into());
             let title = format!("{}{}", list[..1].to_uppercase(), &list[1..]);
             nav.set_crumbs(course_panel::model(vec![title.into()]));
-            show_list(&ui, &db, &library, list, goal);
+            show_list(&ui, &db, &library, list, &config);
         }
         // "search:<query>" shows the search page with that query's results.
         if let Some(query) = page.as_deref().and_then(|p| p.strip_prefix("search:")) {
@@ -140,7 +144,7 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         _ => None,
     };
-    let player = video::Player::start(&ui, db.clone(), config, on_ready)
+    let player = video::Player::start(&ui, db.clone(), config.clone(), on_ready)
         .map_err(slint::PlatformError::Other)?;
 
     let (session, weak, library_db) = (player.session().clone(), ui.as_weak(), db.clone());
@@ -166,29 +170,36 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     // After watching or an edit, every view may be stale.
-    let (weak, page, course_view, track_view, lists_db) =
-        (ui.as_weak(), library.clone(), course.clone(), tracks.clone(), db.clone());
+    let (weak, page, course_view, track_view, lists_db, cfg) =
+        (ui.as_weak(), library.clone(), course.clone(), tracks.clone(), db.clone(), config.clone());
     ui.on_refresh_library(move || {
         if let Some(ui) = weak.upgrade() {
             page.reload(&ui);
             course_view.refresh(&ui);
             track_view.refresh(&ui);
-            show_list(&ui, &lists_db, &page, &ui.global::<Nav>().get_page(), goal);
+            show_list(&ui, &lists_db, &page, &ui.global::<Nav>().get_page(), &cfg);
             if ui.global::<Nav>().get_page() == "tracks" {
                 track_view.show_list(&ui);
             }
         }
     });
-    let (weak, page, track_view, lists_db) = (ui.as_weak(), library.clone(), tracks.clone(), db.clone());
+    let (weak, page, track_view, lists_db, cfg) =
+        (ui.as_weak(), library.clone(), tracks.clone(), db.clone(), config.clone());
     ui.on_page_shown(move |name| {
         if let Some(ui) = weak.upgrade() {
-            show_list(&ui, &lists_db, &page, &name, goal);
+            show_list(&ui, &lists_db, &page, &name, &cfg);
             if name == "tracks" {
                 track_view.show_list(&ui);
             }
         }
     });
     wire_tracks(&ui, &tracks);
+    let (p, weak) = (prefs.clone(), ui.as_weak());
+    ui.global::<Prefs>().on_set(move |key, value| {
+        if let Some(ui) = weak.upgrade() {
+            p.change(&ui, &key, &value);
+        }
+    });
     wire_lists(&ui, &db, player.session());
     wire_search(&ui, &db, &course, player.session());
     wire_course(&ui, &course, player.session());
@@ -199,12 +210,12 @@ fn main() -> Result<(), slint::PlatformError> {
 }
 
 /// Load a simple page's data (Favorites, History, Bookmarks, Stats) when it
-/// shows. `goal` is the daily goal in minutes, for Stats.
-fn show_list(ui: &AppWindow, db: &Db, library: &library::LibraryPage, page: &str, goal: i64) {
+/// shows.
+fn show_list(ui: &AppWindow, db: &Db, library: &library::LibraryPage, page: &str, config: &settings::Config) {
     match page {
         "favorites" => ui.global::<Lists>().set_favorites(course_panel::model(library.favorites())),
         "history" | "bookmarks" => pages::show(ui, db, page),
-        "stats" => stats_page::show(ui, db, goal),
+        "stats" => stats_page::show(ui, db, settings::lock(config).daily_goal_minutes),
         _ => {}
     }
 }
@@ -413,12 +424,12 @@ fn repair_titles(conn: &mut db::Connection) {
 
 /// Open the user's library and config. Without a library yet (fresh install)
 /// the app still runs on an empty in-memory one, so files can be played.
-fn open_library(ui: &AppWindow) -> (Db, AppConfig) {
+fn open_library(ui: &AppWindow) -> (Db, settings::Config) {
     let dir = paths::data_dir();
     let config = dir
         .as_ref()
         .map(|d| d.join(paths::CONFIG_FILE))
-        .and_then(|p| AppConfig::load(&p).ok())
+        .and_then(|p| deskemy_core::config::AppConfig::load(&p).ok())
         .unwrap_or_default();
 
     let db_path = dir.map(|d| d.join(paths::DB_FILE));
@@ -441,5 +452,5 @@ fn open_library(ui: &AppWindow) -> (Db, AppConfig) {
         None => None,
     };
     let conn = conn.unwrap_or_else(|| db::open_in_memory().expect("in-memory database"));
-    (Arc::new(Mutex::new(conn)), config)
+    (Arc::new(Mutex::new(conn)), settings::shared(config))
 }

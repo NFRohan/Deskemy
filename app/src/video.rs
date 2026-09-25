@@ -6,7 +6,7 @@
 use crate::session::{Db, Session, Sleep};
 use crate::{course_panel, stats, tracks};
 use crate::{AppWindow, BookmarkRow, MenuItem, Playback};
-use deskemy_core::config::AppConfig;
+use crate::settings::Config;
 use deskemy_core::mpv::{
     Mpv, MpvEventEndFile, MpvRenderContext, MPV_END_FILE_REASON_EOF, MPV_EVENT_END_FILE,
     MPV_EVENT_FILE_LOADED, MPV_EVENT_PLAYBACK_RESTART, MPV_EVENT_SHUTDOWN,
@@ -41,7 +41,7 @@ impl Player {
     pub fn start(
         ui: &AppWindow,
         db: Db,
-        config: AppConfig,
+        config: Config,
         on_ready: Option<OnReady>,
     ) -> Result<Self, String> {
         let mpv = Arc::new(Mpv::new().map_err(|e| e.to_string())?);

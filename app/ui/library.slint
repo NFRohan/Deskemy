@@ -108,7 +108,7 @@ component Pill inherits Rectangle {
 }
 
 /// A dropdown in the page's own style (a native-looking one would clash).
-component Select inherits Rectangle {
+export component Select inherits Rectangle {
     in property <[SelectOption]> options;
     in-out property <string> value;
     /// What the closed dropdown shows (the label of `value`).
