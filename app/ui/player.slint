@@ -514,16 +514,16 @@ export component PlayerOverlay inherits Rectangle {
         changed mouse-x => { root.wake(); }
         changed mouse-y => { root.wake(); }
 
-        // Below the controls: clicking the picture toggles pause. (Pointer
-        // movement anywhere wakes the controls — see `hover-area`.)
+        // Below the controls. A click on the picture only closes an open menu
+        // — it doesn't pause, so a double-click (fullscreen) can't also
+        // toggle pause twice. (Pointer movement anywhere wakes the controls —
+        // see `hover-area`.)
         picture := TouchArea {
             mouse-cursor: root.shown ? MouseCursor.default : MouseCursor.none;
             moved => { root.wake(); }
             clicked => {
                 if Playback.open-menu != "" {
                     Playback.open-menu = "";
-                } else {
-                    Playback.toggle-pause();
                 }
                 root.wake();
             }
@@ -598,7 +598,7 @@ export component PlayerOverlay inherits Rectangle {
                 border-color: #ffffff14;
                 clip: true;
 
-                // Swallow clicks so they don't reach the picture (pause) behind.
+                // Swallow clicks so they don't reach the picture behind (closing the menu).
                 TouchArea { }
 
                 Flickable {
