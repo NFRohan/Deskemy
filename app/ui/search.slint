@@ -1,0 +1,279 @@
+// Search — titles across the library and spoken subtitle text — as the
+// Tauri app's routes/search.
+
+import { Theme } from "theme.slint";
+
+export struct SearchRow {
+    /// course / section / lecture / attachment.
+    kind: string,
+    id: string,
+    course: string,
+    title: string,
+    /// "Lecture · Course" (just the kind for a course).
+    context: string,
+}
+
+export struct SubtitleRow {
+    lecture: string,
+    time: string,
+    start: float,
+    /// The matching line; matched words are in [brackets].
+    snippet: string,
+    /// "Lecture · Course".
+    context: string,
+}
+
+export global Search {
+    in-out property <string> query;
+    in property <[SearchRow]> results;
+    in property <[SubtitleRow]> subtitles;
+    /// A search has run for the current query.
+    in property <bool> searched;
+
+    callback run(string);
+    /// A hit was picked: lectures play, everything else opens its course.
+    callback open(SearchRow);
+    callback play-at(string, float);
+}
+
+export component SearchPage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+    property <length> page-width: min(self.width - 48px, 768px);
+
+    // Search as you type, a beat after the last key (as the Tauri page).
+    debounce := Timer {
+        interval: 180ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            Search.run(Search.query);
+        }
+    }
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 24px;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Image {
+                source: @image-url("icons/search.svg");
+                width: 18px;
+                height: 18px;
+                y: (parent.height - self.height) / 2;
+                colorize: Theme.on-surface;
+            }
+            Text {
+                text: "Search";
+                color: Theme.on-surface;
+                font-size: Theme.headline-sm;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle {
+            height: 44px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: field.has-focus ? Theme.accent-blue : Theme.outline-variant;
+            background: Theme.surface-container-low;
+            Image {
+                x: 12px;
+                source: @image-url("icons/search.svg");
+                width: 18px;
+                height: 18px;
+                colorize: Theme.on-surface-variant;
+            }
+            field := TextInput {
+                x: 40px;
+                width: parent.width - 52px;
+                height: parent.height;
+                vertical-alignment: center;
+                single-line: true;
+                color: Theme.on-surface;
+                font-size: Theme.body-md;
+                text <=> Search.query;
+                init => { self.focus(); }
+                edited => { debounce.restart(); }
+                accepted => {
+                    debounce.running = false;
+                    Search.run(self.text);
+                }
+            }
+            if field.text == "": Text {
+                x: 40px;
+                height: parent.height;
+                text: "Search courses, sections, lectures…";
+                color: Theme.on-surface-variant;
+                font-size: Theme.body-md;
+                vertical-alignment: center;
+            }
+        }
+
+        if Search.results.length > 0: Rectangle {
+            height: hits.preferred-height;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.outline-variant;
+            clip: true;
+            hits := VerticalLayout {
+                for hit[i] in Search.results: VerticalLayout {
+                    if i > 0: Rectangle {
+                        height: 1px;
+                        background: Theme.outline-variant;
+                    }
+                    Rectangle {
+                        height: 56px;
+                        background: hit-touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
+                        accessible-role: button;
+                        accessible-label: hit.title;
+                        hit-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Search.open(hit); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            spacing: 12px;
+                            Image {
+                                source: hit.kind == "course" ? @image-url("icons/library.svg")
+                                    : hit.kind == "section" ? @image-url("icons/list-video.svg")
+                                    : hit.kind == "attachment" ? @image-url("icons/paperclip.svg")
+                                    : @image-url("icons/play.svg");
+                                width: 18px;
+                                height: 18px;
+                                y: (parent.height - self.height) / 2;
+                                colorize: Theme.on-surface-variant;
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: hit.title;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.body-md;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: hit.context;
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if Search.subtitles.length > 0: VerticalLayout {
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Image {
+                    source: @image-url("icons/captions.svg");
+                    width: 14px;
+                    height: 14px;
+                    y: (parent.height - self.height) / 2;
+                    colorize: Theme.on-surface-variant;
+                }
+                Text {
+                    text: "IN LECTURE SUBTITLES";
+                    color: Theme.on-surface-variant;
+                    font-size: Theme.label-md;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle {
+                height: spoken.preferred-height;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Theme.outline-variant;
+                clip: true;
+                spoken := VerticalLayout {
+                    for line[i] in Search.subtitles: VerticalLayout {
+                        if i > 0: Rectangle {
+                            height: 1px;
+                            background: Theme.outline-variant;
+                        }
+                        Rectangle {
+                            height: 56px;
+                            background: line-touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
+                            accessible-role: button;
+                            accessible-label: line.snippet;
+                            line-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Search.play-at(line.lecture, line.start); }
+                            }
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                spacing: 12px;
+                                HorizontalLayout {
+                                    width: 64px;
+                                    spacing: 4px;
+                                    Image {
+                                        source: @image-url("icons/play-filled.svg");
+                                        width: 12px;
+                                        height: 12px;
+                                        y: (parent.height - self.height) / 2;
+                                        colorize: Theme.accent-blue;
+                                    }
+                                    Text {
+                                        text: line.time;
+                                        color: Theme.accent-blue;
+                                        font-size: Theme.label-sm;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    Text {
+                                        text: line.snippet;
+                                        color: Theme.on-surface;
+                                        font-size: Theme.body-md;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: line.context;
+                                        color: Theme.on-surface-variant;
+                                        font-size: Theme.label-sm;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if Search.searched && Search.results.length == 0 && Search.subtitles.length == 0: Text {
+            text: "No matches for \"" + Search.query + "\".";
+            color: Theme.on-surface-variant;
+            font-size: Theme.body-sm;
+            horizontal-alignment: center;
+            height: 96px;
+            vertical-alignment: center;
+        }
+        if Search.query == "": Text {
+            text: "Search across your library — titles, resources, and spoken subtitle text.";
+            color: Theme.on-surface-variant;
+            font-size: Theme.body-sm;
+            horizontal-alignment: center;
+            height: 96px;
+            vertical-alignment: center;
+        }
+    }
+}

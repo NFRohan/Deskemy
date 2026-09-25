@@ -5,6 +5,7 @@ mod course_page;
 mod course_panel;
 mod library;
 mod pages;
+mod search;
 mod session;
 mod snapshot;
 mod stats;
@@ -90,6 +91,13 @@ fn main() -> Result<(), slint::PlatformError> {
             nav.set_crumbs(course_panel::model(vec![title.into()]));
             show_list(&ui, &db, &library, list);
         }
+        // "search:<query>" shows the search page with that query's results.
+        if let Some(query) = page.as_deref().and_then(|p| p.strip_prefix("search:")) {
+            ui.global::<Nav>().set_page("search".into());
+            ui.global::<Nav>().set_crumbs(course_panel::model(vec!["Search".into()]));
+            ui.global::<Search>().set_query(query.into());
+            search::run(&ui, &db, query);
+        }
         // "course", or "course-cover" / "course-delete" with that dialog open.
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
             snapshot::sample_course(&ui, &db, &course);
@@ -160,6 +168,7 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     wire_lists(&ui, &db, player.session());
+    wire_search(&ui, &db, &course, player.session());
     wire_course(&ui, &course, player.session());
 
     let result = ui.run();
@@ -195,6 +204,42 @@ fn wire_lists(ui: &AppWindow, db: &Db, session: &std::sync::Arc<session::Session
         drop(conn);
         if let Some(ui) = weak.upgrade() {
             pages::show(&ui, &db, "bookmarks");
+        }
+    });
+}
+
+fn wire_search(
+    ui: &AppWindow,
+    db: &Db,
+    course: &std::rc::Rc<course_page::CoursePage>,
+    session: &std::sync::Arc<session::Session>,
+) {
+    let search = ui.global::<Search>();
+    let (db, weak) = (db.clone(), ui.as_weak());
+    search.on_run(move |query| {
+        if let Some(ui) = weak.upgrade() {
+            search::run(&ui, &db, &query);
+        }
+    });
+    // Lectures play (resuming); anything else opens its course's page.
+    let (s, page, weak) = (session.clone(), course.clone(), ui.as_weak());
+    search.on_open(move |hit| {
+        let Some(ui) = weak.upgrade() else { return };
+        if hit.kind == "lecture" {
+            match s.open(&hit.id) {
+                Ok(()) => ui.set_playing(true),
+                Err(e) => tracing::warn!(error = %e, "open lecture"),
+            }
+        } else {
+            page.open(&ui, &hit.course);
+        }
+    });
+    let (s, weak) = (session.clone(), ui.as_weak());
+    search.on_play_at(move |lecture, start| {
+        let Some(ui) = weak.upgrade() else { return };
+        match s.open_at(&lecture, Some(start as f64)) {
+            Ok(()) => ui.set_playing(true),
+            Err(e) => tracing::warn!(error = %e, %lecture, "open lecture"),
         }
     });
 }
@@ -314,6 +359,11 @@ fn open_library(ui: &AppWindow) -> (Db, AppConfig) {
         Some(Ok(mut conn)) => {
             tracing::info!(db = %db_path.as_ref().unwrap().display(), "database ready");
             repair_titles(&mut conn);
+            // As the Tauri app: cheap for a local library, and keeps search in
+            // step with the base tables.
+            if let Err(e) = db::queries::rebuild_search_index(&conn) {
+                tracing::warn!(error = %e, "rebuild search index");
+            }
             Some(conn)
         }
         Some(Err(e)) => {

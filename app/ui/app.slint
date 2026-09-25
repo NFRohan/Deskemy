@@ -13,10 +13,11 @@ import { Course, CourseDialogs, CoursePage, CurriculumLecture, CurriculumSection
 import {
     BookmarkEntry, BookmarkGroup, BookmarksPage, FavoritesPage, HistoryGroup, HistoryPage, HistoryRow, Lists,
 } from "pages.slint";
+import { Search, SearchPage, SearchRow, SubtitleRow } from "search.slint";
 import { Theme } from "theme.slint";
 
 export {
-    BookmarkEntry, BookmarkGroup, HistoryGroup, HistoryRow, Lists,
+    BookmarkEntry, BookmarkGroup, HistoryGroup, HistoryRow, Lists, Search, SearchRow, SubtitleRow,
     BookmarkRow, Course, CourseCard, CurriculumLecture, CurriculumSection, Hero, LectureRow, Library, MenuItem,
     Nav, Playback, ResourceGroup, ResourceItem, SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme,
     WindowChrome,
@@ -99,9 +100,10 @@ export component AppWindow inherits Window {
                 if Nav.page == "favorites": FavoritesPage { }
                 if Nav.page == "history": HistoryPage { }
                 if Nav.page == "bookmarks": BookmarksPage { }
+                if Nav.page == "search": SearchPage { }
 
                 if Nav.page != "library" && Nav.page != "course" && Nav.page != "favorites"
-                    && Nav.page != "history" && Nav.page != "bookmarks": NotPortedYet {
+                    && Nav.page != "history" && Nav.page != "bookmarks" && Nav.page != "search": NotPortedYet {
                     title: Nav.crumbs[0];
                 }
             }
