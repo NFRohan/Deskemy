@@ -40,6 +40,16 @@ export struct ShortcutGroup {
 }
 
 /// A lecture in the course panel.
+export struct ResourceItem {
+    id: string,
+    name: string,
+    /// pdf / archive / code / html / text, or "".
+    kind: string,
+    path: string,
+    /// Marked done.
+    done: bool,
+}
+
 export struct LectureRow {
     id: string,
     title: string,
@@ -48,6 +58,8 @@ export struct LectureRow {
     completed: bool,
     playable: bool,
     current: bool,
+    /// Its resources, shown under it (with "keep videos and resources together").
+    resources: [ResourceItem],
 }
 
 /// A section in the course panel, with its lectures.
@@ -60,15 +72,6 @@ export struct SectionRow {
     lectures: [LectureRow],
 }
 
-export struct ResourceItem {
-    id: string,
-    name: string,
-    /// pdf / archive / code / html / text, or "".
-    kind: string,
-    path: string,
-    /// Marked done.
-    done: bool,
-}
 
 /// Resources of one lecture (or the section itself) in the current section.
 export struct ResourceGroup {
@@ -164,6 +167,8 @@ export global Playback {
     callback toggle-section(string);
     callback open-lecture(string);
     callback open-resource(string);
+    /// Mark a resource done (true) or not.
+    callback toggle-resource(string, bool);
 }
 
 component IconButton inherits Rectangle {

@@ -776,12 +776,15 @@ fn wire_panel(ui: &AppWindow, session: &Arc<Session>) {
                 }
                 state.auto_for = current.clone();
             }
+            let attachments = s.attachments();
             playback.set_panel_sections(course_panel::model(course_panel::sections(
                 &course,
+                &attachments,
+                s.resources_inline(),
                 current.as_deref(),
                 &state.expanded,
             )));
-            let resources = course_panel::resources(&course, &s.attachments(), current.as_deref());
+            let resources = course_panel::resources(&course, &attachments, current.as_deref());
             playback.set_resources_section(resources.section.into());
             playback.set_resources_count(resources.count as i32);
             playback.set_panel_resources(course_panel::model(resources.groups));
@@ -798,7 +801,13 @@ fn wire_panel(ui: &AppWindow, session: &Arc<Session>) {
         }
         update();
     });
-    playback.on_refresh_panel(refresh);
+    playback.on_refresh_panel(refresh.clone());
+
+    let s = session.clone();
+    playback.on_toggle_resource(move |id, done| {
+        s.set_resource_done(&id, done);
+        refresh();
+    });
 
     let s = session.clone();
     playback.on_open_lecture(move |id| {

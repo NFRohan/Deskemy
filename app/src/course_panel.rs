@@ -20,8 +20,32 @@ pub fn current_section<'a>(course: &'a CourseDetail, lecture: Option<&str>) -> O
         .find(|s| s.lectures.iter().any(|l| l.id == lecture))
 }
 
+/// A resource as a panel row.
+fn resource_item(a: &Attachment) -> ResourceItem {
+    ResourceItem {
+        id: a.id.clone().into(),
+        done: a.completed,
+        name: a.name.clone().into(),
+        kind: a.kind.clone().unwrap_or_default().into(),
+        path: a.file_path.clone().into(),
+    }
+}
+
 /// Every section with its done/total count; lectures only for expanded ones.
-pub fn sections(course: &CourseDetail, current: Option<&str>, expanded: &HashSet<String>) -> Vec<SectionRow> {
+/// `inline` lists each lecture's resources under it (from `attachments`).
+pub fn sections(
+    course: &CourseDetail,
+    attachments: &[Attachment],
+    inline: bool,
+    current: Option<&str>,
+    expanded: &HashSet<String>,
+) -> Vec<SectionRow> {
+    let resources_of = |lecture: &str| -> Vec<ResourceItem> {
+        if !inline {
+            return Vec::new();
+        }
+        attachments.iter().filter(|a| a.lecture_id.as_deref() == Some(lecture)).map(resource_item).collect()
+    };
     course
         .sections
         .iter()
@@ -37,6 +61,7 @@ pub fn sections(course: &CourseDetail, current: Option<&str>, expanded: &HashSet
                     completed: l.completed,
                     playable: l.playable,
                     current: Some(l.id.as_str()) == current,
+                    resources: model(resources_of(&l.id)),
                 })
                 .collect();
             SectionRow {
@@ -63,13 +88,7 @@ pub fn resources(course: &CourseDetail, attachments: &[Attachment], current: Opt
     let Some(section) = current_section(course, current) else {
         return Resources { section: String::new(), groups: Vec::new(), count: 0 };
     };
-    let item = |a: &Attachment| ResourceItem {
-        id: a.id.clone().into(),
-        done: a.completed,
-        name: a.name.clone().into(),
-        kind: a.kind.clone().unwrap_or_default().into(),
-        path: a.file_path.clone().into(),
-    };
+    let item = resource_item;
     let in_section: Vec<&Attachment> = attachments
         .iter()
         .filter(|a| a.section_id.as_deref() == Some(section.id.as_str()))
@@ -164,9 +183,25 @@ mod tests {
     }
 
     #[test]
+    fn inline_resources_sit_under_their_lecture() {
+        use slint::Model;
+        let expanded = HashSet::from(["s1".to_string()]);
+        let atts = [attachment("setup.pdf", "s1", Some("b")), attachment("notes.pdf", "s1", None)];
+        let names = |inline: bool| -> Vec<Vec<String>> {
+            sections(&course(), &atts, inline, None, &expanded)[0]
+                .lectures
+                .iter()
+                .map(|l| l.resources.iter().map(|r| r.name.to_string()).collect())
+                .collect()
+        };
+        assert_eq!(names(true), vec![Vec::<String>::new(), vec!["setup.pdf".to_string()]]);
+        assert_eq!(names(false), vec![Vec::<String>::new(), Vec::new()]);
+    }
+
+    #[test]
     fn sections_count_progress_and_mark_the_current_lecture() {
         let expanded = HashSet::from(["s1".to_string()]);
-        let rows = sections(&course(), Some("b"), &expanded);
+        let rows = sections(&course(), &[], false, Some("b"), &expanded);
         assert_eq!(rows[0].progress.as_str(), "1/2");
         assert!(rows[0].expanded && !rows[1].expanded);
         let lectures: Vec<(String, bool, String)> = rows[0]

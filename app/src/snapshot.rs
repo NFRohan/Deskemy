@@ -186,7 +186,13 @@ fn sample_panel(playback: &crate::Playback, db: &crate::session::Db) {
     let expanded = course_panel::current_section(&course, Some(&lecture))
         .map(|s| std::iter::once(s.id.clone()).collect())
         .unwrap_or_default();
-    playback.set_panel_sections(course_panel::model(course_panel::sections(&course, Some(&lecture), &expanded)));
+    playback.set_panel_sections(course_panel::model(course_panel::sections(
+        &course,
+        &attachments,
+        true,
+        Some(&lecture),
+        &expanded,
+    )));
     let resources = course_panel::resources(&course, &attachments, Some(&lecture));
     playback.set_resources_section(resources.section.into());
     playback.set_resources_count(resources.count as i32);

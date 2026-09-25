@@ -68,16 +68,45 @@ component LectureItem inherits Rectangle {
     }
 }
 
+/// A resource's done tick.
+component PanelTick inherits Rectangle {
+    in property <ResourceItem> item;
+    width: 15px;
+    accessible-role: button;
+    accessible-label: root.item.done ? "Mark as not done" : "Mark as done";
+    Image {
+        source: root.item.done ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
+        width: 15px;
+        height: 15px;
+        colorize: root.item.done ? #ffffffcc : tick.has-hover ? #ffffffb3 : #ffffff4d;
+    }
+    tick := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Playback.toggle-resource(root.item.id, !root.item.done); }
+    }
+}
+
 component ResourceEntry inherits Rectangle {
     in property <ResourceItem> item;
+    /// Under a lecture in the content tree: indented, with a tick there.
+    in property <length> indent: 14px;
 
     height: 34px;
     background: touch.has-hover ? #ffffff0d : transparent;
 
+    // Below the row, so the tick above it gets its own clicks.
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        // Opens with the system's default app for the file.
+        clicked => { Playback.open-resource(root.item.path); }
+    }
+
     HorizontalLayout {
-        padding-left: 14px;
+        padding-left: root.indent;
         padding-right: 14px;
         spacing: 10px;
+
+        PanelTick { item: root.item; }
 
         Image {
             source: root.item.kind == "pdf" || root.item.kind == "text" ? @image-url("icons/file-text.svg")
@@ -91,7 +120,7 @@ component ResourceEntry inherits Rectangle {
         }
         Text {
             text: root.item.name;
-            color: #ffffffdd;
+            color: root.item.done ? #ffffff99 : #ffffffdd;
             font-size: 13px;
             vertical-alignment: center;
             horizontal-stretch: 1;
@@ -104,11 +133,6 @@ component ResourceEntry inherits Rectangle {
             font-weight: 600;
             vertical-alignment: center;
         }
-    }
-    touch := TouchArea {
-        mouse-cursor: pointer;
-        // Opens with the system's default app for the file.
-        clicked => { Playback.open-resource(root.item.path); }
     }
 }
 
@@ -208,9 +232,15 @@ export component CoursePanel inherits Rectangle {
                         }
                     }
                     if section.expanded: VerticalLayout {
-                        for lecture in section.lectures: LectureItem {
-                            lecture: lecture;
-                            clicked => { Playback.open-lecture(lecture.id); }
+                        for lecture in section.lectures: VerticalLayout {
+                            LectureItem {
+                                lecture: lecture;
+                                clicked => { Playback.open-lecture(lecture.id); }
+                            }
+                            for item in lecture.resources: ResourceEntry {
+                                item: item;
+                                indent: 30px;
+                            }
                         }
                     }
                 }

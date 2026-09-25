@@ -399,6 +399,18 @@ impl Session {
         queries::list_course_attachments(&self.db(), &course).unwrap_or_default()
     }
 
+    /// Mark a resource done or not.
+    pub fn set_resource_done(&self, id: &str, done: bool) {
+        if let Err(e) = queries::set_attachment_completed(&self.db(), id, done) {
+            tracing::warn!(error = %e, "mark resource");
+        }
+    }
+
+    /// "Keep videos and resources together" (resources under their lectures).
+    pub fn resources_inline(&self) -> bool {
+        settings::lock(&self.config).resources_inline
+    }
+
     /// Bookmarks of the playing lecture, in time order.
     pub fn bookmarks(&self) -> Vec<Bookmark> {
         let inner = self.inner();
