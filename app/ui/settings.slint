@@ -2,6 +2,7 @@
 
 import { Theme } from "theme.slint";
 import { Select, SelectOption } from "library.slint";
+import { AboutSlint, Palette } from "std-widgets.slint";
 
 /// Preferences from config.json (every change goes through `set(key, value)`
 /// and comes back once saved), and the maintenance actions (`run(key)`).
@@ -538,8 +539,23 @@ export component SettingsPage inherits Flickable {
                 about := VerticalLayout {
                     Row {
                         title: "Deskemy " + Prefs.version;
-                        description: "Update checks aren't wired up in this build yet.";
+                        description: "Update checks aren't wired up in this build yet. Third-party licenses are in the licenses folder beside the app.";
                         text-width: root.text-width;
+                    }
+                    Divider { }
+                    // Slint's Royalty-free License asks for this attribution. The
+                    // badge colours itself by Slint's palette (the OS theme), so
+                    // it sits on that palette's background to stay readable.
+                    HorizontalLayout {
+                        padding: 16px;
+                        alignment: start;
+                        Rectangle {
+                            border-radius: 8px;
+                            background: Palette.background;
+                            AboutSlint {
+                                max-height: 96px;
+                            }
+                        }
                     }
                 }
             }

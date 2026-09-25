@@ -361,7 +361,6 @@ pub fn insert_subtitle(
 /// container, video_codec, playable). Used to reuse metadata for unchanged
 /// files on rescan instead of re-probing them.
 #[allow(clippy::type_complexity)]
-#[allow(clippy::type_complexity)]
 pub fn course_lecture_media(
     conn: &Connection,
     course_id: &str,

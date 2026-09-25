@@ -20,6 +20,25 @@ fn main() {
         }
     }
 
+    // Ship the third-party licenses beside the executable.
+    {
+        let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".into());
+        let dest = manifest.join("target").join(&profile).join("licenses");
+        let _ = fs::create_dir_all(&dest);
+        println!("cargo:rerun-if-changed=licenses");
+        for name in ["../LICENSE", "licenses"] {
+            let src = manifest.join(name);
+            if src.is_file() {
+                let _ = fs::copy(&src, dest.join("LICENSE-deskemy.txt"));
+            } else if let Ok(entries) = fs::read_dir(&src) {
+                for e in entries.flatten() {
+                    let _ = fs::copy(e.path(), dest.join(e.file_name()));
+                }
+            }
+        }
+    }
+
     // Stage libmpv next to the built executable (Windows searches the exe's
     // own directory first). The DLL is too large for git; drop a copy in
     // app/vendor/, or reuse the one the Tauri app keeps in src-tauri/vendor/.

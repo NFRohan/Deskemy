@@ -199,7 +199,10 @@ impl Surface {
         let display = self.ui.upgrade().map_or(NativeDisplay::None, |ui| native_display(&ui));
         match unsafe { MpvRenderContext::new_gl(&self.mpv, *get_proc_address, display) } {
             Ok(render) => {
-                render.set_update_callback(on_mpv_frame, self.wake as *mut c_void);
+                // `wake` lives until after the render context is dropped
+                // (see Drop for Surface), and a slint::Weak is safe to use
+                // from mpv's thread.
+                unsafe { render.set_update_callback(on_mpv_frame, self.wake as *mut c_void) };
                 self.render = Some(render);
             }
             Err(e) => {

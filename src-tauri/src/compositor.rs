@@ -333,7 +333,8 @@ fn render_loop(hwnd: isize, rctx: MpvRenderContext, shared: Arc<Shared>) {
         }
     };
     // Frames arrive via this callback; hand it a borrowed Shared pointer.
-    rctx.set_update_callback(on_mpv_update, Arc::as_ptr(&shared) as *mut _);
+    // `shared` outlives `rctx`, which unregisters the callback when dropped.
+    unsafe { rctx.set_update_callback(on_mpv_update, Arc::as_ptr(&shared) as *mut _) };
     let mut cur = init;
 
     loop {

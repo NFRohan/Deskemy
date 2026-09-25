@@ -484,7 +484,12 @@ impl MpvRenderContext {
 
     /// Register a callback invoked (from an arbitrary thread) when a new frame is
     /// available. Keep it fast — just wake the render loop.
-    pub fn set_update_callback(&self, cb: extern "C" fn(*mut c_void), data: *mut c_void) {
+    ///
+    /// # Safety
+    /// mpv hands `data` to `cb`, from any thread, until this render context is
+    /// dropped (which unregisters the callback): whatever it points to must
+    /// stay valid, and be safe to use from another thread, until then.
+    pub unsafe fn set_update_callback(&self, cb: extern "C" fn(*mut c_void), data: *mut c_void) {
         if let Ok(f) = fns() {
             if let Some(set) = f.render_context_set_update_callback {
                 unsafe { set(self.ctx, Some(cb), data) };

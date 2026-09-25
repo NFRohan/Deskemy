@@ -486,7 +486,7 @@ impl Importer {
         let mut sections = Vec::new();
         for (s_pos, key) in keys.into_iter().enumerate() {
             let mut vids = videos_by_key.remove(&key).unwrap();
-            vids.sort_by(|a, b| sort_key(&a.name).cmp(&sort_key(&b.name)));
+            vids.sort_by_key(|a| sort_key(&a.name));
 
             let title = if key.is_empty() {
                 "Introduction".to_string()
