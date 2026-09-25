@@ -17,6 +17,8 @@ deskemy-core = { path = "../crates/deskemy-core" }
 
 # raw-window-handle-06: native dialogs open modal over the window.
 slint = { version = "1.18", features = ["raw-window-handle-06"] }
+# The window's X11 / Wayland display, for mpv's hardware decoding on Linux
+raw-window-handle = "0.6"
 # OpenGL calls for the texture mpv renders video into
 glow = "0.18"
 

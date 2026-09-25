@@ -144,6 +144,13 @@ parent; wrapped `Text` is measured at its unwrapped width, so give it a
 
 5. Import flow (preview + progress) and the filesystem watcher (callback instead of `tauri::Emitter`).
 6. Platforms: Linux (EGL; pass the X11/Wayland display to mpv for vaapi), macOS (Apple's deprecated GL).
+   - ☑ libmpv is found per OS (`libmpv.so.2` / `libmpv.2.dylib`, Homebrew's
+     folders), and the render context gets the window's X11 / Wayland display
+   - ☑ CI: `.github/workflows/slint-linux.yml` builds and tests the core and the
+     app on Ubuntu with the system libmpv, plus an offscreen snapshot
+   - ☐ Run it on Linux: playback with `hwdec=auto-safe` (vaapi), X11 and Wayland
+   - ☐ Keep-awake off Windows (freedesktop ScreenSaver inhibit / IOPMAssertion)
+   - ☐ Decide rfd's Linux backend: GTK 3 (default) or the XDG portal
 7. Packaging + updater; retire `src-tauri/`.
 
 ## Known risks

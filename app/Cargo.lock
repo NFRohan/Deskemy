@@ -1087,6 +1087,7 @@ dependencies = [
  "glow",
  "open",
  "png",
+ "raw-window-handle",
  "rfd",
  "slint",
  "slint-build",

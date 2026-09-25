@@ -1,0 +1,61 @@
+# Builds and tests the Slint app and the shared core on Linux (GH #7), with the
+# distribution's libmpv. The session tests drive a real, headless mpv.
+name: Slint app on Linux
+
+on:
+  push:
+    branches: [slint-port]
+    paths: ["app/**", "crates/**", ".github/workflows/slint-linux.yml"]
+  pull_request:
+    paths: ["app/**", "crates/**", ".github/workflows/slint-linux.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          # libmpv: playback + probing. fontconfig / xkbcommon / wayland: Slint's
+          # winit backend. gtk3: native file dialogs (rfd).
+          sudo apt-get install -y --no-install-recommends \
+            libmpv-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev \
+            libgtk-3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            crates/deskemy-core
+            app
+
+      - name: Core tests
+        working-directory: crates/deskemy-core
+        run: cargo test
+
+      - name: App build and tests
+        working-directory: app
+        run: |
+          cargo build
+          cargo test
+
+      # Renders a frame offscreen with the software renderer — no display
+      # needed — as a smoke test that the UI loads.
+      - name: Snapshot smoke test
+        working-directory: app
+        env:
+          DESKEMY_DATA_DIR: ${{ runner.temp }}/deskemy-data
+        run: |
+          ./target/debug/deskemy --snapshot "$RUNNER_TEMP/library.png"
+          test -s "$RUNNER_TEMP/library.png"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-snapshot
+          path: ${{ runner.temp }}/library.png
+          if-no-files-found: ignore

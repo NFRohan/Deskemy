@@ -8,7 +8,7 @@ use crate::{course_panel, stats, tracks};
 use crate::{AppWindow, BookmarkRow, MenuItem, Playback};
 use crate::settings::Config;
 use deskemy_core::mpv::{
-    Mpv, MpvEventEndFile, MpvRenderContext, MPV_END_FILE_REASON_EOF, MPV_EVENT_END_FILE,
+    Mpv, MpvEventEndFile, MpvRenderContext, NativeDisplay, MPV_END_FILE_REASON_EOF, MPV_EVENT_END_FILE,
     MPV_EVENT_FILE_LOADED, MPV_EVENT_PLAYBACK_RESTART, MPV_EVENT_SHUTDOWN,
     MPV_RENDER_UPDATE_FRAME,
 };
@@ -173,7 +173,8 @@ impl Surface {
             return;
         };
         let gl = unsafe { glow::Context::from_loader_function_cstr(|name| get_proc_address(name)) };
-        match unsafe { MpvRenderContext::new_gl(&self.mpv, *get_proc_address) } {
+        let display = self.ui.upgrade().map_or(NativeDisplay::None, |ui| native_display(&ui));
+        match unsafe { MpvRenderContext::new_gl(&self.mpv, *get_proc_address, display) } {
             Ok(render) => {
                 render.set_update_callback(on_mpv_frame, self.wake as *mut c_void);
                 self.render = Some(render);
@@ -802,6 +803,19 @@ impl Menus {
         playback.set_subtitles(model(self.subtitles));
         playback.set_audio_tracks(model(self.audio));
         playback.set_chapters(model(self.chapters));
+    }
+}
+
+/// The window's X11 / Wayland display, which mpv's hardware-decoding interop
+/// needs on Linux. Other platforms (and XCB-only windows) have none to give.
+fn native_display(ui: &AppWindow) -> NativeDisplay {
+    use slint::ComponentHandle;
+    use raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
+    let handle = ui.window().window_handle();
+    match handle.display_handle().map(|h| h.as_raw()) {
+        Ok(RawDisplayHandle::Xlib(x)) => x.display.map_or(NativeDisplay::None, |d| NativeDisplay::X11(d.as_ptr())),
+        Ok(RawDisplayHandle::Wayland(w)) => NativeDisplay::Wayland(w.display.as_ptr()),
+        _ => NativeDisplay::None,
     }
 }
 

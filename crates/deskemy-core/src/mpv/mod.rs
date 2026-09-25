@@ -58,6 +58,8 @@ pub const MPV_RENDER_PARAM_API_TYPE: c_int = 1;
 pub const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
 pub const MPV_RENDER_PARAM_OPENGL_FBO: c_int = 3;
 pub const MPV_RENDER_PARAM_FLIP_Y: c_int = 4;
+pub const MPV_RENDER_PARAM_X11_DISPLAY: c_int = 8;
+pub const MPV_RENDER_PARAM_WL_DISPLAY: c_int = 9;
 pub const MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME: c_int = 12;
 pub const MPV_RENDER_PARAM_SW_SIZE: c_int = 17;
 pub const MPV_RENDER_PARAM_SW_FORMAT: c_int = 18;
@@ -124,11 +126,27 @@ unsafe impl Sync for Fns {}
 
 static FNS: OnceLock<Option<Fns>> = OnceLock::new();
 
-/// Release builds bundle libmpv-2.dll next to the exe (it's too large to commit
-/// to git, so it lives in src-tauri/vendor/ and is copied in as a bundle
-/// resource). We still discover it robustly at runtime: an explicit override,
-/// next to our exe, on PATH, or in common mpv install locations.
+/// The windowing system's display, for the OpenGL render context. Only X11
+/// (an Xlib `Display*`) and Wayland (a `wl_display*`) need one.
+#[derive(Debug, Clone, Copy)]
+pub enum NativeDisplay {
+    None,
+    X11(*mut c_void),
+    Wayland(*mut c_void),
+}
+
+/// Windows release builds bundle libmpv-2.dll next to the exe (it's too large
+/// to commit to git, so it lives in src-tauri/vendor/ and is copied in as a
+/// bundle resource). Elsewhere libmpv usually comes from the system (a distro
+/// package, Homebrew). We still discover it robustly at runtime: an explicit
+/// override, next to our exe, on PATH, in common install locations, or by the
+/// OS's own library search.
+#[cfg(windows)]
 const DLL_NAMES: &[&str] = &["libmpv-2.dll", "mpv-2.dll", "libmpv.dll"];
+#[cfg(target_os = "macos")]
+const DLL_NAMES: &[&str] = &["libmpv.2.dylib", "libmpv.dylib"];
+#[cfg(all(unix, not(target_os = "macos")))]
+const DLL_NAMES: &[&str] = &["libmpv.so.2", "libmpv.so.1", "libmpv.so"];
 
 fn candidate_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -143,15 +161,21 @@ fn candidate_dirs() -> Vec<PathBuf> {
         dirs.extend(std::env::split_paths(&path));
     }
     // Common Windows install locations.
-    for var in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA", "ProgramData"] {
-        if let Ok(base) = std::env::var(var) {
-            dirs.push(PathBuf::from(&base).join("mpv"));
+    #[cfg(windows)]
+    {
+        for var in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA", "ProgramData"] {
+            if let Ok(base) = std::env::var(var) {
+                dirs.push(PathBuf::from(&base).join("mpv"));
+            }
+        }
+        if let Ok(up) = std::env::var("USERPROFILE") {
+            dirs.push(PathBuf::from(&up).join("scoop/apps/mpv/current"));
+            dirs.push(PathBuf::from(&up).join("scoop/shims"));
         }
     }
-    if let Ok(up) = std::env::var("USERPROFILE") {
-        dirs.push(PathBuf::from(&up).join("scoop/apps/mpv/current"));
-        dirs.push(PathBuf::from(&up).join("scoop/shims"));
-    }
+    // Homebrew, which the dynamic loader doesn't search by default.
+    #[cfg(target_os = "macos")]
+    dirs.extend(["/opt/homebrew/lib", "/usr/local/lib"].map(PathBuf::from));
     dirs
 }
 
@@ -236,9 +260,16 @@ unsafe fn load() -> Result<Fns> {
         });
     }
     Err(DeskemyError::Player(format!(
-        "libmpv-2.dll not found. Get mpv's shared library (the 'libmpv' build, not \
-         just the player) and place the DLL next to the executable or on PATH, or \
-         set DESKEMY_LIBMPV to its path. Last attempt — {last}"
+        "{} not found. {} Or set DESKEMY_LIBMPV to its path. Last attempt — {last}",
+        DLL_NAMES[0],
+        if cfg!(windows) {
+            "Get mpv's shared library (the 'libmpv' build, not just the player) and place \
+             the DLL next to the executable or on PATH."
+        } else if cfg!(target_os = "macos") {
+            "Install mpv (e.g. `brew install mpv`)."
+        } else {
+            "Install your distribution's libmpv package (e.g. libmpv2)."
+        }
     )))
 }
 
@@ -393,13 +424,19 @@ impl MpvRenderContext {
     /// Create an OpenGL render context against the GL context that is current
     /// on this thread. `get_proc_address` resolves GL entry points in that
     /// context; it only has to live for this call, because libmpv loads every
-    /// hwdec interop up front, at creation (see `--gpu-hwdec-interop`).
+    /// hwdec interop up front, at creation (see `--gpu-hwdec-interop`). On
+    /// Linux, `display` is the window's X11 or Wayland display, which mpv's
+    /// VA-API interop needs; it must outlive the render context.
     ///
     /// # Safety
     /// A GL context must be current, and every later call on the returned
     /// context — including dropping it — must happen with that same context
     /// current. The `mpv` handle must outlive the render context.
-    pub unsafe fn new_gl(mpv: &Mpv, get_proc_address: &dyn Fn(&CStr) -> *const c_void) -> Result<Self> {
+    pub unsafe fn new_gl(
+        mpv: &Mpv,
+        get_proc_address: &dyn Fn(&CStr) -> *const c_void,
+        display: NativeDisplay,
+    ) -> Result<Self> {
         unsafe extern "C" fn resolve(ctx: *mut c_void, name: *const c_char) -> *mut c_void {
             let lookup = &*(ctx as *const &dyn Fn(&CStr) -> *const c_void);
             let name = CStr::from_ptr(name);
@@ -418,7 +455,7 @@ impl MpvRenderContext {
             get_proc_address_ctx: &get_proc_address as *const &dyn Fn(&CStr) -> *const c_void
                 as *mut c_void,
         };
-        let mut params = [
+        let mut params = vec![
             MpvRenderParam {
                 type_: MPV_RENDER_PARAM_API_TYPE,
                 data: api.as_ptr() as *mut c_void,
@@ -427,11 +464,16 @@ impl MpvRenderContext {
                 type_: MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
                 data: &mut init as *mut MpvOpenGlInitParams as *mut c_void,
             },
-            MpvRenderParam {
-                type_: MPV_RENDER_PARAM_INVALID,
-                data: std::ptr::null_mut(),
-            },
         ];
+        match display {
+            NativeDisplay::X11(d) => params.push(MpvRenderParam { type_: MPV_RENDER_PARAM_X11_DISPLAY, data: d }),
+            NativeDisplay::Wayland(d) => params.push(MpvRenderParam { type_: MPV_RENDER_PARAM_WL_DISPLAY, data: d }),
+            NativeDisplay::None => {}
+        }
+        params.push(MpvRenderParam {
+            type_: MPV_RENDER_PARAM_INVALID,
+            data: std::ptr::null_mut(),
+        });
         let mut ctx: *mut c_void = std::ptr::null_mut();
         check(create(&mut ctx, mpv.ctx, params.as_mut_ptr()))?;
         if ctx.is_null() {
