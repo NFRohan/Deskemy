@@ -65,7 +65,7 @@ export global Course {
     callback delete-course();
 }
 
-component IconAction inherits Rectangle {
+export component IconAction inherits Rectangle {
     in property <image> icon;
     in property <color> tint: Theme.on-surface-variant;
     in property <string> label;
@@ -721,12 +721,14 @@ export component CoursePage inherits Flickable {
     }
 }
 
-component DialogButton inherits Rectangle {
+export component DialogButton inherits Rectangle {
     in property <string> text;
     in property <image> icon;
     in property <bool> has-icon;
     /// "primary", "danger" or "" (quiet).
     in property <string> kind;
+    /// False greys it out and ignores clicks.
+    in property <bool> active: true;
     callback clicked;
 
     height: 36px;
@@ -739,7 +741,9 @@ component DialogButton inherits Rectangle {
         : touch.has-hover ? Theme.surface-container-highest : transparent;
     accessible-role: button;
     accessible-label: root.text;
+    accessible-enabled: root.active;
     accessible-action-default => { root.clicked(); }
+    opacity: root.active ? 1 : 0.6;
 
     row := HorizontalLayout {
         padding-left: 12px;
@@ -763,6 +767,7 @@ component DialogButton inherits Rectangle {
         }
     }
     touch := TouchArea {
+        enabled: root.active;
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }

@@ -271,8 +271,13 @@ impl LibraryPage {
             .unwrap_or_default()
     }
 
+    /// The library as last loaded.
+    pub fn courses(&self) -> std::cell::Ref<'_, Vec<CourseSummary>> {
+        self.courses.borrow()
+    }
+
     /// A thumbnail, decoded once and kept.
-    fn image(&self, path: Option<&str>) -> slint::Image {
+    pub fn image(&self, path: Option<&str>) -> slint::Image {
         let Some(path) = path else { return slint::Image::default() };
         self.images
             .borrow_mut()

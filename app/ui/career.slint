@@ -1,0 +1,835 @@
+// Career tracks — ordered learning paths of courses — as the Tauri app's
+// routes/tracks and routes/tracks/[id].
+
+import { Theme } from "theme.slint";
+import { DialogButton, IconAction } from "course.slint";
+import { Library } from "library.slint";
+
+export struct TrackCard {
+    id: string,
+    name: string,
+    description: string,
+    /// "3 courses · 12 / 40 lectures".
+    meta: string,
+    percent: int,
+}
+
+export struct TrackCourseRow {
+    id: string,
+    title: string,
+    thumbnail: image,
+    has-thumbnail: bool,
+    done: int,
+    total: int,
+    percent: int,
+    /// "done", "started" or "".
+    status: string,
+    /// The first unfinished course — the one to work on next.
+    next: bool,
+}
+
+/// A library course offered by "Add courses".
+export struct PickRow {
+    id: string,
+    title: string,
+    /// "12 lectures".
+    lectures: string,
+    thumbnail: image,
+    has-thumbnail: bool,
+}
+
+export global Tracks {
+    in property <[TrackCard]> tracks;
+
+    // The open track.
+    in property <bool> found: true;
+    in property <string> id;
+    in property <string> name;
+    in property <string> description;
+    in property <int> percent;
+    /// "40% · 12 / 30 lectures".
+    in property <string> summary;
+    /// "3 COURSES".
+    in property <string> count-label;
+    in property <[TrackCourseRow]> courses;
+
+    // "Add courses".
+    in property <[PickRow]> pickable;
+    in property <string> pick-empty;
+    in-out property <string> pick-query;
+
+    /// The open dialog: "" (none), "create", "edit", "delete" or "add".
+    in-out property <string> dialog;
+    in-out property <string> draft-name;
+    in-out property <string> draft-description;
+    in-out property <string> error;
+
+    callback open(string);
+    callback create(string, string);
+    callback save(string, string);
+    callback delete-track();
+    callback filter(string);
+    callback add-course(string);
+    callback remove-course(string);
+    /// Move the course at an index up (-1) or down (1).
+    callback move(int, int);
+}
+
+component PageHeading inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> text;
+    spacing: 8px;
+    alignment: start;
+    Image {
+        source: root.icon;
+        width: 18px;
+        height: 18px;
+        y: (parent.height - self.height) / 2;
+        colorize: Theme.on-surface;
+    }
+    Text {
+        text: root.text;
+        color: Theme.on-surface;
+        font-size: Theme.headline-sm;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+}
+
+component Bar inherits Rectangle {
+    in property <int> value;
+    border-radius: self.height / 2;
+    background: Theme.surface-container-highest;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: parent.width * max(0, min(100, root.value)) / 100;
+        border-radius: parent.border-radius;
+        background: Theme.primary;
+    }
+}
+
+component Thumb inherits Rectangle {
+    in property <image> source;
+    in property <bool> has-image;
+    border-radius: 4px;
+    background: Theme.surface-container-highest;
+    clip: true;
+    if root.has-image: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.source;
+        image-fit: cover;
+    }
+    if !root.has-image: Image {
+        source: @image-url("icons/video.svg");
+        width: 18px;
+        height: 18px;
+        colorize: Theme.outline-variant;
+    }
+}
+
+component TrackCardView inherits Rectangle {
+    in property <TrackCard> track;
+    callback clicked;
+
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+    background: touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
+    accessible-role: button;
+    accessible-label: root.track.name;
+    accessible-action-default => { root.clicked(); }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 4px;
+        HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: root.track.name;
+                color: Theme.on-surface;
+                font-size: Theme.headline-sm;
+                font-weight: 600;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.track.percent + "%";
+                color: Theme.on-surface-variant;
+                font-size: Theme.label-md;
+            }
+        }
+        // Two lines at most; the card keeps one height for the grid.
+        Text {
+            text: root.track.description;
+            color: Theme.on-surface-variant;
+            font-size: Theme.body-sm;
+            wrap: word-wrap;
+            overflow: elide;
+            height: 36px;
+            vertical-alignment: top;
+        }
+        Rectangle { vertical-stretch: 1; }
+        Text {
+            text: root.track.meta;
+            color: Theme.on-surface-variant;
+            font-size: Theme.label-sm;
+        }
+        Bar {
+            height: 6px;
+            value: root.track.percent;
+        }
+    }
+}
+
+component NewTrackButton inherits DialogButton {
+    kind: "primary";
+    text: "New track";
+    icon: @image-url("icons/plus.svg");
+    has-icon: true;
+    clicked => {
+        Tracks.draft-name = "";
+        Tracks.draft-description = "";
+        Tracks.error = "";
+        Tracks.dialog = "create";
+    }
+}
+
+export component TracksPage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+    property <length> page-width: min(self.width - 48px, 1024px);
+    property <int> columns: root.page-width >= 640px ? 2 : 1;
+    property <length> gap: 12px;
+    property <length> card-width: (root.page-width - (root.columns - 1) * root.gap) / root.columns;
+    property <length> card-height: 136px;
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 24px;
+        alignment: start;
+
+        HorizontalLayout {
+            PageHeading {
+                icon: @image-url("icons/route.svg");
+                text: "Career Tracks";
+                horizontal-stretch: 1;
+            }
+            NewTrackButton { }
+        }
+
+        if Tracks.tracks.length == 0: VerticalLayout {
+            padding-top: 48px;
+            spacing: 16px;
+            Text {
+                text: "No tracks yet. Group courses into an ordered learning path — like \"Platform Engineering\": Linux → Docker → Kubernetes.";
+                color: Theme.on-surface-variant;
+                font-size: Theme.body-md;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                max-width: root.page-width;
+            }
+            HorizontalLayout {
+                alignment: center;
+                NewTrackButton { }
+            }
+        }
+
+        if Tracks.tracks.length > 0: Rectangle {
+            height: ceil(Tracks.tracks.length / root.columns) * (root.card-height + root.gap) - root.gap;
+            for track[i] in Tracks.tracks: TrackCardView {
+                x: mod(i, root.columns) * (root.card-width + root.gap);
+                y: floor(i / root.columns) * (root.card-height + root.gap);
+                width: root.card-width;
+                height: root.card-height;
+                track: track;
+                clicked => { Tracks.open(track.id); }
+            }
+        }
+    }
+}
+
+component StepButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> active;
+    callback clicked;
+
+    width: 22px;
+    height: 20px;
+    border-radius: 4px;
+    background: root.active && touch.has-hover ? Theme.surface-container-highest : transparent;
+    opacity: root.active ? 1 : 0.3;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.active;
+    accessible-action-default => { root.clicked(); }
+    Image {
+        source: root.icon;
+        width: 16px;
+        height: 16px;
+        colorize: root.active && touch.has-hover ? Theme.on-surface : Theme.on-surface-variant;
+    }
+    touch := TouchArea {
+        enabled: root.active;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component TrackCourseView inherits Rectangle {
+    in property <TrackCourseRow> course;
+    in property <int> index;
+    in property <bool> last;
+
+    height: 64px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: root.course.next ? Theme.primary.transparentize(0.5) : Theme.outline-variant;
+    background: root.course.next ? Theme.primary-container.transparentize(0.9) : Theme.surface-container-low;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            StepButton {
+                label: "Move up";
+                icon: @image-url("icons/chevron-up.svg");
+                active: root.index > 0;
+                clicked => { Tracks.move(root.index, -1); }
+            }
+            StepButton {
+                label: "Move down";
+                icon: @image-url("icons/chevron-down.svg");
+                active: !root.last;
+                clicked => { Tracks.move(root.index, 1); }
+            }
+        }
+
+        Image {
+            source: root.course.status == "done" ? @image-url("icons/circle-check.svg")
+                : root.course.status == "started" ? @image-url("icons/circle-dot.svg")
+                : @image-url("icons/circle.svg");
+            width: 20px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            colorize: root.course.status == "done" ? Theme.secondary-container
+                : root.course.status == "started" ? Theme.primary : Theme.outline;
+            accessible-role: image;
+            accessible-label: root.course.status == "done" ? "Completed"
+                : root.course.status == "started" ? "In progress" : "Not started";
+        }
+
+        // The course itself links to its page.
+        Rectangle {
+            horizontal-stretch: 1;
+            accessible-role: button;
+            accessible-label: root.course.title;
+            link := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Library.show-course(root.course.id); }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                Thumb {
+                    width: 64px;
+                    height: 40px;
+                    y: (parent.height - self.height) / 2;
+                    source: root.course.thumbnail;
+                    has-image: root.course.has-thumbnail;
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 6px;
+                    Text {
+                        text: root.course.title;
+                        color: link.has-hover ? Theme.primary : Theme.on-surface;
+                        font-size: Theme.body-md;
+                        overflow: elide;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Bar {
+                            width: 96px;
+                            height: 4px;
+                            y: (parent.height - self.height) / 2;
+                            value: root.course.percent;
+                        }
+                        Text {
+                            text: root.course.done + "/" + root.course.total;
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.label-sm;
+                            vertical-alignment: center;
+                        }
+                        if root.course.next: Text {
+                            text: "Up next";
+                            color: Theme.primary;
+                            font-size: Theme.label-sm;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        IconAction {
+            y: (parent.height - self.height) / 2;
+            label: "Remove from track";
+            icon: @image-url("icons/x.svg");
+            tint: self.hovered ? Theme.error : Theme.on-surface-variant;
+            clicked => { Tracks.remove-course(root.course.id); }
+        }
+    }
+}
+
+export component TrackPage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+    property <length> page-width: min(self.width - 48px, 896px);
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 24px;
+        alignment: start;
+
+        if !Tracks.found: Text {
+            text: "Track not found.";
+            color: Theme.error;
+            font-size: Theme.body-sm;
+            horizontal-alignment: center;
+            height: 128px;
+            vertical-alignment: center;
+        }
+
+        // Header: name, description, edit / delete, overall progress.
+        if Tracks.found: VerticalLayout {
+            spacing: 12px;
+            HorizontalLayout {
+                spacing: 16px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 4px;
+                    // max-width: wrapped text is measured at its one-line width.
+                    Text {
+                        text: Tracks.name;
+                        color: Theme.on-surface;
+                        font-size: Theme.headline-md;
+                        font-weight: 600;
+                        wrap: word-wrap;
+                        max-width: root.page-width - 96px;
+                    }
+                    if Tracks.description != "": Text {
+                        text: Tracks.description;
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.body-sm;
+                        wrap: word-wrap;
+                        max-width: root.page-width - 96px;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    IconAction {
+                        label: "Edit track";
+                        icon: @image-url("icons/pencil.svg");
+                        tint: self.hovered ? Theme.on-surface : Theme.on-surface-variant;
+                        clicked => {
+                            Tracks.draft-name = Tracks.name;
+                            Tracks.draft-description = Tracks.description;
+                            Tracks.error = "";
+                            Tracks.dialog = "edit";
+                        }
+                    }
+                    IconAction {
+                        label: "Delete track";
+                        icon: @image-url("icons/trash-2.svg");
+                        tint: self.hovered ? Theme.error : Theme.on-surface-variant;
+                        clicked => { Tracks.dialog = "delete"; }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                Bar {
+                    horizontal-stretch: 1;
+                    height: 8px;
+                    y: (parent.height - self.height) / 2;
+                    value: Tracks.percent;
+                }
+                Text {
+                    text: Tracks.summary;
+                    color: Theme.on-surface-variant;
+                    font-size: Theme.label-md;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        if Tracks.found: HorizontalLayout {
+            Text {
+                text: Tracks.count-label;
+                color: Theme.on-surface-variant;
+                font-size: Theme.label-md;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            DialogButton {
+                text: "Add courses";
+                icon: @image-url("icons/plus.svg");
+                has-icon: true;
+                clicked => {
+                    Tracks.pick-query = "";
+                    Tracks.filter("");
+                    Tracks.dialog = "add";
+                }
+            }
+        }
+
+        if Tracks.found && Tracks.courses.length == 0: Text {
+            text: "No courses in this track yet. Add courses to build the learning path — order matters.";
+            color: Theme.on-surface-variant;
+            font-size: Theme.body-sm;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+            max-width: root.page-width;
+            height: 96px;
+            vertical-alignment: center;
+        }
+
+        if Tracks.found && Tracks.courses.length > 0: VerticalLayout {
+            spacing: 8px;
+            for course[i] in Tracks.courses: TrackCourseView {
+                course: course;
+                index: i;
+                last: i == Tracks.courses.length - 1;
+            }
+        }
+    }
+}
+
+/// A bordered text box; `multiline` makes it a two-line description area.
+component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> multiline;
+    in property <bool> autofocus;
+    callback accepted;
+    callback edited(string);
+
+    height: root.multiline ? 60px : 40px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent-blue : Theme.outline-variant;
+    background: Theme.surface-container-low;
+
+    input := TextInput {
+        x: 12px;
+        y: root.multiline ? 8px : 0px;
+        width: parent.width - 24px;
+        height: root.multiline ? parent.height - 16px : parent.height;
+        single-line: !root.multiline;
+        wrap: root.multiline ? word-wrap : no-wrap;
+        vertical-alignment: root.multiline ? top : center;
+        color: Theme.on-surface;
+        font-size: Theme.body-md;
+        text <=> root.text;
+        init => {
+            if root.autofocus {
+                self.focus();
+            }
+        }
+        accepted => { root.accepted(); }
+        edited => { root.edited(self.text); }
+    }
+    if root.text == "": Text {
+        x: 12px;
+        y: input.y;
+        height: root.multiline ? 20px : parent.height;
+        text: root.placeholder;
+        color: Theme.on-surface-variant;
+        font-size: Theme.body-md;
+        vertical-alignment: center;
+    }
+}
+
+component FieldLabel inherits Text {
+    color: Theme.on-surface-variant;
+    font-size: Theme.label-md;
+}
+
+component CloseButton inherits Rectangle {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.surface-container-highest : transparent;
+    accessible-role: button;
+    accessible-label: "Close";
+    accessible-action-default => { Tracks.dialog = ""; }
+    Image {
+        source: @image-url("icons/x.svg");
+        width: 18px;
+        height: 18px;
+        colorize: Theme.on-surface-variant;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Tracks.dialog = ""; }
+    }
+}
+
+component DialogTitle inherits Text {
+    color: Theme.on-surface;
+    font-size: Theme.headline-sm;
+    font-weight: 600;
+    vertical-alignment: center;
+}
+
+component PickRowView inherits Rectangle {
+    in property <PickRow> course;
+    height: 52px;
+    border-radius: 8px;
+    background: touch.has-hover ? Theme.surface-container-high : transparent;
+    accessible-role: button;
+    accessible-label: "Add " + root.course.title;
+    accessible-action-default => { Tracks.add-course(root.course.id); }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Tracks.add-course(root.course.id); }
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 12px;
+        Thumb {
+            width: 56px;
+            height: 36px;
+            y: (parent.height - self.height) / 2;
+            source: root.course.thumbnail;
+            has-image: root.course.has-thumbnail;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.course.title;
+                color: Theme.on-surface;
+                font-size: Theme.body-md;
+                overflow: elide;
+            }
+            Text {
+                text: root.course.lectures;
+                color: Theme.on-surface-variant;
+                font-size: Theme.label-sm;
+            }
+        }
+        Image {
+            source: @image-url("icons/plus.svg");
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.on-surface-variant;
+        }
+    }
+}
+
+/// The tracks pages' dialogs, over the whole (dimmed) window. Esc closes.
+export component TrackDialogs inherits Rectangle {
+    background: #00000099;
+
+    // See CourseDialogs: capping wrapped text at the room actually available
+    // makes the measured height the wrapped one.
+    property <length> card-width: min(448px, root.width - 32px);
+    property <length> text-width: root.card-width - 40px;
+
+    keys := FocusScope {
+        // Dialogs with a text box focus it instead; Esc still bubbles here.
+        init => {
+            if Tracks.dialog == "delete" {
+                self.focus();
+            }
+        }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                Tracks.dialog = "";
+                return accept;
+            }
+            return reject;
+        }
+
+        TouchArea {
+            clicked => { Tracks.dialog = ""; }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: root.card-width;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: Theme.outline-variant;
+                    background: Theme.surface-container;
+
+                    TouchArea { }
+
+                    VerticalLayout {
+                        padding: 20px;
+
+                        if Tracks.dialog == "create" || Tracks.dialog == "edit": VerticalLayout {
+                            spacing: 16px;
+                            HorizontalLayout {
+                                DialogTitle {
+                                    text: Tracks.dialog == "create" ? "New career track" : "Edit track";
+                                    horizontal-stretch: 1;
+                                }
+                                if Tracks.dialog == "create": CloseButton { }
+                            }
+                            VerticalLayout {
+                                spacing: 4px;
+                                FieldLabel { text: "Name"; }
+                                Field {
+                                    text <=> Tracks.draft-name;
+                                    placeholder: Tracks.dialog == "create" ? "e.g. Platform Engineering" : "";
+                                    autofocus: true;
+                                    accepted => {
+                                        if Tracks.dialog == "create" {
+                                            Tracks.create(Tracks.draft-name, Tracks.draft-description);
+                                        } else {
+                                            Tracks.save(Tracks.draft-name, Tracks.draft-description);
+                                        }
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 4px;
+                                FieldLabel { text: "Description (optional)"; }
+                                Field {
+                                    text <=> Tracks.draft-description;
+                                    multiline: true;
+                                }
+                            }
+                            if Tracks.error != "": Text {
+                                text: Tracks.error;
+                                color: Theme.error;
+                                font-size: Theme.label-sm;
+                                wrap: word-wrap;
+                                max-width: root.text-width;
+                            }
+                            HorizontalLayout {
+                                alignment: end;
+                                spacing: 8px;
+                                DialogButton {
+                                    text: "Cancel";
+                                    clicked => { Tracks.dialog = ""; }
+                                }
+                                DialogButton {
+                                    kind: "primary";
+                                    text: Tracks.dialog == "create" ? "Create" : "Save";
+                                    active: Tracks.draft-name != "";
+                                    clicked => {
+                                        if Tracks.dialog == "create" {
+                                            Tracks.create(Tracks.draft-name, Tracks.draft-description);
+                                        } else {
+                                            Tracks.save(Tracks.draft-name, Tracks.draft-description);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if Tracks.dialog == "delete": VerticalLayout {
+                            spacing: 16px;
+                            DialogTitle {
+                                text: "Delete \"" + Tracks.name + "\"?";
+                                wrap: word-wrap;
+                                max-width: root.text-width;
+                            }
+                            Text {
+                                text: "This removes the track and its ordering only. Your courses, progress and bookmarks are untouched.";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.body-sm;
+                                wrap: word-wrap;
+                                max-width: root.text-width;
+                            }
+                            HorizontalLayout {
+                                alignment: end;
+                                spacing: 8px;
+                                DialogButton {
+                                    text: "Cancel";
+                                    clicked => { Tracks.dialog = ""; }
+                                }
+                                DialogButton {
+                                    kind: "danger";
+                                    text: "Delete track";
+                                    icon: @image-url("icons/trash-2.svg");
+                                    has-icon: true;
+                                    clicked => { Tracks.delete-track(); }
+                                }
+                            }
+                        }
+
+                        if Tracks.dialog == "add": VerticalLayout {
+                            spacing: 12px;
+                            HorizontalLayout {
+                                DialogTitle {
+                                    text: "Add courses";
+                                    horizontal-stretch: 1;
+                                }
+                                CloseButton { }
+                            }
+                            Field {
+                                text <=> Tracks.pick-query;
+                                placeholder: "Filter courses…";
+                                autofocus: true;
+                                edited(query) => { Tracks.filter(query); }
+                            }
+                            if Tracks.pickable.length == 0: Text {
+                                text: Tracks.pick-empty;
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.body-sm;
+                                horizontal-alignment: center;
+                                height: 80px;
+                                vertical-alignment: center;
+                            }
+                            // Up to 80% of the window, then it scrolls.
+                            if Tracks.pickable.length > 0: Flickable {
+                                height: min(picks.preferred-height, root.height * 0.8 - 150px);
+                                content-width: self.width;
+                                content-height: picks.preferred-height;
+                                picks := VerticalLayout {
+                                    width: parent.width;
+                                    spacing: 4px;
+                                    for course in Tracks.pickable: PickRowView {
+                                        course: course;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

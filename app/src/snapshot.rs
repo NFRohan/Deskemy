@@ -122,6 +122,34 @@ pub fn sample_course(ui: &crate::AppWindow, db: &crate::session::Db, page: &crat
     }
 }
 
+/// The tracks list ("tracks"), or the first track's page ("track"), with
+/// "track-<dialog>" opening that dialog ("tracks-create" for the list's).
+pub fn sample_tracks(ui: &crate::AppWindow, page: &crate::career::TracksPage, which: &str) {
+    use crate::{Nav, Tracks};
+    use slint::ComponentHandle;
+    let nav = ui.global::<Nav>();
+    if let Some(dialog) = which.strip_prefix("tracks") {
+        nav.set_page("tracks".into());
+        nav.set_crumbs(crate::course_panel::model(vec!["Career Tracks".into()]));
+        page.show_list(ui);
+        ui.global::<Tracks>().set_dialog(dialog.trim_start_matches('-').into());
+        return;
+    }
+    page.show_list(ui);
+    let tracks = ui.global::<Tracks>();
+    let Some(first) = slint::Model::row_data(&tracks.get_tracks(), 0) else { return };
+    page.open(ui, &first.id);
+    let dialog = which.strip_prefix("track-").unwrap_or_default();
+    if dialog == "add" {
+        page.filter(ui, "");
+    }
+    if dialog == "edit" {
+        tracks.set_draft_name(tracks.get_name());
+        tracks.set_draft_description(tracks.get_description());
+    }
+    tracks.set_dialog(dialog.into());
+}
+
 fn sample_panel(playback: &crate::Playback, db: &crate::session::Db) {
     use crate::course_panel;
     use deskemy_core::db::queries;

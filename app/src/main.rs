@@ -1,6 +1,7 @@
 // Release builds are GUI-only on Windows (no console window).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod career;
 mod course_page;
 mod course_panel;
 mod library;
@@ -78,6 +79,7 @@ fn main() -> Result<(), slint::PlatformError> {
     library.reload(&ui);
     let thumbs = paths::data_dir().map(|d| d.join(deskemy_core::courses::THUMBNAILS_DIR));
     let course = course_page::CoursePage::new(db.clone(), thumbs);
+    let tracks = career::TracksPage::new(db.clone(), library.clone());
 
     if let Mode::Snapshot { path, player, page } = mode {
         let window = offscreen.expect("snapshot platform installed");
@@ -97,6 +99,11 @@ fn main() -> Result<(), slint::PlatformError> {
             ui.global::<Nav>().set_crumbs(course_panel::model(vec!["Search".into()]));
             ui.global::<Search>().set_query(query.into());
             search::run(&ui, &db, query);
+        }
+        // "tracks" (the list), or "track" — the first track — optionally with a
+        // dialog open ("track-add", "track-edit", "track-delete").
+        if let Some(page) = page.as_deref().filter(|p| p.starts_with("track")) {
+            snapshot::sample_tracks(&ui, &tracks, page);
         }
         // "course", or "course-cover" / "course-delete" with that dialog open.
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
@@ -153,20 +160,29 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     // After watching or an edit, every view may be stale.
-    let (weak, page, course_view, lists_db) = (ui.as_weak(), library.clone(), course.clone(), db.clone());
+    let (weak, page, course_view, track_view, lists_db) =
+        (ui.as_weak(), library.clone(), course.clone(), tracks.clone(), db.clone());
     ui.on_refresh_library(move || {
         if let Some(ui) = weak.upgrade() {
             page.reload(&ui);
             course_view.refresh(&ui);
+            track_view.refresh(&ui);
             show_list(&ui, &lists_db, &page, &ui.global::<Nav>().get_page());
+            if ui.global::<Nav>().get_page() == "tracks" {
+                track_view.show_list(&ui);
+            }
         }
     });
-    let (weak, page, lists_db) = (ui.as_weak(), library.clone(), db.clone());
+    let (weak, page, track_view, lists_db) = (ui.as_weak(), library.clone(), tracks.clone(), db.clone());
     ui.on_page_shown(move |name| {
         if let Some(ui) = weak.upgrade() {
             show_list(&ui, &lists_db, &page, &name);
+            if name == "tracks" {
+                track_view.show_list(&ui);
+            }
         }
     });
+    wire_tracks(&ui, &tracks);
     wire_lists(&ui, &db, player.session());
     wire_search(&ui, &db, &course, player.session());
     wire_course(&ui, &course, player.session());
@@ -241,6 +257,49 @@ fn wire_search(
             Ok(()) => ui.set_playing(true),
             Err(e) => tracing::warn!(error = %e, %lecture, "open lecture"),
         }
+    });
+}
+
+/// The career tracks pages' actions. Membership and order feed the library's
+/// track filter, so edits refresh it too.
+fn wire_tracks(ui: &AppWindow, page: &std::rc::Rc<career::TracksPage>) {
+    let tracks = ui.global::<Tracks>();
+    macro_rules! action {
+        ($on:ident, |$page:ident, $ui:ident $(, $arg:ident)*| $body:expr) => {{
+            let (p, weak) = (page.clone(), ui.as_weak());
+            tracks.$on(move |$($arg),*| {
+                if let Some($ui) = weak.upgrade() {
+                    let $page = &p;
+                    $body;
+                }
+            });
+        }};
+    }
+    action!(on_open, |p, ui, id| p.open(&ui, &id));
+    action!(on_filter, |p, ui, query| p.filter(&ui, &query));
+    action!(on_create, |p, ui, name, description| {
+        p.create(&ui, &name, &description);
+        ui.invoke_refresh_library()
+    });
+    action!(on_save, |p, ui, name, description| {
+        p.save(&ui, &name, &description);
+        ui.invoke_refresh_library()
+    });
+    action!(on_delete_track, |p, ui| {
+        p.delete(&ui);
+        ui.invoke_refresh_library()
+    });
+    action!(on_add_course, |p, ui, id| {
+        p.add(&ui, &id);
+        ui.invoke_refresh_library()
+    });
+    action!(on_remove_course, |p, ui, id| {
+        p.remove(&ui, &id);
+        ui.invoke_refresh_library()
+    });
+    action!(on_move, |p, ui, index, dir| {
+        p.move_course(&ui, index.max(0) as usize, dir);
+        ui.invoke_refresh_library()
     });
 }
 

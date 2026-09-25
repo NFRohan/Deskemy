@@ -270,8 +270,9 @@ export component Sidebar inherits Rectangle {
                 label: item.label;
                 icon: item.icon;
                 collapsed: Nav.sidebar-collapsed;
-                // The course page counts as the library.
-                active: Nav.page == item.id || (item.id == "library" && Nav.page == "course");
+                // A course page counts as the library, a track as the tracks.
+                active: Nav.page == item.id || (item.id == "library" && Nav.page == "course")
+                    || (item.id == "tracks" && Nav.page == "track");
                 clicked => {
                     Nav.page = item.id;
                     Nav.crumbs = [item.label];

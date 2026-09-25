@@ -100,8 +100,14 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
   (upload / Ctrl+V paste / remove), relocate a missing course, remove
 - ☐ Run it: native dialogs (upload, locate folder), clipboard paste,
   remove, toggling ticks and tags
-- ☐ Search, Career Tracks (+ track page), Favorites, Bookmarks, History,
-  Stats, Settings
+- ☑ Favorites, History, Bookmarks (`ui/pages.slint`, `src/pages.rs`)
+- ☑ Search: titles and spoken subtitle text, search-as-you-type
+  (`ui/search.slint`, `src/search.rs`)
+- ☑ Career Tracks: list, create; track page with edit, delete, add courses
+  (filterable picker), reorder, remove, Up next (`ui/career.slint`,
+  `src/career.rs`)
+- ☐ Run it: create / edit a track, the picker, reorder, typing in dialogs
+- ☐ Stats, Settings
 
 Slint gotchas met so far: a fixed-size child with no `x` is centred in its
 parent; wrapped `Text` is measured at its unwrapped width, so give it a
