@@ -15,11 +15,12 @@ import {
 } from "pages.slint";
 import { Search, SearchPage, SearchRow, SubtitleRow } from "search.slint";
 import { PickRow, TrackCard, TrackCourseRow, TrackDialogs, TrackPage, Tracks, TracksPage } from "career.slint";
+import { LearningStats, StatsPage, WeekBar } from "stats_page.slint";
 import { Theme } from "theme.slint";
 
 export {
     BookmarkEntry, BookmarkGroup, HistoryGroup, HistoryRow, Lists, Search, SearchRow, SubtitleRow,
-    PickRow, TrackCard, TrackCourseRow, Tracks,
+    PickRow, TrackCard, TrackCourseRow, Tracks, LearningStats, WeekBar,
     BookmarkRow, Course, CourseCard, CurriculumLecture, CurriculumSection, Hero, LectureRow, Library, MenuItem,
     Nav, Playback, ResourceGroup, ResourceItem, SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme,
     WindowChrome,
@@ -105,10 +106,11 @@ export component AppWindow inherits Window {
                 if Nav.page == "search": SearchPage { }
                 if Nav.page == "tracks": TracksPage { }
                 if Nav.page == "track": TrackPage { }
+                if Nav.page == "stats": StatsPage { }
 
                 if Nav.page != "library" && Nav.page != "course" && Nav.page != "favorites"
                     && Nav.page != "history" && Nav.page != "bookmarks" && Nav.page != "search"
-                    && Nav.page != "tracks" && Nav.page != "track": NotPortedYet {
+                    && Nav.page != "tracks" && Nav.page != "track" && Nav.page != "stats": NotPortedYet {
                     title: Nav.crumbs[0];
                 }
             }

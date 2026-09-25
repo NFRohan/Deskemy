@@ -10,6 +10,7 @@ mod search;
 mod session;
 mod snapshot;
 mod stats;
+mod stats_page;
 mod tracks;
 mod video;
 
@@ -62,7 +63,11 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let mode = parse_args();
     let offscreen = match &mode {
-        Mode::Snapshot { .. } => Some(snapshot::install(1280, 800)?),
+        // DESKEMY_SNAPSHOT_HEIGHT renders a taller frame, to see a long page whole.
+        Mode::Snapshot { .. } => {
+            let height = std::env::var("DESKEMY_SNAPSHOT_HEIGHT").ok().and_then(|h| h.parse().ok());
+            Some(snapshot::install(1280, height.unwrap_or(800))?)
+        }
         // Video is rendered by mpv through OpenGL, so real windows need an
         // OpenGL-backed renderer (FemtoVG by default).
         _ => {
@@ -74,6 +79,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
     let (db, config) = open_library(&ui);
     ui.global::<Theme>().set_mode(config.theme.as_str().into());
+    let goal = config.daily_goal_minutes;
     wire_window(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
@@ -86,12 +92,12 @@ fn main() -> Result<(), slint::PlatformError> {
         if let Some(menu) = player {
             snapshot::sample_playback(&ui, &menu, &db);
         }
-        if let Some(list @ ("favorites" | "history" | "bookmarks")) = page.as_deref() {
+        if let Some(list @ ("favorites" | "history" | "bookmarks" | "stats")) = page.as_deref() {
             let nav = ui.global::<Nav>();
             nav.set_page(list.into());
             let title = format!("{}{}", list[..1].to_uppercase(), &list[1..]);
             nav.set_crumbs(course_panel::model(vec![title.into()]));
-            show_list(&ui, &db, &library, list);
+            show_list(&ui, &db, &library, list, goal);
         }
         // "search:<query>" shows the search page with that query's results.
         if let Some(query) = page.as_deref().and_then(|p| p.strip_prefix("search:")) {
@@ -167,7 +173,7 @@ fn main() -> Result<(), slint::PlatformError> {
             page.reload(&ui);
             course_view.refresh(&ui);
             track_view.refresh(&ui);
-            show_list(&ui, &lists_db, &page, &ui.global::<Nav>().get_page());
+            show_list(&ui, &lists_db, &page, &ui.global::<Nav>().get_page(), goal);
             if ui.global::<Nav>().get_page() == "tracks" {
                 track_view.show_list(&ui);
             }
@@ -176,7 +182,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let (weak, page, track_view, lists_db) = (ui.as_weak(), library.clone(), tracks.clone(), db.clone());
     ui.on_page_shown(move |name| {
         if let Some(ui) = weak.upgrade() {
-            show_list(&ui, &lists_db, &page, &name);
+            show_list(&ui, &lists_db, &page, &name, goal);
             if name == "tracks" {
                 track_view.show_list(&ui);
             }
@@ -192,11 +198,13 @@ fn main() -> Result<(), slint::PlatformError> {
     result
 }
 
-/// Load a list page's data (Favorites, History, Bookmarks) when it shows.
-fn show_list(ui: &AppWindow, db: &Db, library: &library::LibraryPage, page: &str) {
+/// Load a simple page's data (Favorites, History, Bookmarks, Stats) when it
+/// shows. `goal` is the daily goal in minutes, for Stats.
+fn show_list(ui: &AppWindow, db: &Db, library: &library::LibraryPage, page: &str, goal: i64) {
     match page {
         "favorites" => ui.global::<Lists>().set_favorites(course_panel::model(library.favorites())),
         "history" | "bookmarks" => pages::show(ui, db, page),
+        "stats" => stats_page::show(ui, db, goal),
         _ => {}
     }
 }

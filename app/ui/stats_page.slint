@@ -1,0 +1,573 @@
+// The Stats page — today's goal and streak, lifetime totals, the activity
+// heatmap and this week's chart — as the Tauri app's routes/stats.
+
+import { Theme } from "theme.slint";
+import { Library } from "library.slint";
+
+export struct WeekBar {
+    /// Weekday initial.
+    label: string,
+    /// Height relative to the week's best day (at least a sliver).
+    fraction: float,
+    today: bool,
+}
+
+export global LearningStats {
+    in property <string> error;
+
+    // Today.
+    in property <int> goal-percent;
+    /// The goal ring's arc (path commands, 80×80).
+    in property <string> goal-ring;
+    /// "12 / 30 min".
+    in property <string> goal-text;
+    in property <int> streak;
+    in property <string> streak-unit;
+    in property <int> best-streak;
+    in property <string> focus-id;
+    in property <string> focus-title;
+    in property <int> focus-percent;
+
+    // Overview.
+    in property <string> watch-total;
+    in property <int> today-minutes;
+    in property <int> lectures-completed;
+    in property <int> lectures-total;
+    in property <int> lecture-percent;
+    in property <int> courses-completed;
+    in property <int> courses-total;
+
+    // Activity: heatmap shades (0-4, -1 = future), week by week.
+    in property <int> active-days-month;
+    in property <[int]> heatmap;
+    in property <[WeekBar]> week;
+    in property <string> week-total;
+
+    // Library and records.
+    in property <int> in-progress;
+    in property <int> bookmarks;
+    in property <int> lectures-last-7;
+}
+
+component Heading inherits Text {
+    color: Theme.on-surface-variant;
+    font-size: Theme.label-md;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+component Card inherits Rectangle {
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+    background: Theme.surface-container-low;
+}
+
+/// An icon and a label over a big number, with an optional note below.
+component Figure inherits Card {
+    in property <image> icon;
+    in property <string> label;
+    in property <string> value;
+    /// Smaller text after the value ("/120", " days").
+    in property <string> suffix;
+    in property <string> note;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 4px;
+        alignment: start;
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Image {
+                source: root.icon;
+                width: 16px;
+                height: 16px;
+                y: (parent.height - self.height) / 2;
+                colorize: Theme.on-surface-variant;
+            }
+            Text {
+                text: root.label;
+                color: Theme.on-surface-variant;
+                font-size: Theme.label-md;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            padding-top: 4px;
+            Text {
+                text: root.value;
+                color: Theme.on-surface;
+                font-size: Theme.display-sm;
+                font-weight: 600;
+                vertical-alignment: bottom;
+            }
+            if root.suffix != "": Text {
+                text: root.suffix;
+                color: Theme.on-surface-variant;
+                font-size: Theme.headline-sm;
+                vertical-alignment: bottom;
+            }
+        }
+        if root.note != "": Text {
+            text: root.note;
+            color: Theme.on-surface-variant;
+            font-size: Theme.label-sm;
+        }
+    }
+}
+
+/// A smaller tile: an optional icon beside a number, a label under it.
+component Tile inherits Card {
+    in property <image> icon;
+    in property <bool> has-icon;
+    in property <string> value;
+    in property <string> label;
+    border-radius: 8px;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            if root.has-icon: Image {
+                source: root.icon;
+                width: 16px;
+                height: 16px;
+                y: (parent.height - self.height) / 2;
+                colorize: Theme.on-surface-variant;
+            }
+            Text {
+                text: root.value;
+                color: Theme.on-surface;
+                font-size: Theme.headline-md;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            text: root.label;
+            color: Theme.on-surface-variant;
+            font-size: Theme.label-sm;
+        }
+    }
+}
+
+component Shade inherits Rectangle {
+    in property <int> level;
+    border-radius: 3px;
+    background: root.level == 1 ? Theme.primary-container.transparentize(0.7)
+        : root.level == 2 ? Theme.primary-container.transparentize(0.45)
+        : root.level == 3 ? Theme.primary-container.transparentize(0.2)
+        : root.level == 4 ? Theme.primary-container
+        : Theme.surface-container-high;
+}
+
+component Heatmap inherits Rectangle {
+    in property <[int]> cells;
+    property <length> gap: 4px;
+    property <int> weeks: ceil(root.cells.length / 7);
+    property <length> cell: (root.width - (root.weeks - 1) * root.gap) / max(1, root.weeks);
+    height: 7 * root.cell + 6 * root.gap;
+
+    for level[i] in root.cells: Shade {
+        x: floor(i / 7) * (root.cell + root.gap);
+        y: mod(i, 7) * (root.cell + root.gap);
+        width: root.cell;
+        height: root.cell;
+        level: level;
+        visible: level >= 0;
+    }
+}
+
+export component StatsPage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+    property <length> page-width: min(self.width - 48px, 896px);
+    property <length> gap: 16px;
+    // Three cards to a row in the top sections.
+    property <length> third: (root.page-width - 2 * root.gap) / 3;
+    // Two tiles to each half of the bottom row.
+    property <length> tile: ((root.page-width - 32px) / 2 - root.gap) / 2;
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 32px;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Image {
+                source: @image-url("icons/chart-column.svg");
+                width: 18px;
+                height: 18px;
+                y: (parent.height - self.height) / 2;
+                colorize: Theme.on-surface;
+            }
+            Text {
+                text: "Stats";
+                color: Theme.on-surface;
+                font-size: Theme.headline-sm;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+
+        if LearningStats.error != "": Text {
+            text: "Couldn't load stats: " + LearningStats.error;
+            color: Theme.error;
+            font-size: Theme.body-sm;
+            horizontal-alignment: center;
+            height: 96px;
+            vertical-alignment: center;
+        }
+
+        // Today: goal ring, streak, the course in focus.
+        if LearningStats.error == "": VerticalLayout {
+            spacing: 12px;
+            Heading { text: "TODAY"; }
+            HorizontalLayout {
+                spacing: root.gap;
+                height: 112px;
+                Card {
+                    width: root.third;
+                    HorizontalLayout {
+                        padding: 16px;
+                        spacing: 16px;
+                        Rectangle {
+                            width: 80px;
+                            height: 80px;
+                            y: (parent.height - self.height) / 2;
+                            // The track, then the arc over it.
+                            Rectangle {
+                                x: 2px;
+                                y: 2px;
+                                width: 76px;
+                                height: 76px;
+                                border-radius: 38px;
+                                border-width: 8px;
+                                border-color: Theme.surface-container-highest;
+                            }
+                            if LearningStats.goal-ring != "": Path {
+                                width: 80px;
+                                height: 80px;
+                                viewbox-width: 80;
+                                viewbox-height: 80;
+                                commands: LearningStats.goal-ring;
+                                stroke: Theme.primary-container;
+                                stroke-width: 8px;
+                                stroke-line-cap: round;
+                            }
+                            Text {
+                                text: LearningStats.goal-percent + "%";
+                                color: Theme.on-surface;
+                                font-size: Theme.label-md;
+                                font-weight: 600;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: "Daily goal";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                            }
+                            Text {
+                                text: LearningStats.goal-text;
+                                color: Theme.on-surface;
+                                font-size: Theme.headline-md;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                }
+                Figure {
+                    width: root.third;
+                    icon: @image-url("icons/flame.svg");
+                    label: "Current streak";
+                    value: LearningStats.streak;
+                    suffix: " " + LearningStats.streak-unit;
+                    note: "Best: " + LearningStats.best-streak + (LearningStats.best-streak == 1 ? " day" : " days");
+                }
+                Card {
+                    width: root.third;
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 4px;
+                        Text {
+                            text: "Currently focused";
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.label-sm;
+                        }
+                        if LearningStats.focus-id == "": Text {
+                            text: "Start a course to see it here.";
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.body-sm;
+                            vertical-alignment: center;
+                            vertical-stretch: 1;
+                        }
+                        if LearningStats.focus-id != "": Rectangle {
+                            vertical-stretch: 1;
+                            accessible-role: button;
+                            accessible-label: "Continue " + LearningStats.focus-title;
+                            focus-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Library.show-course(LearningStats.focus-id); }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 6px;
+                                Text {
+                                    text: LearningStats.focus-title;
+                                    color: focus-touch.has-hover ? Theme.primary : Theme.on-surface;
+                                    font-size: Theme.body-md;
+                                    wrap: word-wrap;
+                                    overflow: elide;
+                                    max-height: 40px;
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    Image {
+                                        source: @image-url("icons/play-filled.svg");
+                                        width: 14px;
+                                        height: 14px;
+                                        y: (parent.height - self.height) / 2;
+                                        colorize: Theme.primary;
+                                    }
+                                    Text {
+                                        text: "Continue · " + LearningStats.focus-percent + "%";
+                                        color: Theme.primary;
+                                        font-size: Theme.label-md;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Learning overview.
+        if LearningStats.error == "": VerticalLayout {
+            spacing: 12px;
+            Heading { text: "LEARNING OVERVIEW"; }
+            HorizontalLayout {
+                spacing: root.gap;
+                Figure {
+                    width: root.third;
+                    icon: @image-url("icons/clock.svg");
+                    label: "Watch time";
+                    value: LearningStats.watch-total;
+                    note: LearningStats.today-minutes + "m today";
+                }
+                Figure {
+                    width: root.third;
+                    icon: @image-url("icons/circle-check.svg");
+                    label: "Lectures completed";
+                    value: LearningStats.lectures-completed;
+                    suffix: "/" + LearningStats.lectures-total;
+                    note: LearningStats.lecture-percent + "%";
+                }
+                Figure {
+                    width: root.third;
+                    icon: @image-url("icons/graduation-cap.svg");
+                    label: "Completed courses";
+                    value: LearningStats.courses-completed;
+                    suffix: "/" + LearningStats.courses-total;
+                }
+            }
+            Card {
+                height: overall.preferred-height;
+                overall := VerticalLayout {
+                    padding: 20px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        Text {
+                            text: "Overall learning progress";
+                            color: Theme.on-surface;
+                            font-size: Theme.body-md;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: LearningStats.lecture-percent + "%";
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.label-md;
+                        }
+                    }
+                    Rectangle {
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.border;
+                        clip: true;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * max(0, min(100, LearningStats.lecture-percent)) / 100;
+                            border-radius: 2px;
+                            background: LearningStats.lecture-percent >= 100 ? Theme.secondary-container : Theme.accent-blue;
+                        }
+                    }
+                    Text {
+                        text: LearningStats.lectures-completed + " / " + LearningStats.lectures-total + " lectures completed";
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.label-sm;
+                    }
+                }
+            }
+        }
+
+        // Activity: heatmap and this week.
+        if LearningStats.error == "": VerticalLayout {
+            spacing: 12px;
+            Heading { text: "ACTIVITY"; }
+            Card {
+                height: activity.preferred-height;
+                activity := VerticalLayout {
+                    padding: 20px;
+                    spacing: 20px;
+                    VerticalLayout {
+                        spacing: 8px;
+                        HorizontalLayout {
+                            Text {
+                                text: "Watch activity";
+                                color: Theme.on-surface;
+                                font-size: Theme.body-md;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: LearningStats.active-days-month + " active days this month";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                                vertical-alignment: center;
+                            }
+                        }
+                        // Sized from the page width, not the layout's, so
+                        // its height never depends on itself.
+                        Heatmap {
+                            width: root.page-width - 40px;
+                            cells: LearningStats.heatmap;
+                        }
+                        HorizontalLayout {
+                            spacing: 4px;
+                            alignment: start;
+                            Text {
+                                text: "Less";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                                vertical-alignment: center;
+                            }
+                            for level in [0, 1, 2, 3, 4]: Shade {
+                                width: 12px;
+                                height: 12px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 2px;
+                                level: level;
+                            }
+                            Text {
+                                text: "More";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 8px;
+                        HorizontalLayout {
+                            Text {
+                                text: "This week";
+                                color: Theme.on-surface;
+                                font-size: Theme.body-md;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: LearningStats.week-total;
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                                vertical-alignment: center;
+                            }
+                        }
+                        HorizontalLayout {
+                            height: 96px;
+                            spacing: 8px;
+                            for day in LearningStats.week: VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 4px;
+                                alignment: end;
+                                Rectangle {
+                                    height: (96px - 20px) * day.fraction;
+                                    border-top-left-radius: 4px;
+                                    border-top-right-radius: 4px;
+                                    background: day.today ? Theme.primary-container : Theme.surface-container-highest;
+                                }
+                                Text {
+                                    height: 16px;
+                                    text: day.label;
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Library and personal records, side by side.
+        if LearningStats.error == "": HorizontalLayout {
+            spacing: 32px;
+            VerticalLayout {
+                width: (root.page-width - 32px) / 2;
+                spacing: 12px;
+                Heading { text: "LIBRARY"; }
+                HorizontalLayout {
+                    spacing: root.gap;
+                    Tile {
+                        width: root.tile;
+                        value: LearningStats.in-progress;
+                        label: "In progress";
+                    }
+                    Tile {
+                        width: root.tile;
+                        icon: @image-url("icons/bookmark.svg");
+                        has-icon: true;
+                        value: LearningStats.bookmarks;
+                        label: "Saved moments";
+                    }
+                }
+            }
+            VerticalLayout {
+                width: (root.page-width - 32px) / 2;
+                spacing: 12px;
+                Heading { text: "PERSONAL RECORDS"; }
+                HorizontalLayout {
+                    spacing: root.gap;
+                    Tile {
+                        width: root.tile;
+                        icon: @image-url("icons/trophy.svg");
+                        has-icon: true;
+                        value: LearningStats.best-streak;
+                        label: "Best streak (days)";
+                    }
+                    Tile {
+                        width: root.tile;
+                        icon: @image-url("icons/trending-up.svg");
+                        has-icon: true;
+                        value: "+" + LearningStats.lectures-last-7;
+                        label: "Lectures (last 7 days)";
+                    }
+                }
+            }
+        }
+    }
+}

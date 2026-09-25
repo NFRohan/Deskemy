@@ -107,11 +107,14 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
   (filterable picker), reorder, remove, Up next (`ui/career.slint`,
   `src/career.rs`)
 - ☐ Run it: create / edit a track, the picker, reorder, typing in dialogs
-- ☐ Stats, Settings
+- ☑ Stats: goal ring, streak, focus course, totals, 26-week heatmap, this
+  week (`ui/stats_page.slint`, `src/stats_page.rs`)
+- ☐ Settings
 
 Slint gotchas met so far: a fixed-size child with no `x` is centred in its
 parent; wrapped `Text` is measured at its unwrapped width, so give it a
 `max-width` when its container sizes itself from content.
+`DESKEMY_SNAPSHOT_HEIGHT` renders a taller `--snapshot`, to see a long page whole.
 
 ## Later phases
 
