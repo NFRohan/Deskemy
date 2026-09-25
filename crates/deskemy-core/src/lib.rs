@@ -11,6 +11,7 @@ pub mod domain;
 pub mod error;
 pub mod hashing;
 pub mod importer;
+pub mod maintenance;
 pub mod media;
 pub mod mpv;
 pub mod paths;

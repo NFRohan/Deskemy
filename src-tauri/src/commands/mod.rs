@@ -36,18 +36,7 @@ pub struct ScanResult {
     pub errors: Vec<String>,
 }
 
-#[derive(Serialize)]
-pub struct ReconcileReport {
-    pub courses_checked: i64,
-    pub courses_missing: i64,
-    pub files_missing: i64,
-}
-
-#[derive(Serialize)]
-pub struct GcReport {
-    pub removed: i64,
-    pub freed_bytes: i64,
-}
+pub use crate::maintenance::{GcReport, ReconcileReport};
 
 // ---------------------------------------------------------------------------
 // library_*
@@ -415,9 +404,7 @@ pub fn search_query(state: State<AppState>, query: String) -> Result<Vec<SearchH
 /// Rebuild the search index from the base tables; returns the new row count.
 #[tauri::command]
 pub fn search_reindex(state: State<AppState>) -> Result<i64> {
-    let conn = db(&state)?;
-    queries::rebuild_search_index(&conn)?;
-    queries::search_index_count(&conn)
+    crate::maintenance::reindex_search(&*db(&state)?)
 }
 
 /// Full-text search over subtitle text; returns snippets with jump timestamps.
@@ -431,26 +418,7 @@ pub fn subtitle_search(state: State<AppState>, query: String) -> Result<Vec<Subt
 /// Returns the number of indexed cues.
 #[tauri::command]
 pub fn subtitles_reindex(state: State<AppState>) -> Result<i64> {
-    let files = {
-        let conn = db(&state)?;
-        queries::all_subtitle_files(&conn)?
-    };
-    let mut conn = db(&state)?;
-    let tx = conn.transaction()?;
-    queries::clear_subtitle_index(&tx)?;
-    let mut total = 0i64;
-    for (lecture_id, course_id, path) in files {
-        let content = match std::fs::read(&path) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(_) => continue, // skip missing/unreadable subtitle files
-        };
-        for (start_ms, text) in crate::subtitles::parse(&content) {
-            queries::insert_subtitle_cue(&tx, &lecture_id, &course_id, start_ms, &text)?;
-            total += 1;
-        }
-    }
-    tx.commit()?;
-    Ok(total)
+    crate::maintenance::reindex_subtitles(&state.db)
 }
 
 /// Aggregate library + watch statistics for the stats page.
@@ -475,73 +443,13 @@ pub fn stats_get(state: State<AppState>) -> Result<LibraryStats> {
 /// Missing (or clear the flag when the files are back).
 #[tauri::command]
 pub fn library_reconcile(state: State<AppState>) -> Result<ReconcileReport> {
-    use std::collections::HashMap;
-    let entries = {
-        let conn = db(&state)?;
-        queries::all_lecture_files(&conn)?
-    };
-    let mut total: HashMap<String, i64> = HashMap::new();
-    let mut missing: HashMap<String, i64> = HashMap::new();
-    let mut files_missing = 0i64;
-    for (cid, path) in &entries {
-        *total.entry(cid.clone()).or_default() += 1;
-        if !Path::new(path).exists() {
-            *missing.entry(cid.clone()).or_default() += 1;
-            files_missing += 1;
-        }
-    }
-
-    let conn = db(&state)?;
-    let mut courses_missing = 0i64;
-    for cid in total.keys() {
-        let is_missing = missing.get(cid).copied().unwrap_or(0) > 0;
-        queries::set_missing(&conn, cid, is_missing)?;
-        if is_missing {
-            courses_missing += 1;
-        }
-    }
-    Ok(ReconcileReport {
-        courses_checked: total.len() as i64,
-        courses_missing,
-        files_missing,
-    })
+    crate::maintenance::reconcile(&state.db)
 }
 
 /// Delete thumbnail-cache files no longer referenced by any course.
 #[tauri::command]
 pub fn thumbnails_gc(state: State<AppState>) -> Result<GcReport> {
-    let referenced: std::collections::HashSet<String> = {
-        let conn = db(&state)?;
-        queries::all_thumbnail_paths(&conn)?
-            .iter()
-            .filter_map(|p| Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()))
-            .collect()
-    };
-
-    let dir = state.thumbnails_dir();
-    let mut removed = 0i64;
-    let mut freed_bytes = 0i64;
-    if dir.exists() {
-        for entry in std::fs::read_dir(&dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let name = match path.file_name() {
-                Some(n) => n.to_string_lossy().into_owned(),
-                None => continue,
-            };
-            if !referenced.contains(&name) {
-                let size = entry.metadata().map(|m| m.len() as i64).unwrap_or(0);
-                if std::fs::remove_file(&path).is_ok() {
-                    removed += 1;
-                    freed_bytes += size;
-                }
-            }
-        }
-    }
-    Ok(GcReport { removed, freed_bytes })
+    crate::maintenance::gc_thumbnails(&*db(&state)?, &state.thumbnails_dir())
 }
 
 // ---------------------------------------------------------------------------
@@ -618,60 +526,24 @@ pub fn track_reorder_courses(
 // ---------------------------------------------------------------------------
 
 /// Total size of the SQLite database files (main + WAL + shared-memory).
-fn db_file_bytes(data_dir: &Path) -> u64 {
-    ["deskemy.db", "deskemy.db-wal", "deskemy.db-shm"]
-        .iter()
-        .filter_map(|f| std::fs::metadata(data_dir.join(f)).ok())
-        .map(|m| m.len())
-        .sum()
-}
-
-/// Total size of the (flat, content-addressed) files directly under `dir`.
-fn dir_file_bytes(dir: &Path) -> u64 {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return 0;
-    };
-    entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| e.metadata().ok())
-        .filter(|m| m.is_file())
-        .map(|m| m.len())
-        .sum()
-}
-
 /// On-disk footprint of the local stores, for the Settings → Storage panel.
 #[tauri::command]
 pub fn storage_stats(state: State<AppState>) -> Result<StorageStats> {
-    let subtitle_cues = {
-        let conn = db(&state)?;
-        queries::subtitle_index_count(&conn)?
-    };
-    Ok(StorageStats {
-        db_bytes: db_file_bytes(&state.data_dir),
-        thumbnail_bytes: dir_file_bytes(&state.thumbnails_dir()),
-        subtitle_cues,
-    })
+    crate::maintenance::storage(&*db(&state)?, &state.data_dir, &state.thumbnails_dir())
 }
 
 /// VACUUM the database to reclaim pages freed by removed courses or cleared
 /// indexes (SQLite never shrinks the file on its own). Returns the new size.
 #[tauri::command]
 pub fn db_compact(state: State<AppState>) -> Result<u64> {
-    {
-        let conn = db(&state)?;
-        conn.execute_batch("VACUUM;")?;
-    }
-    Ok(db_file_bytes(&state.data_dir))
+    crate::maintenance::compact(&*db(&state)?, &state.data_dir)
 }
 
 /// Drop the subtitle full-text index — the largest reclaimable chunk. Returns
 /// the number of cues removed; the file only shrinks after a compact.
 #[tauri::command]
 pub fn subtitle_index_clear(state: State<AppState>) -> Result<i64> {
-    let conn = db(&state)?;
-    let n = queries::subtitle_index_count(&conn)?;
-    queries::clear_subtitle_index(&conn)?;
-    Ok(n)
+    crate::maintenance::clear_subtitles(&*db(&state)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -705,34 +577,14 @@ pub fn config_set(state: State<AppState>, config: AppConfig) -> Result<()> {
 /// Write a `.zip` snapshot of the library to `dest` (a path from a save dialog).
 #[tauri::command]
 pub async fn data_export(app: AppHandle, state: State<'_, AppState>, dest: String) -> Result<()> {
-    let tmp = state.data_dir.join(".export.tmp.db");
-    let _ = std::fs::remove_file(&tmp);
-
-    // Consistent, WAL-free snapshot of the db (brief lock; no await while held).
-    let schema: i64 = {
-        let conn = db(&state)?;
-        let v = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        conn.execute("VACUUM INTO ?1", [tmp.to_string_lossy().as_ref()])?;
-        v
-    };
-
-    let version = app.package_info().version.to_string();
-    let created_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-
-    let res = crate::backup::write_archive(
-        &tmp,
+    crate::maintenance::export_backup(
+        &state.db,
+        &state.data_dir,
         &state.config_path,
         &state.thumbnails_dir(),
         Path::new(&dest),
-        &version,
-        schema,
-        created_at,
-    );
-    let _ = std::fs::remove_file(&tmp);
-    res
+        &app.package_info().version.to_string(),
+    )
 }
 
 /// Validate `src`, stage it, and restart so the swap is applied before the db is
