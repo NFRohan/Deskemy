@@ -19,6 +19,8 @@ export global Prefs {
     in property <bool> autohide;
     in property <bool> clean-titles;
     in property <bool> auto-rescan;
+    in property <bool> resources-inline;
+    in property <bool> pause-at-resources;
 
     callback set(string, string);
 
@@ -305,6 +307,37 @@ export component SettingsPage inherits Flickable {
                             value <=> Prefs.goal;
                             label: Prefs.goal-label;
                             changed => { Prefs.set("goal", self.value); }
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 12px;
+            Heading { text: "RESOURCES"; }
+            Group {
+                height: resources.preferred-height;
+                resources := VerticalLayout {
+                    Row {
+                        title: "Keep videos and resources together";
+                        description: "Show each lecture's exercises, notes and files right under it — in the course's curriculum and the player's course panel — instead of only in a separate list.";
+                        text-width: root.text-width;
+                        Switch {
+                            label: "Keep videos and resources together";
+                            checked: Prefs.resources-inline;
+                            toggled => { Prefs.set("resources-inline", Prefs.resources-inline ? "false" : "true"); }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Pause on exercises and resources";
+                        description: "When a lecture that has resources ends, autoplay stops and offers to open them before moving on to the next lecture.";
+                        text-width: root.text-width;
+                        Switch {
+                            label: "Pause on exercises and resources";
+                            checked: Prefs.pause-at-resources;
+                            toggled => { Prefs.set("pause-at-resources", Prefs.pause-at-resources ? "false" : "true"); }
                         }
                     }
                 }

@@ -2,7 +2,7 @@
 // routes/course/[id]/+page.svelte.
 
 import { Theme } from "theme.slint";
-import { ResourceGroup } from "player.slint";
+import { ResourceGroup, ResourceItem } from "player.slint";
 
 export struct CurriculumLecture {
     id: string,
@@ -13,6 +13,8 @@ export struct CurriculumLecture {
     playable: bool,
     /// The lecture Resume / Start opens ("Next up").
     next: bool,
+    /// Its resources, shown under it (with "keep videos and resources together").
+    resources: [ResourceItem],
 }
 
 export struct CurriculumSection {
@@ -22,6 +24,8 @@ export struct CurriculumSection {
     meta: string,
     expanded: bool,
     lectures: [CurriculumLecture],
+    /// The section's resources that belong to no one lecture, after them.
+    loose: [ResourceItem],
 }
 
 /// The open course (from Rust) and what the page can do with it.
@@ -44,6 +48,8 @@ export global Course {
     in property <string> next-label;
     in property <[CurriculumSection]> sections;
     in property <[ResourceGroup]> resources;
+    /// "2 / 5 resources done", or "".
+    in property <string> resources-summary;
 
     /// The open dialog: "" (none), "cover" or "delete".
     in-out property <string> dialog;
@@ -58,6 +64,8 @@ export global Course {
     callback add-tag(string);
     callback remove-tag(string);
     callback open-resource(string);
+    /// Mark a resource done (true) or not.
+    callback toggle-resource(string, bool);
     callback pick-cover();
     callback paste-cover();
     callback clear-cover();
@@ -239,6 +247,73 @@ component LectureRow inherits Rectangle {
         }
         Text {
             text: root.lecture.duration;
+            color: Theme.on-surface-variant;
+            font-size: Theme.label-sm;
+            vertical-alignment: center;
+        }
+    }
+}
+
+/// The file-type glyph for a resource.
+component ResourceIcon inherits Image {
+    in property <string> kind;
+    source: root.kind == "pdf" || root.kind == "text" ? @image-url("icons/file-text.svg")
+        : root.kind == "archive" ? @image-url("icons/file-archive.svg")
+        : root.kind == "code" || root.kind == "html" ? @image-url("icons/file-code.svg")
+        : @image-url("icons/file.svg");
+    width: 16px;
+    height: 16px;
+    colorize: Theme.on-surface-variant;
+}
+
+/// A done tick, as a lecture's.
+component ResourceTick inherits Rectangle {
+    in property <ResourceItem> item;
+    width: 18px;
+    accessible-role: button;
+    accessible-label: root.item.done ? "Mark as not done" : "Mark as done";
+    Image {
+        source: root.item.done ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
+        width: 18px;
+        height: 18px;
+        colorize: root.item.done || tick.has-hover ? Theme.secondary-container : Theme.outline;
+    }
+    tick := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Course.toggle-resource(root.item.id, !root.item.done); }
+    }
+}
+
+/// A resource inside the curriculum, under its lecture: opens on click.
+component CurriculumResource inherits Rectangle {
+    in property <ResourceItem> item;
+    height: 34px;
+    background: touch.has-hover ? Theme.surface-container : transparent;
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Course.open-resource(root.item.path); }
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        ResourceTick { item: root.item; }
+        // Under the lecture's play column, then indented a step.
+        Rectangle { width: 14px; }
+        ResourceIcon {
+            kind: root.item.kind;
+            y: (parent.height - self.height) / 2;
+        }
+        Text {
+            text: root.item.name;
+            color: root.item.done ? Theme.on-surface-variant : Theme.on-surface;
+            font-size: Theme.body-sm;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Text {
+            text: root.item.kind == "" ? "" : root.item.kind.to-uppercase();
             color: Theme.on-surface-variant;
             font-size: Theme.label-sm;
             vertical-alignment: center;
@@ -527,7 +602,8 @@ export component CoursePage inherits Flickable {
 
                     HorizontalLayout {
                         Text {
-                            text: Course.done + " / " + Course.total + " lectures completed";
+                            text: Course.done + " / " + Course.total + " lectures completed"
+                                + (Course.resources-summary == "" ? "" : "  ·  " + Course.resources-summary);
                             color: Theme.on-surface;
                             font-size: Theme.label-md;
                             font-weight: 600;
@@ -639,8 +715,16 @@ export component CoursePage inherits Flickable {
                                 height: 1px;
                                 background: Theme.outline-variant;
                             }
-                            for lecture in section.lectures: LectureRow {
-                                lecture: lecture;
+                            for lecture in section.lectures: VerticalLayout {
+                                LectureRow {
+                                    lecture: lecture;
+                                }
+                                for item in lecture.resources: CurriculumResource {
+                                    item: item;
+                                }
+                            }
+                            for item in section.loose: CurriculumResource {
+                                item: item;
                             }
                         }
                     }
@@ -688,15 +772,10 @@ export component CoursePage inherits Flickable {
                                 padding-left: 16px;
                                 padding-right: 16px;
                                 spacing: 12px;
-                                Image {
-                                    source: item.kind == "pdf" || item.kind == "text" ? @image-url("icons/file-text.svg")
-                                        : item.kind == "archive" ? @image-url("icons/file-archive.svg")
-                                        : item.kind == "code" || item.kind == "html" ? @image-url("icons/file-code.svg")
-                                        : @image-url("icons/file.svg");
-                                    width: 18px;
-                                    height: 18px;
+                                ResourceTick { item: item; }
+                                ResourceIcon {
+                                    kind: item.kind;
                                     y: (parent.height - self.height) / 2;
-                                    colorize: Theme.on-surface-variant;
                                 }
                                 Text {
                                     text: item.name;

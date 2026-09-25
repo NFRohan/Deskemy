@@ -61,10 +61,13 @@ export struct SectionRow {
 }
 
 export struct ResourceItem {
+    id: string,
     name: string,
     /// pdf / archive / code / html / text, or "".
     kind: string,
     path: string,
+    /// Marked done.
+    done: bool,
 }
 
 /// Resources of one lecture (or the section itself) in the current section.

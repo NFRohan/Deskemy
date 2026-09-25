@@ -4,6 +4,7 @@
 use crate::course_panel::model;
 use crate::library::{format_duration, pct};
 use crate::session::Db;
+use crate::settings::{self, Config};
 use crate::tracks::clock;
 use crate::{AppWindow, Course, CurriculumLecture, CurriculumSection, Nav, ResourceGroup, ResourceItem};
 use deskemy_core::courses;
@@ -11,7 +12,7 @@ use deskemy_core::db::queries;
 use deskemy_core::domain::{Attachment, CourseDetail, Lecture, Section};
 use slint::ComponentHandle;
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -37,6 +38,43 @@ pub fn section_meta(s: &Section) -> String {
     meta
 }
 
+/// Resources to show inside the curriculum: per lecture, and per section
+/// for the section's resources that belong to no one lecture. Course-wide
+/// resources stay in the Resources list.
+pub fn inline_resources(attachments: &[Attachment]) -> (HashMap<&str, Vec<&Attachment>>, HashMap<&str, Vec<&Attachment>>) {
+    let (mut by_lecture, mut by_section): (HashMap<&str, Vec<&Attachment>>, HashMap<&str, Vec<&Attachment>>) =
+        Default::default();
+    for a in attachments {
+        match (a.lecture_id.as_deref(), a.section_id.as_deref()) {
+            (Some(lecture), _) => by_lecture.entry(lecture).or_default().push(a),
+            (None, Some(section)) => by_section.entry(section).or_default().push(a),
+            (None, None) => {}
+        }
+    }
+    (by_lecture, by_section)
+}
+
+/// "2 / 5 resources done", or "" for a course without resources.
+pub fn resources_summary(attachments: &[Attachment]) -> String {
+    if attachments.is_empty() {
+        return String::new();
+    }
+    let done = attachments.iter().filter(|a| a.completed).count();
+    let word = if attachments.len() == 1 { "resource" } else { "resources" };
+    format!("{done} / {} {word} done", attachments.len())
+}
+
+/// A resource as a curriculum / Resources row.
+pub fn resource_item(a: &Attachment) -> ResourceItem {
+    ResourceItem {
+        id: a.id.clone().into(),
+        name: a.name.clone().into(),
+        kind: a.kind.clone().unwrap_or_default().into(),
+        path: a.file_path.clone().into(),
+        done: a.completed,
+    }
+}
+
 /// Resources grouped by section in curriculum order, then "Course-wide".
 pub fn resource_groups<'a>(c: &CourseDetail, attachments: &'a [Attachment]) -> Vec<(String, Vec<&'a Attachment>)> {
     let mut groups: Vec<(String, Vec<&Attachment>)> = c
@@ -58,6 +96,7 @@ pub fn resource_groups<'a>(c: &CourseDetail, attachments: &'a [Attachment]) -> V
 /// The open course's state (UI thread only).
 pub struct CoursePage {
     db: Db,
+    config: Config,
     /// Where covers are stored (None without a data directory).
     thumbs_dir: Option<PathBuf>,
     id: RefCell<Option<String>>,
@@ -66,9 +105,10 @@ pub struct CoursePage {
 }
 
 impl CoursePage {
-    pub fn new(db: Db, thumbs_dir: Option<PathBuf>) -> Rc<Self> {
+    pub fn new(db: Db, config: Config, thumbs_dir: Option<PathBuf>) -> Rc<Self> {
         Rc::new(CoursePage {
             db,
+            config,
             thumbs_dir,
             id: RefCell::new(None),
             expanded: RefCell::new(HashSet::new()),
@@ -149,6 +189,12 @@ impl CoursePage {
         page.set_duration(c.total_duration.map(|d| format!("{} total", format_duration(Some(d)))).unwrap_or_default().into());
         page.set_next(next.clone().unwrap_or_default().into());
         page.set_next_label(if done > 0 { "Resume Lecture" } else { "Start Course" }.into());
+        page.set_resources_summary(resources_summary(&attachments).into());
+        let inline = settings::lock(&self.config).resources_inline;
+        let (by_lecture, by_section) = if inline { inline_resources(&attachments) } else { (HashMap::new(), HashMap::new()) };
+        let items = |list: Option<&Vec<&Attachment>>| {
+            model(list.map(|l| l.iter().map(|a| resource_item(a)).collect()).unwrap_or_default())
+        };
 
         let (image, has) = self.thumbnail(c.thumbnail_path.as_deref());
         page.set_thumbnail(image);
@@ -162,6 +208,7 @@ impl CoursePage {
                     title: s.title.clone().into(),
                     meta: section_meta(s).into(),
                     expanded: expanded.contains(&s.id),
+                    loose: items(by_section.get(s.id.as_str())),
                     lectures: model(
                         s.lectures
                             .iter()
@@ -172,6 +219,7 @@ impl CoursePage {
                                 completed: l.completed,
                                 playable: l.playable,
                                 next: next.as_deref() == Some(l.id.as_str()),
+                                resources: items(by_lecture.get(l.id.as_str())),
                             })
                             .collect(),
                     ),
@@ -186,11 +234,7 @@ impl CoursePage {
                     items: model(
                         items
                             .into_iter()
-                            .map(|a| ResourceItem {
-                                name: a.name.clone().into(),
-                                kind: a.kind.clone().unwrap_or_default().into(),
-                                path: a.file_path.clone().into(),
-                            })
+                            .map(resource_item)
                             .collect(),
                     ),
                 })
@@ -331,6 +375,14 @@ impl CoursePage {
         }
     }
 
+    /// Mark a resource done / not done.
+    pub fn set_resource_done(&self, ui: &AppWindow, id: &str, done: bool) {
+        if let Err(e) = queries::set_attachment_completed(&self.conn(), id, done) {
+            tracing::warn!(error = %e, "mark resource");
+        }
+        self.refresh(ui);
+    }
+
     /// Mark a lecture done / not done by hand.
     pub fn toggle_complete(&self, ui: &AppWindow, lecture: &str) {
         let done = {
@@ -430,6 +482,34 @@ mod tests {
         assert_eq!(section_meta(&s), "1/3 · 1h 5m");
         let unknown = Section { lectures: vec![lecture("x", false, true, None)], ..s };
         assert_eq!(section_meta(&unknown), "0/1");
+    }
+
+    #[test]
+    fn inline_resources_split_by_lecture_then_section() {
+        let att = |name: &str, section: Option<&str>, lecture: Option<&str>, completed: bool| Attachment {
+            id: name.into(),
+            name: name.into(),
+            file_path: String::new(),
+            kind: Some("pdf".into()),
+            section_id: section.map(Into::into),
+            lecture_id: lecture.map(Into::into),
+            completed,
+        };
+        let atts = vec![
+            att("ex1.pdf", Some("s1"), Some("l1"), true),
+            att("ex1b.pdf", Some("s1"), Some("l1"), false),
+            att("notes.pdf", Some("s1"), None, false),
+            att("syllabus.pdf", None, None, false),
+        ];
+        let (by_lecture, by_section) = inline_resources(&atts);
+        let names = |v: Option<&Vec<&Attachment>>| v.map(|v| v.iter().map(|a| a.name.clone()).collect::<Vec<_>>());
+        assert_eq!(names(by_lecture.get("l1")), Some(vec!["ex1.pdf".to_string(), "ex1b.pdf".into()]));
+        assert_eq!(names(by_section.get("s1")), Some(vec!["notes.pdf".to_string()]));
+        // Course-wide ones stay out of the curriculum.
+        assert_eq!(by_lecture.values().chain(by_section.values()).map(Vec::len).sum::<usize>(), 3);
+        assert_eq!(resources_summary(&atts), "1 / 4 resources done");
+        assert_eq!(resources_summary(&atts[..1]), "1 / 1 resource done");
+        assert_eq!(resources_summary(&[]), "");
     }
 
     #[test]

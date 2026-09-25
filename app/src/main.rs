@@ -114,7 +114,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
     let thumbs = paths::data_dir().map(|d| d.join(deskemy_core::courses::THUMBNAILS_DIR));
-    let course = course_page::CoursePage::new(db.clone(), thumbs);
+    let course = course_page::CoursePage::new(db.clone(), config.clone(), thumbs);
     let tracks = career::TracksPage::new(db.clone(), library.clone());
 
     if let Mode::Snapshot { path, player, page } = mode {
@@ -265,6 +265,8 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.global::<Prefs>().on_set(move |key, value| {
         if let Some(ui) = weak.upgrade() {
             p.change(&ui, &key, &value);
+            // Some settings change what pages show (resources inline).
+            ui.invoke_refresh_library();
         }
     });
     let (p, weak) = (prefs.clone(), ui.as_weak());
@@ -503,6 +505,12 @@ fn wire_course(
     course.on_toggle_section(move |id| {
         if let Some(ui) = weak.upgrade() {
             p.toggle_section(&ui, &id);
+        }
+    });
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_toggle_resource(move |id, done| {
+        if let Some(ui) = weak.upgrade() {
+            p.set_resource_done(&ui, &id, done);
         }
     });
     course.on_open_resource(|path| {

@@ -64,6 +64,8 @@ pub fn resources(course: &CourseDetail, attachments: &[Attachment], current: Opt
         return Resources { section: String::new(), groups: Vec::new(), count: 0 };
     };
     let item = |a: &Attachment| ResourceItem {
+        id: a.id.clone().into(),
+        done: a.completed,
         name: a.name.clone().into(),
         kind: a.kind.clone().unwrap_or_default().into(),
         path: a.file_path.clone().into(),
