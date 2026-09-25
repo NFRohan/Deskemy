@@ -198,9 +198,12 @@ component Scrubber inherits Rectangle {
     out property <bool> dragging: touch.pressed;
     callback changed(float);
     callback committed(float);
+    /// Track height at rest (two pixels thicker under the pointer).
+    in property <length> thickness: 3px;
+    in property <length> thumb: 13px;
 
     property <float> shown: max(0, min(1, touch.pressed ? root.preview : root.value));
-    property <length> track: touch.has-hover || touch.pressed ? 5px : 3px;
+    property <length> track: touch.has-hover || touch.pressed ? root.thickness + 2px : root.thickness;
 
     height: 20px;
 
@@ -222,8 +225,8 @@ component Scrubber inherits Rectangle {
 
     if touch.has-hover || touch.pressed: Rectangle {
         x: root.width * root.shown - self.width / 2;
-        width: 13px;
-        height: 13px;
+        width: root.thumb;
+        height: root.thumb;
         border-radius: self.width / 2;
         background: #ffffff;
     }
@@ -678,6 +681,8 @@ export component PlayerOverlay inherits Rectangle {
                     }
                     seek-bar := Scrubber {
                         horizontal-stretch: 1;
+                        thickness: 6px;
+                        thumb: 16px;
                         value: Playback.duration > 0 ? Playback.position / Playback.duration : 0;
                         committed(v) => { Playback.seek(v * Playback.duration); }
                     }
@@ -696,25 +701,25 @@ export component PlayerOverlay inherits Rectangle {
                     alignment: stretch;
 
                     IconButton {
-                        icon: @image-url("icons/skip-back.svg");
+                        icon: @image-url("icons/m-skip-previous.svg");
                         enabled: Playback.has-previous;
                         clicked => { Playback.previous(); }
                     }
                     IconButton {
-                        icon: @image-url("icons/rotate-ccw.svg");
+                        icon: @image-url("icons/m-replay-10.svg");
                         clicked => { Playback.seek-by(-10); }
                     }
                     IconButton {
-                        icon: Playback.paused ? @image-url("icons/play.svg") : @image-url("icons/pause.svg");
+                        icon: Playback.paused ? @image-url("icons/m-play-arrow.svg") : @image-url("icons/m-pause.svg");
                         icon-size: 26px;
                         clicked => { Playback.toggle-pause(); }
                     }
                     IconButton {
-                        icon: @image-url("icons/rotate-cw.svg");
+                        icon: @image-url("icons/m-forward-10.svg");
                         clicked => { Playback.seek-by(10); }
                     }
                     IconButton {
-                        icon: @image-url("icons/skip-forward.svg");
+                        icon: @image-url("icons/m-skip-next.svg");
                         enabled: Playback.has-next;
                         clicked => { Playback.next(); }
                     }
@@ -763,8 +768,8 @@ export component PlayerOverlay inherits Rectangle {
 
                     IconButton {
                         icon: Playback.muted || Playback.volume == 0
-                            ? @image-url("icons/volume-x.svg")
-                            : @image-url("icons/volume-2.svg");
+                            ? @image-url("icons/m-volume-off.svg")
+                            : @image-url("icons/m-volume-up.svg");
                         clicked => { Playback.toggle-mute(); }
                     }
                     volume-bar := Scrubber {
@@ -775,22 +780,22 @@ export component PlayerOverlay inherits Rectangle {
                     }
                     Rectangle { width: 10px; }
                     if Playback.in-library: IconButton {
-                        icon: @image-url("icons/bookmark-plus.svg");
+                        icon: @image-url("icons/m-bookmark-add.svg");
                         active: Playback.open-menu == "bookmark";
                         clicked => { Playback.open-bookmark(); }
                     }
                     if Playback.chapters.length > 0: IconButton {
-                        icon: @image-url("icons/list-video.svg");
+                        icon: @image-url("icons/m-format-list-bulleted.svg");
                         active: Playback.open-menu == "chapters";
                         clicked => { root.toggle-menu("chapters"); }
                     }
                     if Playback.audio-tracks.length > 1: IconButton {
-                        icon: @image-url("icons/audio-lines.svg");
+                        icon: @image-url("icons/m-music-note.svg");
                         active: Playback.open-menu == "audio";
                         clicked => { root.toggle-menu("audio"); }
                     }
                     if Playback.subtitles.length > 1: IconButton {
-                        icon: @image-url("icons/captions.svg");
+                        icon: @image-url("icons/m-subtitles.svg");
                         active: Playback.open-menu == "sub" || Playback.subtitles-on;
                         clicked => { root.toggle-menu("sub"); }
                     }
@@ -801,7 +806,7 @@ export component PlayerOverlay inherits Rectangle {
                         clicked => { root.toggle-menu("sleep"); }
                     }
                     if Playback.sleep-mode != "minutes": IconButton {
-                        icon: @image-url("icons/moon.svg");
+                        icon: @image-url("icons/m-bedtime.svg");
                         active: Playback.open-menu == "sleep" || Playback.sleep-mode != "off";
                         clicked => { root.toggle-menu("sleep"); }
                     }
@@ -824,17 +829,17 @@ export component PlayerOverlay inherits Rectangle {
                         }
                     }
                     IconButton {
-                        icon: @image-url("icons/keyboard.svg");
+                        icon: @image-url("icons/m-keyboard.svg");
                         active: Playback.open-menu == "shortcuts";
                         clicked => { root.toggle-menu("shortcuts"); }
                     }
                     if Playback.in-library: IconButton {
-                        icon: @image-url("icons/panel-right.svg");
+                        icon: @image-url("icons/m-view-sidebar.svg");
                         active: Playback.panel-open;
                         clicked => { root.toggle-panel(); }
                     }
                     IconButton {
-                        icon: Playback.fullscreen ? @image-url("icons/minimize.svg") : @image-url("icons/maximize.svg");
+                        icon: Playback.fullscreen ? @image-url("icons/m-fullscreen-exit.svg") : @image-url("icons/m-fullscreen.svg");
                         clicked => { Playback.toggle-fullscreen(); }
                     }
                 }
@@ -867,7 +872,7 @@ export component PlayerOverlay inherits Rectangle {
                         HorizontalLayout {
                             spacing: 8px;
                             Image {
-                                source: @image-url("icons/moon.svg");
+                                source: @image-url("icons/m-bedtime.svg");
                                 width: 18px;
                                 height: 18px;
                                 y: (parent.height - self.height) / 2;
