@@ -4,13 +4,48 @@
 use crate::course_panel::model;
 use crate::session::Db;
 use crate::tracks::clock;
-use crate::{AppWindow, Search, SearchRow, SubtitleRow};
+use crate::{AppWindow, Search, SearchRow, SubtitleRow, Theme};
 use deskemy_core::db::queries;
 use deskemy_core::domain::SearchHit;
 use slint::ComponentHandle;
 
 /// Results per kind, as the Tauri commands.
 const LIMIT: i64 = 50;
+
+/// Around matched words in subtitle snippets: characters subtitles don't use.
+const OPEN: &str = "\u{2}";
+const CLOSE: &str = "\u{3}";
+
+/// Markdown for a snippet: its text escaped, matched words bold in `color`.
+pub fn highlight(snippet: &str, color: &str) -> String {
+    let escape = |text: &str| {
+        text.chars()
+            .map(|c| if c.is_ascii_punctuation() { format!("\\{c}") } else { c.to_string() })
+            .collect::<String>()
+    };
+    let mut out = String::new();
+    for (i, part) in snippet.split(OPEN).enumerate() {
+        // Every part after the first starts inside a match.
+        let (matched, rest) = match (i, part.split_once(CLOSE)) {
+            (0, _) | (_, None) => ("", part),
+            (_, Some((matched, rest))) => (matched, rest),
+        };
+        if !matched.is_empty() {
+            out += &format!("<font color=\"{color}\">**{}**</font>", escape(matched));
+        }
+        out += &escape(rest);
+    }
+    out
+}
+
+/// The snippet as plain text (for screen readers).
+pub fn plain(snippet: &str) -> String {
+    snippet.replace(['\u{2}', '\u{3}'], "")
+}
+
+fn hex(color: slint::Color) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.red(), color.green(), color.blue())
+}
 
 /// A title hit's kind label and second line ("Lecture · Course").
 pub fn describe(hit: &SearchHit) -> (&'static str, String) {
@@ -43,7 +78,7 @@ pub fn run(ui: &AppWindow, db: &Db, query: &str) {
         tracing::warn!(error = %e, "search");
         Vec::new()
     });
-    let spoken = queries::subtitle_search(&conn, query, LIMIT).unwrap_or_default();
+    let spoken = queries::subtitle_search_marked(&conn, query, LIMIT, (OPEN, CLOSE)).unwrap_or_default();
     drop(conn);
 
     search.set_results(model(
@@ -60,14 +95,17 @@ pub fn run(ui: &AppWindow, db: &Db, query: &str) {
             })
             .collect(),
     ));
+    let color = hex(ui.global::<Theme>().get_primary());
     search.set_subtitles(model(
         spoken
             .into_iter()
             .map(|s| SubtitleRow {
+                styled: slint::StyledText::from_markdown(&highlight(&s.snippet, &color))
+                    .unwrap_or_else(|_| slint::StyledText::from_plain_text(&plain(&s.snippet))),
                 lecture: s.lecture_id.into(),
                 time: clock(s.start_ms as f64 / 1000.0).into(),
                 start: (s.start_ms / 1000) as f32,
-                snippet: s.snippet.into(),
+                snippet: plain(&s.snippet).into(),
                 context: format!("{} · {}", s.lecture_title, s.course_title).into(),
             })
             .collect(),
@@ -95,5 +133,20 @@ mod tests {
         assert_eq!(describe(&hit("section")).1, "Section · AWS");
         assert_eq!(describe(&hit("attachment")).1, "Attachment · AWS");
         assert_eq!(describe(&hit("lecture")).1, "Lecture · AWS");
+    }
+
+    #[test]
+    fn highlights_matches_and_escapes_the_rest() {
+        let snippet = format!("…a [Music] {OPEN}pod{CLOSE} *runs* on {OPEN}k8s{CLOSE}");
+        assert_eq!(
+            highlight(&snippet, "#abcdef"),
+            r##"…a \[Music\] <font color="#abcdef">**pod**</font> \*runs\* on <font color="#abcdef">**k8s**</font>"##
+        );
+        assert_eq!(plain(&snippet), "…a [Music] pod *runs* on k8s");
+        // Unbalanced markers degrade to plain text.
+        assert_eq!(highlight(&format!("x {OPEN}y"), "#000"), "x y");
+        for s in [snippet.as_str(), "<b>not html</b> & 1 < 2"] {
+            assert!(slint::StyledText::from_markdown(&highlight(s, "#abcdef")).is_ok(), "{s}");
+        }
     }
 }

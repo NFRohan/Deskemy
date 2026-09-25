@@ -423,3 +423,30 @@ fn preview_counts_what_an_import_would_create() {
     let again = importer.read_snapshot(&conn, &course).unwrap();
     assert!(importer.build(&course, &again, true, |_, _| {}).unwrap().preview(&again).is_reimport);
 }
+
+#[test]
+fn subtitle_search_marks_matched_words() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("K8s");
+    fs::create_dir_all(&course).unwrap();
+    touch(&course.join("001 Pods.mp4"));
+    fs::write(
+        course.join("001 Pods.srt"),
+        "1\n00:00:05,000 --> 00:00:07,000\nA [Music] pod runs on a cluster node.\n",
+    )
+    .unwrap();
+
+    let mut conn = db::open_in_memory().unwrap();
+    Importer::new(Box::new(StubProber)).import_course(&mut conn, None, &course).unwrap();
+    let db = std::sync::Mutex::new(conn);
+    assert_eq!(deskemy_core::maintenance::reindex_subtitles(&db).unwrap(), 1);
+    let conn = db.lock().unwrap();
+
+    let hits = db::queries::subtitle_search_marked(&conn, "cluster", 10, ("\u{2}", "\u{3}")).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].start_ms, 5000);
+    assert_eq!(hits[0].snippet, "A [Music] pod runs on a \u{2}cluster\u{3} node.");
+    // The default markers are the brackets the Tauri page shows.
+    let plain = db::queries::subtitle_search(&conn, "cluster", 10).unwrap();
+    assert_eq!(plain[0].snippet, "A [Music] pod runs on a [cluster] node.");
+}

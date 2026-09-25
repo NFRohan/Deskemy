@@ -121,7 +121,7 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
 - ☐ Run it: export and import a backup in a real window (native dialogs,
   the relaunch)
 - ☐ Updates: the Tauri updater has no Slint counterpart yet (packaging phase)
-- ☐ Search: highlight matched words instead of showing `[brackets]`
+- ☑ Search: matched words in subtitle snippets are highlighted (`StyledText`)
 
 Slint gotchas met so far: a fixed-size child with no `x` is centred in its
 parent; wrapped `Text` is measured at its unwrapped width, so give it a

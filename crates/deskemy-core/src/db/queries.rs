@@ -927,13 +927,25 @@ pub fn subtitle_index_count(conn: &Connection) -> Result<i64> {
 }
 
 /// Full-text search over subtitle cues; returns snippet + jump timestamp.
+/// Matched words in the snippet are wrapped in [brackets].
 pub fn subtitle_search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<SubtitleHit>> {
+    subtitle_search_marked(conn, query, limit, ("[", "]"))
+}
+
+/// `subtitle_search` with the given markers around matched words — ones
+/// that can't occur in subtitle text, for a UI that highlights them.
+pub fn subtitle_search_marked(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+    (open, close): (&str, &str),
+) -> Result<Vec<SubtitleHit>> {
     let Some(expr) = fts_match_expr(query, "text") else {
         return Ok(Vec::new());
     };
     let mut stmt = conn.prepare(
         "SELECT si.lecture_id, si.course_id, c.title, l.title, si.start_ms,
-                snippet(subtitle_index, 3, '[', ']', '…', 10)
+                snippet(subtitle_index, 3, ?3, ?4, '…', 10)
            FROM subtitle_index si
            JOIN lectures l ON l.id = si.lecture_id
            JOIN courses  c ON c.id = si.course_id
@@ -942,7 +954,7 @@ pub fn subtitle_search(conn: &Connection, query: &str, limit: i64) -> Result<Vec
           LIMIT ?2",
     )?;
     let rows = stmt
-        .query_map(params![expr, limit], |r| {
+        .query_map(params![expr, limit, open, close], |r| {
             Ok(SubtitleHit {
                 lecture_id: r.get(0)?,
                 course_id: r.get(1)?,

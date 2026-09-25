@@ -17,7 +17,9 @@ export struct SubtitleRow {
     lecture: string,
     time: string,
     start: float,
-    /// The matching line; matched words are in [brackets].
+    /// The matching line, matched words highlighted.
+    styled: styled-text,
+    /// The same, as plain text.
     snippet: string,
     /// "Lecture · Course".
     context: string,
@@ -239,11 +241,11 @@ export component SearchPage inherits Flickable {
                                 VerticalLayout {
                                     horizontal-stretch: 1;
                                     alignment: center;
-                                    Text {
-                                        text: line.snippet;
-                                        color: Theme.on-surface;
-                                        font-size: Theme.body-md;
-                                        overflow: elide;
+                                    StyledText {
+                                        text: line.styled;
+                                        default-color: Theme.on-surface;
+                                        default-font-size: Theme.body-md;
+                                        max-lines: 1;
                                     }
                                     Text {
                                         text: line.context;
