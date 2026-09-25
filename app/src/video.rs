@@ -647,11 +647,20 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
         }
     });
 
+    let weak = ui.as_weak();
+    playback.on_cursor_hidden(move |hidden| {
+        if let Some(ui) = weak.upgrade() {
+            set_cursor_visible(&ui, !hidden);
+        }
+    });
+
     let (s, m, weak) = (session.clone(), mpv.clone(), ui.as_weak());
     playback.on_back(move || {
         s.save_now();
         run(&m, &["stop"]);
         if let Some(ui) = weak.upgrade() {
+            // The pages always show the pointer, however the player left it.
+            set_cursor_visible(&ui, true);
             ui.window().set_fullscreen(false);
             ui.global::<Playback>().set_fullscreen(false);
             ui.set_playing(false);
@@ -1018,6 +1027,12 @@ fn native_display(ui: &AppWindow) -> NativeDisplay {
         Ok(RawDisplayHandle::Wayland(w)) => NativeDisplay::Wayland(w.display.as_ptr()),
         _ => NativeDisplay::None,
     }
+}
+
+/// Show or hide the pointer over the window.
+fn set_cursor_visible(ui: &AppWindow, visible: bool) {
+    use slint::winit_030::WinitWindowAccessor;
+    ui.window().with_winit_window(|w| w.set_cursor_visible(visible));
 }
 
 /// Keep the machine and display awake while a video is actually playing.

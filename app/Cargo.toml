@@ -18,7 +18,9 @@ deskemy-core = { path = "../crates/deskemy-core" }
 # raw-window-handle-06: native dialogs open modal over the window.
 # renderer-skia-opengl: Skia draws text hinted and properly antialiased
 # (FemtoVG's is visibly rougher); FemtoVG stays available as a fallback.
-slint = { version = "1.18", features = ["raw-window-handle-06", "renderer-skia-opengl"] }
+# unstable-winit-030: hide the pointer with the player's controls (Slint only
+# applies `mouse-cursor` on a mouse event, and they hide while it's still).
+slint = { version = "1.18", features = ["raw-window-handle-06", "renderer-skia-opengl", "unstable-winit-030"] }
 # The window's X11 / Wayland display, for mpv's hardware decoding on Linux
 raw-window-handle = "0.6"
 # OpenGL calls for the texture mpv renders video into

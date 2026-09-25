@@ -144,6 +144,8 @@ export global Playback {
     callback set-volume(float);
     callback toggle-mute();
     callback toggle-fullscreen();
+    /// The controls faded (true) or came back: hide / show the pointer.
+    callback cursor-hidden(bool);
     callback pick-speed(int);
     callback pick-subtitle(int);
     callback pick-audio(int);
@@ -341,7 +343,11 @@ export component PlayerOverlay inherits Rectangle {
     // In a window the controls always tuck away (they sit over the video); in
     // fullscreen only with the setting on, as the Tauri player.
     property <bool> may-hide: !Playback.fullscreen || Playback.autohide-fullscreen;
-    property <bool> shown: root.controls-shown || !root.may-hide;
+    // The end-of-lecture resources card brings them (and the pointer) back.
+    property <bool> shown: root.controls-shown || !root.may-hide || Playback.open-menu == "exercise";
+    // The pointer goes with the controls. `mouse-cursor` alone isn't enough:
+    // Slint applies it on the next mouse event, and they fade while it's still.
+    changed shown => { Playback.cursor-hidden(!root.shown); }
 
     function toggle-menu(name: string) {
         Playback.open-menu = Playback.open-menu == name ? "" : name;
