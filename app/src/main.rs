@@ -81,6 +81,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let prefs = std::rc::Rc::new(settings::SettingsPage::new(config.clone(), db.clone(), paths::data_dir()));
     // Theme, and what the player reads from config.
     prefs.show(&ui);
+    ui.global::<Prefs>().set_version(settings::VERSION.into());
     wire_window(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
@@ -109,6 +110,12 @@ fn main() -> Result<(), slint::PlatformError> {
             let message = settings::run_task(key, &db, paths::data_dir().as_deref());
             ui.global::<Prefs>().invoke_set_result(key.into(), message.into());
             prefs.show_storage(&ui);
+        }
+        // "settings-import": Settings with the import confirmation open.
+        if page.as_deref() == Some("settings-import") {
+            ui.global::<Nav>().set_page("settings".into());
+            ui.global::<Nav>().set_crumbs(course_panel::model(vec!["Settings".into()]));
+            ui.global::<Prefs>().set_import_confirm(true);
         }
         // "search:<query>" shows the search page with that query's results.
         if let Some(query) = page.as_deref().and_then(|p| p.strip_prefix("search:")) {
@@ -215,12 +222,30 @@ fn main() -> Result<(), slint::PlatformError> {
             p.run(&ui, &key);
         }
     });
+    let (p, weak) = (prefs.clone(), ui.as_weak());
+    ui.global::<Prefs>().on_confirm_import(move || {
+        if let Some(ui) = weak.upgrade() {
+            p.confirm_import(&ui);
+        }
+    });
     wire_lists(&ui, &db, player.session());
     wire_search(&ui, &db, &course, player.session());
     wire_course(&ui, &course, player.session());
 
     let result = ui.run();
     player.shutdown();
+
+    // A staged backup import is swapped in by the next start. Let go of the
+    // library first — the window's callbacks hold it too — so the files
+    // aren't locked when it does.
+    let restart = prefs.restart_requested();
+    drop((ui, library, course, tracks, prefs, db, config));
+    if restart {
+        match std::env::current_exe().and_then(|exe| std::process::Command::new(exe).spawn()) {
+            Ok(_) => tracing::info!("relaunching to apply the imported backup"),
+            Err(e) => tracing::error!(error = %e, "relaunch after import"),
+        }
+    }
     result
 }
 
@@ -441,6 +466,13 @@ fn repair_titles(conn: &mut db::Connection) {
 /// the app still runs on an empty in-memory one, so files can be played.
 fn open_library(ui: &AppWindow) -> (Db, settings::Config) {
     let dir = paths::data_dir();
+    // A backup import staged from Settings is swapped in now, before
+    // anything opens the database.
+    if let Some(dir) = &dir {
+        if let Err(e) = deskemy_core::backup::apply_pending_import(dir) {
+            tracing::error!(error = %e, "apply staged data import");
+        }
+    }
     let config = dir
         .as_ref()
         .map(|d| d.join(paths::CONFIG_FILE))

@@ -16,7 +16,7 @@ import {
 import { Search, SearchPage, SearchRow, SubtitleRow } from "search.slint";
 import { PickRow, TrackCard, TrackCourseRow, TrackDialogs, TrackPage, Tracks, TracksPage } from "career.slint";
 import { LearningStats, StatsPage, WeekBar } from "stats_page.slint";
-import { Prefs, SettingsPage } from "settings.slint";
+import { ImportConfirm, Prefs, SettingsPage } from "settings.slint";
 import { Theme } from "theme.slint";
 
 export {
@@ -115,6 +115,10 @@ export component AppWindow inherits Window {
 
     // Page dialogs dim the whole window, sidebar included.
     if !root.playing && Nav.page == "course" && Course.dialog != "": CourseDialogs {
+        width: parent.width;
+        height: parent.height;
+    }
+    if !root.playing && Nav.page == "settings" && Prefs.import-confirm: ImportConfirm {
         width: parent.width;
         height: parent.height;
     }

@@ -1,6 +1,6 @@
 [package]
 name = "deskemy-app"
-version = "0.1.0"
+version = "1.2.2"
 description = "Deskemy — offline course player (Slint frontend)"
 authors = ["Spooksy"]
 license = "MIT"

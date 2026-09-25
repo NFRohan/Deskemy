@@ -38,7 +38,16 @@ export global Prefs {
         if key == "compact" { self.result-compact = message; }
         if key == "clearsubs" { self.result-clearsubs = message; }
         if key == "gc" { self.result-gc = message; }
+        if key == "export" { self.result-export = message; }
     }
+
+    // Backups. An import error shows under its row.
+    in property <string> result-import;
+    in-out property <string> result-export;
+    in-out property <bool> import-confirm;
+    callback confirm-import();
+
+    in property <string> version;
 
     // Storage ("—" without a data folder; cues -1).
     in property <string> db-size: "—";
@@ -133,6 +142,7 @@ component Row inherits HorizontalLayout {
     in property <length> text-width;
     /// The last result of the row's action.
     in property <string> result;
+    in property <bool> result-error;
 
     padding: 16px;
     spacing: 16px;
@@ -155,7 +165,7 @@ component Row inherits HorizontalLayout {
             max-width: root.text-width;
         }        if root.result != "": Text {
             text: root.result;
-            color: Theme.primary;
+            color: root.result-error ? Theme.error : Theme.primary;
             font-size: Theme.label-sm;
             wrap: word-wrap;
             max-width: root.text-width;
@@ -370,6 +380,40 @@ export component SettingsPage inherits Flickable {
 
         VerticalLayout {
             spacing: 12px;
+            Heading { text: "DATA"; }
+            Group {
+                height: data.preferred-height;
+                data := VerticalLayout {
+                    Row {
+                        title: "Export backup";
+                        description: "Save your library — progress, bookmarks, tags, tracks, thumbnails — to one .zip. Your video files aren't included. Handy for moving a portable copy to a new release, or as a safety backup.";
+                        text-width: root.text-width;
+                        result: Prefs.result-export;
+                        ActionButton {
+                            key: "export";
+                            text: "Export";
+                            icon: @image-url("icons/download.svg");
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Import backup";
+                        description: "Replace this library with a backup, then restart. It re-links to your videos where they still exist — it can't restore progress onto a different download of a course.";
+                        text-width: root.text-width;
+                        result: Prefs.result-import;
+                        result-error: true;
+                        ActionButton {
+                            key: "import";
+                            text: "Import";
+                            icon: @image-url("icons/upload.svg");
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 12px;
             Heading { text: "STORAGE"; }
             Group {
                 height: storage.preferred-height;
@@ -446,6 +490,109 @@ export component SettingsPage inherits Flickable {
                                     text: "Clean";
                                     icon: @image-url("icons/trash-2.svg");
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 12px;
+            Heading { text: "ABOUT"; }
+            Group {
+                height: about.preferred-height;
+                about := VerticalLayout {
+                    Row {
+                        title: "Deskemy " + Prefs.version;
+                        description: "Update checks aren't wired up in this build yet.";
+                        text-width: root.text-width;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component ConfirmButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    callback clicked;
+    height: 36px;
+    width: label.preferred-width + 32px;
+    border-radius: 4px;
+    background: root.primary ? (touch.has-hover ? Theme.inverse-primary : Theme.primary-container)
+        : touch.has-hover ? Theme.surface-container-highest : transparent;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+    label := Text {
+        text: root.text;
+        color: root.primary ? Theme.on-primary-container : Theme.on-surface;
+        font-size: Theme.label-md;
+        font-weight: 600;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// "Import backup?" over the whole (dimmed) window. Esc cancels.
+export component ImportConfirm inherits Rectangle {
+    background: #00000099;
+    property <length> card-width: min(448px, root.width - 32px);
+
+    keys := FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                Prefs.import-confirm = false;
+                return accept;
+            }
+            return reject;
+        }
+        TouchArea { }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: root.card-width;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: Theme.outline-variant;
+                    background: Theme.surface-container;
+                    accessible-role: groupbox;
+                    accessible-label: "Import backup?";
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 16px;
+                        Text {
+                            text: "Import backup?";
+                            color: Theme.on-surface;
+                            font-size: Theme.headline-sm;
+                            font-weight: 600;
+                        }
+                        // max-width: see CourseDialogs.
+                        Text {
+                            text: "This replaces your current library — progress, bookmarks, tags, everything — with the backup, then restarts Deskemy. Your current data can't be recovered afterward unless you exported it first.";
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.body-sm;
+                            wrap: word-wrap;
+                            max-width: root.card-width - 40px;
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            ConfirmButton {
+                                text: "Cancel";
+                                clicked => { Prefs.import-confirm = false; }
+                            }
+                            ConfirmButton {
+                                text: "Import & restart";
+                                primary: true;
+                                clicked => { Prefs.confirm-import(); }
                             }
                         }
                     }

@@ -215,4 +215,34 @@ mod tests {
         // A missing cache is simply clean.
         assert_eq!(gc_thumbnails(&conn, &tmp.path().join("none")).unwrap().removed, 0);
     }
+
+    #[test]
+    fn exported_backup_restores_into_another_data_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (from, to) = (tmp.path().join("from"), tmp.path().join("to"));
+        std::fs::create_dir_all(from.join("thumbnails")).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        std::fs::write(from.join("thumbnails").join("cover.png"), b"png").unwrap();
+        std::fs::write(from.join("config.json"), r#"{"daily_goal_minutes": 90}"#).unwrap();
+
+        let conn = crate::db::open(&from.join(DB_FILE)).unwrap();
+        conn.execute(
+            "INSERT INTO courses (id, title, folder_path, imported_at) VALUES ('c', 'Kept', '/c', 0)",
+            [],
+        )
+        .unwrap();
+        let db = Mutex::new(conn);
+        let zip = tmp.path().join("backup.zip");
+        export_backup(&db, &from, &from.join("config.json"), &from.join("thumbnails"), &zip, "1.2.2").unwrap();
+        assert!(!from.join(".export.tmp.db").exists(), "the snapshot is cleaned up");
+
+        crate::backup::stage_import(&to, &zip, crate::db::SCHEMA_VERSION).unwrap();
+        assert!(crate::backup::apply_pending_import(&to).unwrap());
+        let restored = crate::db::open(&to.join(DB_FILE)).unwrap();
+        let title: String = restored.query_row("SELECT title FROM courses WHERE id = 'c'", [], |r| r.get(0)).unwrap();
+        assert_eq!(title, "Kept");
+        assert!(to.join("thumbnails").join("cover.png").exists());
+        let config = crate::config::AppConfig::load(&to.join("config.json")).unwrap();
+        assert_eq!(config.daily_goal_minutes, 90);
+    }
 }

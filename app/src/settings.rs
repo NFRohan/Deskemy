@@ -6,9 +6,10 @@ use crate::session::Db;
 use crate::{AppWindow, Playback, Prefs, SelectOption, Theme};
 use deskemy_core::config::AppConfig;
 use deskemy_core::maintenance::{self, GcReport, ReconcileReport};
-use deskemy_core::{courses, paths};
+use deskemy_core::{backup, courses, db, paths};
 use slint::ComponentHandle;
-use std::path::PathBuf;
+use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// The one config, shared by the pages and the player (which reads the
@@ -162,30 +163,65 @@ pub fn show_storage(ui: &AppWindow, db: &Db, data_dir: Option<&std::path::Path>)
     }
 }
 
+/// This build's version, as the backup manifest records it.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Write a backup of the library to `dest`.
+pub fn export(db: &Db, data_dir: &Path, dest: &Path) -> String {
+    let (config, thumbs) = (data_dir.join(paths::CONFIG_FILE), data_dir.join(courses::THUMBNAILS_DIR));
+    match maintenance::export_backup(db, data_dir, &config, &thumbs, dest, VERSION) {
+        Ok(()) => "Backup saved.".into(),
+        Err(e) => e.to_string(),
+    }
+}
+
 /// The Settings page: preferences (saved to config.json in the data
-/// directory; without one, changes last only for this run) and maintenance.
+/// directory; without one, changes last only for this run), maintenance and
+/// backups.
 pub struct SettingsPage {
     config: Config,
     db: Db,
     data_dir: Option<PathBuf>,
+    /// The backup chosen for import, awaiting confirmation.
+    import_from: RefCell<Option<PathBuf>>,
+    /// An import is staged: relaunch once this run has let go of the data.
+    restart: Cell<bool>,
 }
 
 impl SettingsPage {
     pub fn new(config: Config, db: Db, data_dir: Option<PathBuf>) -> Self {
-        SettingsPage { config, db, data_dir }
+        SettingsPage { config, db, data_dir, import_from: RefCell::new(None), restart: Cell::new(false) }
     }
 
-    /// Run a maintenance action in the background; its result line, fresh
-    /// storage figures and (when the library changed) the library follow.
+    pub fn restart_requested(&self) -> bool {
+        self.restart.get()
+    }
+
+    /// Run a page action by key. Maintenance runs in the background; its
+    /// result line, fresh storage figures and (when the library changed) the
+    /// library follow.
     pub fn run(&self, ui: &AppWindow, key: &str) {
+        match key {
+            "export" => return self.export(ui),
+            "import" => return self.choose_import(ui),
+            _ => {}
+        }
+        let key = key.to_string();
+        self.spawn(ui, key.clone(), move |db, dir| run_task(&key, db, dir));
+    }
+
+    fn spawn<F>(&self, ui: &AppWindow, key: String, task: F)
+    where
+        F: FnOnce(&Db, Option<&Path>) -> String + Send + 'static,
+    {
         let prefs = ui.global::<Prefs>();
         if prefs.get_busy() != "" {
             return;
         }
-        prefs.set_busy(key.into());
-        let (db, dir, key, weak) = (self.db.clone(), self.data_dir.clone(), key.to_string(), ui.as_weak());
+        prefs.set_busy(key.as_str().into());
+        let (db, dir, weak) = (self.db.clone(), self.data_dir.clone(), ui.as_weak());
         std::thread::spawn(move || {
-            let message = run_task(&key, &db, dir.as_deref());
+            let message = task(&db, dir.as_deref());
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(ui) = weak.upgrade() else { return };
                 let prefs = ui.global::<Prefs>();
@@ -202,6 +238,63 @@ impl SettingsPage {
 
     pub fn show_storage(&self, ui: &AppWindow) {
         show_storage(ui, &self.db, self.data_dir.as_deref());
+    }
+
+    fn export(&self, ui: &AppWindow) {
+        if self.data_dir.is_none() {
+            ui.global::<Prefs>().invoke_set_result("export".into(), "Not available without a data folder.".into());
+            return;
+        }
+        let Some(dest) = rfd::FileDialog::new()
+            .set_title("Export backup")
+            .set_file_name("deskemy-backup.zip")
+            .add_filter("Deskemy backup", &["zip"])
+            .set_parent(&ui.window().window_handle())
+            .save_file()
+        else {
+            return;
+        };
+        self.spawn(ui, "export".into(), move |db, dir| match dir {
+            Some(dir) => export(db, dir, &dest),
+            None => "Not available without a data folder.".into(),
+        });
+    }
+
+    /// Pick a backup, then ask before replacing the library with it.
+    fn choose_import(&self, ui: &AppWindow) {
+        let Some(src) = rfd::FileDialog::new()
+            .set_title("Import backup")
+            .add_filter("Deskemy backup", &["zip"])
+            .set_parent(&ui.window().window_handle())
+            .pick_file()
+        else {
+            return;
+        };
+        *self.import_from.borrow_mut() = Some(src);
+        let prefs = ui.global::<Prefs>();
+        prefs.set_result_import("".into());
+        prefs.set_import_confirm(true);
+    }
+
+    /// Stage the chosen backup and close; `main` relaunches, and the next
+    /// start swaps it in before opening the library.
+    pub fn confirm_import(&self, ui: &AppWindow) {
+        let prefs = ui.global::<Prefs>();
+        let staged = match (self.data_dir.as_deref(), self.import_from.borrow_mut().take()) {
+            (Some(dir), Some(src)) => backup::stage_import(dir, &src, db::SCHEMA_VERSION).map_err(|e| e.to_string()),
+            _ => Err("Not available without a data folder.".into()),
+        };
+        match staged {
+            Ok(()) => {
+                self.restart.set(true);
+                // Hiding the only window ends the event loop.
+                let _ = ui.hide();
+            }
+            Err(e) => {
+                prefs.set_import_confirm(false);
+                prefs.set_result_import(e.into());
+            }
+        }
     }
 
     /// Fill the page, and apply what the rest of the UI shows from config.

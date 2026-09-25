@@ -116,7 +116,11 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
   storage (sizes, compact, clear subtitles, clean thumbnails), run on a
   worker thread; `--snapshot <png> settings-run:<action>` runs one inline
 - ☐ Run it: the maintenance buttons in a real window (spinner, result line)
-- ☐ Settings — backup export / import (+ restart), version / updates
+- ☑ Settings — backup export, import (confirm → stage → relaunch; the next
+  start swaps it in before opening the library), version
+- ☐ Run it: export and import a backup in a real window (native dialogs,
+  the relaunch)
+- ☐ Updates: the Tauri updater has no Slint counterpart yet (packaging phase)
 - ☐ Search: highlight matched words instead of showing `[brackets]`
 
 Slint gotchas met so far: a fixed-size child with no `x` is centred in its
