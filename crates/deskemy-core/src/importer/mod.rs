@@ -37,6 +37,8 @@ struct Preserved {
     progress: Vec<(String, Option<String>, f64, bool, Option<i64>)>,
     /// (file_path, content_hash, position_seconds, label, created_at)
     bookmarks: Vec<(String, Option<String>, f64, Option<String>, i64)>,
+    /// (file_path, completed_at) of resources marked done
+    resources_done: Vec<(String, i64)>,
 }
 
 /// Metadata carried over from a previous import so an unchanged file's video
@@ -389,6 +391,10 @@ impl Importer {
                     )?;
                 }
             }
+            // Resources are re-created with new ids; match them by path.
+            for (path, at) in &p.resources_done {
+                queries::restore_attachment_progress(&tx, &course_id, path, *at)?;
+            }
         }
 
         tx.commit()?;
@@ -413,6 +419,7 @@ impl Importer {
             tags: queries::tags_for_course(conn, course_id)?,
             progress: queries::progress_with_files(conn, course_id)?,
             bookmarks: queries::bookmarks_with_files(conn, course_id)?,
+            resources_done: queries::attachment_progress_with_files(conn, course_id)?,
         })
     }
 

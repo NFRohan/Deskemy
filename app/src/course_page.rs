@@ -442,6 +442,7 @@ mod tests {
             kind: None,
             section_id: section.map(Into::into),
             lecture_id: None,
+            completed: false,
         };
         let atts = vec![att("loose.pdf", None), att("two.pdf", Some("s2")), att("one.pdf", Some("s1"))];
         let groups: Vec<(String, Vec<&str>)> = resource_groups(&c, &atts)

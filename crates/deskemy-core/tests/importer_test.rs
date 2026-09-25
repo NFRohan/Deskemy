@@ -492,3 +492,37 @@ fn exercise_pdfs_pair_with_their_lessons() {
         ]
     );
 }
+
+#[test]
+fn resources_marked_done_survive_a_reimport() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Course");
+    fs::create_dir_all(&course).unwrap();
+    touch(&course.join("01 Lesson.mp4"));
+    touch(&course.join("01 Lesson.pdf"));
+    touch(&course.join("02 Next.mp4"));
+    touch(&course.join("02 Next.pdf"));
+
+    let mut conn = db::open_in_memory().unwrap();
+    let importer = Importer::new(Box::new(StubProber));
+    let id = importer.import_course(&mut conn, None, &course).unwrap();
+    let attachments = db::queries::list_course_attachments(&conn, &id).unwrap();
+    assert!(attachments.iter().all(|a| !a.completed));
+    let first = attachments.iter().find(|a| a.name == "01 Lesson.pdf").unwrap();
+    db::queries::set_attachment_completed(&conn, &first.id, true).unwrap();
+    // Marking twice is harmless; unmarking works.
+    db::queries::set_attachment_completed(&conn, &first.id, true).unwrap();
+
+    // Re-import (new course / attachment ids): the tick follows the file.
+    let id = importer.import_course(&mut conn, None, &course).unwrap();
+    let done: Vec<(String, bool)> = db::queries::list_course_attachments(&conn, &id)
+        .unwrap()
+        .into_iter()
+        .map(|a| (a.name, a.completed))
+        .collect();
+    assert_eq!(done, vec![("01 Lesson.pdf".to_string(), true), ("02 Next.pdf".to_string(), false)]);
+
+    let first = db::queries::list_course_attachments(&conn, &id).unwrap().remove(0);
+    db::queries::set_attachment_completed(&conn, &first.id, false).unwrap();
+    assert!(!db::queries::list_course_attachments(&conn, &id).unwrap()[0].completed);
+}

@@ -554,9 +554,11 @@ pub fn restore_bookmark(
 /// A course's resources (pdfs, archives, code, …), ordered by section then name.
 pub fn list_course_attachments(conn: &Connection, course_id: &str) -> Result<Vec<Attachment>> {
     let mut stmt = conn.prepare(
-        "SELECT a.id, a.name, a.file_path, a.kind, a.section_id, a.lecture_id
+        "SELECT a.id, a.name, a.file_path, a.kind, a.section_id, a.lecture_id,
+                ap.attachment_id IS NOT NULL
            FROM attachments a
            LEFT JOIN sections s ON s.id = a.section_id
+           LEFT JOIN attachment_progress ap ON ap.attachment_id = a.id
           WHERE a.course_id = ?1
           ORDER BY COALESCE(s.position, -1), a.name",
     )?;
@@ -569,10 +571,53 @@ pub fn list_course_attachments(conn: &Connection, course_id: &str) -> Result<Vec
                 kind: r.get(3)?,
                 section_id: r.get(4)?,
                 lecture_id: r.get(5)?,
+                completed: r.get(6)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// Mark a resource done or not.
+pub fn set_attachment_completed(conn: &Connection, attachment_id: &str, completed: bool) -> Result<()> {
+    if completed {
+        conn.execute(
+            "INSERT OR IGNORE INTO attachment_progress (attachment_id, completed_at) VALUES (?1, ?2)",
+            params![attachment_id, now()],
+        )?;
+    } else {
+        conn.execute("DELETE FROM attachment_progress WHERE attachment_id = ?1", params![attachment_id])?;
+    }
+    Ok(())
+}
+
+/// (file_path, completed_at) of a course's done resources, to carry over a
+/// re-import.
+pub fn attachment_progress_with_files(conn: &Connection, course_id: &str) -> Result<Vec<(String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.file_path, ap.completed_at
+           FROM attachment_progress ap JOIN attachments a ON a.id = ap.attachment_id
+          WHERE a.course_id = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![course_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Mark the course's resource at `file_path` done, as of `completed_at`.
+pub fn restore_attachment_progress(
+    conn: &Connection,
+    course_id: &str,
+    file_path: &str,
+    completed_at: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO attachment_progress (attachment_id, completed_at)
+         SELECT id, ?3 FROM attachments WHERE course_id = ?1 AND file_path = ?2",
+        params![course_id, file_path, completed_at],
+    )?;
+    Ok(())
 }
 
 pub fn insert_attachment(

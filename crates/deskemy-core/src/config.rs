@@ -26,6 +26,13 @@ pub struct AppConfig {
     /// Auto-hide the player controls (and cursor) in fullscreen after a few
     /// seconds of no mouse movement, VLC-style. Off by default (controls stay).
     pub autohide_controls: bool,
+    /// Show each lecture's resources (exercise PDFs, notes) right under it in
+    /// the curriculum, rather than only in a separate list. On by default.
+    pub resources_inline: bool,
+    /// Autoplay stops when a lecture that has resources ends, offering to
+    /// open them before moving on. Off by default: many courses attach slides
+    /// to every lecture.
+    pub pause_at_resources: bool,
     /// Last library root the user registered (convenience).
     pub last_root: Option<String>,
 }
@@ -40,6 +47,8 @@ impl Default for AppConfig {
             auto_rescan: false,
             clean_titles: true,
             autohide_controls: false,
+            resources_inline: true,
+            pause_at_resources: false,
             last_root: None,
         }
     }

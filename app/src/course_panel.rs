@@ -157,6 +157,7 @@ mod tests {
             kind: Some("pdf".into()),
             section_id: Some(section.into()),
             lecture_id: lecture.map(Into::into),
+            completed: false,
         }
     }
 

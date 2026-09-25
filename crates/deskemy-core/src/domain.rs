@@ -147,6 +147,8 @@ pub struct Attachment {
     pub kind: Option<String>,
     pub section_id: Option<String>,
     pub lecture_id: Option<String>,
+    /// Marked done (an exercise worked through, notes read).
+    pub completed: bool,
 }
 
 /// One full-text search result across courses/sections/lectures/attachments.

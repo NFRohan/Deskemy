@@ -12,7 +12,7 @@ pub use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -240,6 +240,16 @@ fn migrate(conn: &Connection) -> Result<()> {
                  PRIMARY KEY (track_id, course_id)
              );
              CREATE INDEX idx_track_courses_track ON track_courses(track_id);",
+        )?;
+    }
+    if version < 8 {
+        // Resources (exercise PDFs, notes, code) marked done, like lectures.
+        // Keyed by attachment; re-import carries it over by file path.
+        tx.execute_batch(
+            "CREATE TABLE attachment_progress (
+                 attachment_id TEXT PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
+                 completed_at  INTEGER NOT NULL
+             );",
         )?;
     }
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
