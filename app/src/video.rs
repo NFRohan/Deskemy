@@ -70,6 +70,14 @@ impl Player {
                 tracing::warn!(error = %e, "mpv option {name}={value} not supported");
             }
         }
+        // mpv's own log, beside ours: how it decodes and renders (texture
+        // formats, hwdec interop, errors).
+        if let Some(dir) = deskemy_core::paths::data_dir().map(|d| d.join("logs")) {
+            let _ = std::fs::create_dir_all(&dir);
+            if let Err(e) = mpv.set_option("log-file", &dir.join("mpv.log").to_string_lossy()) {
+                tracing::warn!(error = %e, "mpv log-file");
+            }
+        }
         mpv.initialize().map_err(|e| e.to_string())?;
 
         let session = Arc::new(Session::new(mpv.clone(), db, config));
@@ -100,6 +108,8 @@ impl Player {
             target: None,
             gl: None,
             rendered: false,
+            warned_before: false,
+            warned_after: false,
             on_ready,
             wake: Box::into_raw(Box::new(ui.as_weak())),
             ui: ui.as_weak(),
@@ -141,6 +151,9 @@ struct Surface {
     gl: Option<glow::Context>,
     /// Whether this frame drew a new video frame (→ report the swap).
     rendered: bool,
+    /// GL errors around mpv's frame have been logged (once each).
+    warned_before: bool,
+    warned_after: bool,
     /// Runs once the render context exists (vo=libmpv needs it to load).
     on_ready: Option<OnReady>,
     /// Handed to mpv's update callback; freed after the render context.
@@ -173,6 +186,16 @@ impl Surface {
             return;
         };
         let gl = unsafe { glow::Context::from_loader_function_cstr(|name| get_proc_address(name)) };
+        unsafe {
+            let profile = gl.get_parameter_i32(glow::CONTEXT_PROFILE_MASK);
+            tracing::info!(
+                version = %gl.get_parameter_string(glow::VERSION),
+                renderer = %gl.get_parameter_string(glow::RENDERER),
+                vendor = %gl.get_parameter_string(glow::VENDOR),
+                profile = if profile & glow::CONTEXT_CORE_PROFILE_BIT as i32 != 0 { "core" } else { "compatibility" },
+                "OpenGL context"
+            );
+        }
         let display = self.ui.upgrade().map_or(NativeDisplay::None, |ui| native_display(&ui));
         match unsafe { MpvRenderContext::new_gl(&self.mpv, *get_proc_address, display) } {
             Ok(render) => {
@@ -235,10 +258,23 @@ impl Surface {
         if new_frame || resized {
             let Some(target) = &self.target else { return };
             let _state = GlState::save(gl);
-            unsafe { reset_for_mpv(gl) };
+            unsafe {
+                // Errors pending from the renderer would be blamed on mpv.
+                let before = gl_errors(gl);
+                if !before.is_empty() && !self.warned_before {
+                    self.warned_before = true;
+                    tracing::warn!(errors = ?before, "GL errors pending before mpv's frame");
+                }
+                reset_for_mpv(gl);
+            }
             if let Err(e) = unsafe { render.render_gl(target.fbo.0.get(), w, h) } {
                 tracing::warn!(error = %e, "mpv render");
                 return;
+            }
+            let after = unsafe { gl_errors(gl) };
+            if !after.is_empty() && !self.warned_after {
+                self.warned_after = true;
+                tracing::warn!(errors = ?after, "GL errors from mpv's frame");
             }
             self.rendered = true;
         }
@@ -322,6 +358,18 @@ impl Target {
     unsafe fn delete(self, gl: &glow::Context) {
         gl.delete_framebuffer(self.fbo);
         gl.delete_texture(self.texture);
+    }
+}
+
+/// Drain the GL error queue (as hex codes).
+unsafe fn gl_errors(gl: &glow::Context) -> Vec<String> {
+    let mut errors = Vec::new();
+    loop {
+        let e = gl.get_error();
+        if e == glow::NO_ERROR || errors.len() >= 8 {
+            break errors;
+        }
+        errors.push(format!("{e:#06x}"));
     }
 }
 
