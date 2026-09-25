@@ -21,7 +21,7 @@ pub fn current_section<'a>(course: &'a CourseDetail, lecture: Option<&str>) -> O
 }
 
 /// A resource as a panel row.
-fn resource_item(a: &Attachment) -> ResourceItem {
+pub fn resource_item(a: &Attachment) -> ResourceItem {
     ResourceItem {
         id: a.id.clone().into(),
         done: a.completed,

@@ -803,10 +803,19 @@ fn wire_panel(ui: &AppWindow, session: &Arc<Session>) {
     });
     playback.on_refresh_panel(refresh.clone());
 
-    let s = session.clone();
+    let (s, weak) = (session.clone(), ui.as_weak());
     playback.on_toggle_resource(move |id, done| {
         s.set_resource_done(&id, done);
         refresh();
+        // The end-of-lecture card lists them too.
+        if let Some(ui) = weak.upgrade() {
+            let playback = ui.global::<Playback>();
+            if playback.get_open_menu() == "exercise" {
+                playback.set_prompt_items(course_panel::model(
+                    s.lecture_resources().iter().map(course_panel::resource_item).collect(),
+                ));
+            }
+        }
     });
 
     let s = session.clone();
@@ -919,10 +928,20 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             }
         };
 
+        // Autoplay stopped at a lecture's resources: offer them.
+        let waiting: Option<Vec<crate::ResourceItem>> = now_playing
+            .as_ref()
+            .filter(|np| np.resources_waiting)
+            .map(|_| session.lecture_resources().iter().map(course_panel::resource_item).collect());
+
         let _ = ui.upgrade_in_event_loop(move |ui| {
             let playback = ui.global::<Playback>();
             if let Some(menus) = menus {
                 menus.apply(&playback);
+            }
+            if let Some(items) = waiting {
+                playback.set_prompt_items(course_panel::model(items));
+                playback.set_open_menu("exercise".into());
             }
             if let Some(np) = now_playing {
                 playback.set_title(np.title.into());

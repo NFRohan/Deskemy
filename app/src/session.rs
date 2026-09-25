@@ -32,6 +32,9 @@ pub struct NowPlaying {
     pub has_next: bool,
     /// A library lecture (a bare file has no bookmarks or progress).
     pub in_library: bool,
+    /// Autoplay stopped at the end of this lecture to offer its resources
+    /// ("Pause on exercises and resources").
+    pub resources_waiting: bool,
 }
 
 /// The sleep timer: pause after a while, or when the playing lecture ends.
@@ -256,6 +259,7 @@ impl Session {
             has_previous: inner.index > 0,
             has_next: inner.index + 1 < inner.items.len(),
             in_library: true,
+            resources_waiting: false,
         };
         inner.revision += 1;
         inner.lecture_id = Some(item.lecture_id);
@@ -308,8 +312,13 @@ impl Session {
             if sleep_here {
                 inner.sleep = Sleep::Off;
             }
-            let advance =
+            let mut advance =
                 !sleep_here && settings::lock(&self.config).autoplay_next && inner.index + 1 < inner.items.len();
+            // Stop at a lecture with exercises / notes, to offer them first.
+            if advance && settings::lock(&self.config).pause_at_resources && !self.resources_of(&inner).is_empty() {
+                advance = false;
+                inner.now.resources_waiting = true;
+            }
             if advance {
                 inner.index += 1;
             } else {
@@ -397,6 +406,23 @@ impl Session {
     pub fn attachments(&self) -> Vec<Attachment> {
         let Some(course) = self.inner().course_id.clone() else { return Vec::new() };
         queries::list_course_attachments(&self.db(), &course).unwrap_or_default()
+    }
+
+    /// The playing (or just ended) lecture's resources.
+    pub fn lecture_resources(&self) -> Vec<Attachment> {
+        let inner = self.inner();
+        self.resources_of(&inner)
+    }
+
+    fn resources_of(&self, inner: &Inner) -> Vec<Attachment> {
+        let (Some(course), Some(lecture)) = (inner.course_id.as_deref(), inner.lecture_id.as_deref()) else {
+            return Vec::new();
+        };
+        queries::list_course_attachments(&self.db(), course)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|a| a.lecture_id.as_deref() == Some(lecture))
+            .collect()
     }
 
     /// Mark a resource done or not.
@@ -491,10 +517,15 @@ mod tests {
 
     /// A three-lecture course on disk, imported into a scratch database.
     fn library() -> (tempfile::TempDir, Db, Vec<String>) {
+        library_with(&["001 First.mp4", "002 Second.mp4", "003 Third.mp4"])
+    }
+
+    /// A scratch library with one course of these files (stub-probed).
+    fn library_with(files: &[&str]) -> (tempfile::TempDir, Db, Vec<String>) {
         let tmp = tempfile::tempdir().unwrap();
         let course = tmp.path().join("Course");
         std::fs::create_dir_all(&course).unwrap();
-        for name in ["001 First.mp4", "002 Second.mp4", "003 Third.mp4"] {
+        for &name in files {
             std::fs::write(course.join(name), b"x").unwrap();
         }
         let mut conn = deskemy_core::db::open(&tmp.path().join("deskemy.db")).unwrap();
@@ -586,6 +617,35 @@ mod tests {
         session.on_eof();
 
         assert_eq!(today(&db).1, 1);
+    }
+
+    #[test]
+    fn autoplay_pauses_at_a_lecture_with_resources_when_asked() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) =
+            library_with(&["001 First.mp4", "001 First exercises.pdf", "002 Second.mp4", "003 Third.mp4"]);
+        let config = settings::shared(AppConfig { pause_at_resources: true, ..AppConfig::default() });
+        let session = Session::new(mpv, db, config.clone());
+
+        session.open(&lectures[0]).unwrap();
+        assert_eq!(session.lecture_resources().len(), 1);
+        session.on_eof();
+        let (_, now) = session.now_playing();
+        assert_eq!(now.title, "First", "stays on the lecture with the exercise");
+        assert!(now.resources_waiting);
+        assert!(session.replay_if_ended(), "and play watches it again");
+
+        // Lectures without resources advance as usual…
+        session.open(&lectures[1]).unwrap();
+        session.on_eof();
+        assert_eq!(session.now_playing().1.title, "Third");
+        assert!(!session.now_playing().1.resources_waiting);
+
+        // …and with the option off, so does the one with resources.
+        settings::lock(&config).pause_at_resources = false;
+        session.open(&lectures[0]).unwrap();
+        session.on_eof();
+        assert_eq!(session.now_playing().1.title, "Second");
     }
 
     #[test]

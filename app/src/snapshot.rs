@@ -40,6 +40,20 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
     playback.set_course_title("Ultimate AWS Certified Solutions Architect Associate 2025".into());
     playback.set_course_id("sample".into());
     playback.set_clock("20:14".into());
+    // "exercise": the card autoplay stops at, with sample resources.
+    if menu == "exercise" {
+        let item = |name: &str, done: bool| crate::ResourceItem {
+            id: name.into(),
+            name: name.into(),
+            kind: "pdf".into(),
+            path: "".into(),
+            done,
+        };
+        playback.set_prompt_items(crate::course_panel::model(vec![
+            item("1. NAT01 – Espressioni con i numeri naturali (1).pdf", true),
+            item("1. NAT01 – Soluzioni.pdf", false),
+        ]));
+    }
     // "fullscreen": the player as it looks fullscreen (header over the picture).
     playback.set_fullscreen(menu == "fullscreen");
     // Playback info as it looks for a typical course lecture.

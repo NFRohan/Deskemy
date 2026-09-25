@@ -169,6 +169,8 @@ export global Playback {
     callback open-resource(string);
     /// Mark a resource done (true) or not.
     callback toggle-resource(string, bool);
+    /// The ended lecture's resources, when autoplay stopped at them.
+    in property <[ResourceItem]> prompt-items;
 }
 
 component IconButton inherits Rectangle {
@@ -267,10 +269,12 @@ component Chip inherits Rectangle {
 
     height: 36px;
     min-width: 56px;
+    // Room either side of the label, so longer ones ("Next lecture") breathe.
+    preferred-width: max(56px, label.preferred-width + 28px);
     border-radius: 8px;
     background: root.selected ? #ffffff : touch.has-hover ? #ffffff2e : #ffffff1a;
 
-    Text {
+    label := Text {
         text: root.text;
         color: root.selected ? #000000 : #ffffff;
         font-size: 13px;
@@ -1001,6 +1005,131 @@ export component PlayerOverlay inherits Rectangle {
                             clicked => {
                                 Playback.sleep-at-end();
                                 Playback.open-menu = "";
+                            }
+                        }
+                    }
+                }
+            }
+
+            // End of a lecture with resources ("Pause on exercises and
+            // resources"): open them, or go on. Dismissing it stays here.
+            if Playback.open-menu == "exercise": Rectangle {
+                background: #00000099;
+                TouchArea {
+                    clicked => { Playback.open-menu = ""; }
+                }
+
+                Rectangle {
+                    width: 440px;
+                    height: exercise-card.preferred-height;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 14px;
+                    background: #16171b;
+                    border-width: 1px;
+                    border-color: #ffffff14;
+
+                    TouchArea { }
+
+                    exercise-card := VerticalLayout {
+                        padding: 20px;
+                        spacing: 14px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Image {
+                                source: @image-url("icons/file-text.svg");
+                                width: 18px;
+                                height: 18px;
+                                y: (parent.height - self.height) / 2;
+                                colorize: #ffffff;
+                            }
+                            Text {
+                                text: "Before the next lecture";
+                                color: #ffffff;
+                                font-size: 16px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                        // max-width: wrapped text is measured at its one-line width.
+                        Text {
+                            text: "\u{201C}" + Playback.title + "\u{201D} comes with "
+                                + (Playback.prompt-items.length == 1 ? "a resource" : Playback.prompt-items.length + " resources")
+                                + ". Open, then tick off, what you've worked through.";
+                            color: #ffffffb3;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                            max-width: 400px;
+                        }
+                        VerticalLayout {
+                            spacing: 2px;
+                            for item in Playback.prompt-items: Rectangle {
+                                height: 38px;
+                                border-radius: 8px;
+                                background: row-touch.has-hover ? #ffffff14 : #ffffff08;
+                                row-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { Playback.open-resource(item.path); }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 10px;
+                                    Rectangle {
+                                        width: 16px;
+                                        accessible-role: button;
+                                        accessible-label: item.done ? "Mark as not done" : "Mark as done";
+                                        Image {
+                                            source: item.done ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
+                                            width: 16px;
+                                            height: 16px;
+                                            colorize: item.done ? #ffffffcc : tick-touch.has-hover ? #ffffffb3 : #ffffff4d;
+                                        }
+                                        tick-touch := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { Playback.toggle-resource(item.id, !item.done); }
+                                        }
+                                    }
+                                    Image {
+                                        source: @image-url("icons/file-text.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        y: (parent.height - self.height) / 2;
+                                        colorize: #ffffffb3;
+                                    }
+                                    Text {
+                                        text: item.name;
+                                        color: item.done ? #ffffff99 : #ffffffdd;
+                                        font-size: 13px;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: "Open";
+                                        color: #ffffffb3;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            Chip {
+                                text: "Stay here";
+                                clicked => { Playback.open-menu = ""; }
+                            }
+                            Chip {
+                                text: "Next lecture";
+                                selected: true;
+                                clicked => {
+                                    Playback.open-menu = "";
+                                    Playback.next();
+                                }
                             }
                         }
                     }
