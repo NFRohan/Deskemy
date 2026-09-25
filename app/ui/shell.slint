@@ -21,70 +21,67 @@ export global Nav {
     in-out property <bool> sidebar-collapsed;
 }
 
+/// A window button as the Tauri app's TopBar.svelte: a Lucide glyph on a
+/// rounded hover background (red for close).
 component WindowButton inherits Rectangle {
     in property <string> label;
-    in property <string> commands;
-    in property <color> tint;
-    in property <color> hover;
+    in property <image> icon;
+    in property <length> icon-size: 16px;
+    in property <bool> danger;
     callback clicked;
 
-    width: 40px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 4px;
-    background: touch.has-hover ? root.hover : transparent;
+    background: touch.has-hover ? (root.danger ? Theme.error.transparentize(0.2) : Theme.surface-container-highest)
+        : transparent;
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => { root.clicked(); }
 
-    Path {
-        commands: root.commands;
-        stroke: root.tint;
-        stroke-width: 1px;
-        viewbox-width: 10;
-        viewbox-height: 10;
-        width: 10px;
-        height: 10px;
+    Image {
+        source: root.icon;
+        width: root.icon-size;
+        height: root.icon-size;
+        colorize: touch.has-hover ? Theme.on-surface : Theme.on-surface-variant;
     }
     touch := TouchArea {
         clicked => { root.clicked(); }
     }
 }
 
-/// Minimize / maximize-restore / close. `tint` is the glyph colour, so the
-/// player can use them in white over video.
+/// Minimize / maximize-restore / close.
 export component WindowButtons inherits HorizontalLayout {
-    in property <color> tint: Theme.on-surface-variant;
-    in property <color> hover: Theme.surface-container-highest;
-    spacing: 2px;
+    spacing: 4px;
 
     WindowButton {
         label: "Minimize";
-        tint: root.tint;
-        hover: root.hover;
-        commands: "M 0.5 5.5 L 9.5 5.5";
+        icon: @image-url("icons/minus.svg");
         clicked => { WindowChrome.minimize(); }
     }
     WindowButton {
         label: WindowChrome.maximized ? "Restore" : "Maximize";
-        tint: root.tint;
-        hover: root.hover;
-        commands: WindowChrome.maximized
-            ? "M 0.5 3.5 L 6.5 3.5 L 6.5 9.5 L 0.5 9.5 Z M 2.5 3.5 L 2.5 0.5 L 9.5 0.5 L 9.5 7.5 L 6.5 7.5"
-            : "M 0.5 0.5 L 9.5 0.5 L 9.5 9.5 L 0.5 9.5 Z";
+        icon: WindowChrome.maximized ? @image-url("icons/restore.svg") : @image-url("icons/square.svg");
+        icon-size: 13px;
         clicked => { WindowChrome.toggle-maximize(); }
     }
     WindowButton {
         label: "Close";
-        tint: root.tint;
-        hover: #e81123;
-        commands: "M 0.5 0.5 L 9.5 9.5 M 9.5 0.5 L 0.5 9.5";
+        icon: @image-url("icons/x.svg");
+        danger: true;
         clicked => { WindowChrome.close(); }
     }
 }
 
-/// The 48px bar over the page: drag it to move the window, double-click to
-/// maximize; breadcrumbs on the left, window buttons on the right.
-export component TopBar inherits Rectangle {
+/// The 48px title bar: drag it to move the window, double-click to maximize;
+/// breadcrumbs on the left (the last is where you are; others with a target
+/// are links), window buttons on the right.
+export component TitleBar inherits Rectangle {
+    in property <[string]> crumbs;
+    /// Per crumb, where it leads ("" = not a link).
+    in property <[string]> targets;
+    callback picked(int);
+
     height: 48px;
     background: Theme.surface;
 
@@ -95,10 +92,10 @@ export component TopBar inherits Rectangle {
 
         HorizontalLayout {
             padding-left: 16px;
-            padding-right: 8px;
+            padding-right: 10px;
             spacing: 6px;
 
-            for crumb[i] in Nav.crumbs: HorizontalLayout {
+            for crumb[i] in root.crumbs: HorizontalLayout {
                 spacing: 6px;
                 if i > 0: Text {
                     text: "/";
@@ -107,29 +104,26 @@ export component TopBar inherits Rectangle {
                     vertical-alignment: center;
                 }
                 Text {
-                    property <bool> link: i < Nav.crumbs.length - 1 && i < Nav.crumb-targets.length
-                        && Nav.crumb-targets[i] != "";
+                    property <bool> link: i < root.crumbs.length - 1 && i < root.targets.length
+                        && root.targets[i] != "";
                     text: crumb;
-                    color: i == Nav.crumbs.length - 1 || (self.link && crumb-touch.has-hover)
+                    color: i == root.crumbs.length - 1 || (self.link && crumb-touch.has-hover)
                         ? Theme.on-surface : Theme.on-surface-variant;
                     font-size: Theme.label-md;
                     font-weight: 600;
                     vertical-alignment: center;
+                    overflow: elide;
                     crumb-touch := TouchArea {
                         enabled: parent.link;
                         mouse-cursor: parent.link ? MouseCursor.pointer : MouseCursor.default;
-                        clicked => {
-                            Nav.page = Nav.crumb-targets[i];
-                            Nav.crumbs = [crumb];
-                            Nav.crumb-targets = [""];
-                        }
+                        clicked => { root.picked(i); }
                     }
                 }
             }
             Rectangle { horizontal-stretch: 1; }
             WindowButtons {
-                y: 8px;
-                height: 32px;
+                y: (parent.height - 28px) / 2;
+                height: 28px;
             }
         }
     }
@@ -138,6 +132,17 @@ export component TopBar inherits Rectangle {
         y: parent.height - 1px;
         height: 1px;
         background: Theme.outline-variant;
+    }
+}
+
+/// The title bar over the pages, following `Nav`.
+export component TopBar inherits TitleBar {
+    crumbs: Nav.crumbs;
+    targets: Nav.crumb-targets;
+    picked(i) => {
+        Nav.page = Nav.crumb-targets[i];
+        Nav.crumbs = [Nav.crumbs[i]];
+        Nav.crumb-targets = [""];
     }
 }
 

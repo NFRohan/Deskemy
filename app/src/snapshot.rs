@@ -37,6 +37,11 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
     let playback = ui.global::<crate::Playback>();
     playback.set_title("IAM Introduction: Users, Groups, Policies".into());
     playback.set_subtitle("IAM & AWS CLI".into());
+    playback.set_course_title("Ultimate AWS Certified Solutions Architect Associate 2025".into());
+    playback.set_course_id("sample".into());
+    playback.set_clock("20:14".into());
+    // "fullscreen": the player as it looks fullscreen (header over the picture).
+    playback.set_fullscreen(menu == "fullscreen");
     // Playback info as it looks for a typical course lecture.
     let line = |label, value: &str| (label, value.to_string());
     let groups: crate::stats::Groups = vec![

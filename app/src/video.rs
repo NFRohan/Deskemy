@@ -831,6 +831,8 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             if let Some(np) = now_playing {
                 playback.set_title(np.title.into());
                 playback.set_subtitle(np.section.into());
+                playback.set_course_title(np.course.into());
+                playback.set_course_id(np.course_id.into());
                 playback.set_up_next(np.up_next.unwrap_or_default().into());
                 playback.set_has_previous(np.has_previous);
                 playback.set_has_next(np.has_next);

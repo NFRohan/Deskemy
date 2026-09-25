@@ -3,7 +3,7 @@
 import "fonts/InterVariable.ttf";
 
 import {
-    BookmarkRow, LectureRow, MenuItem, Playback, PlayerOverlay, ResourceGroup, ResourceItem, SectionRow,
+    BookmarkRow, LectureRow, MenuItem, Playback, PlayerOverlay, PlayerTopBar, ResourceGroup, ResourceItem, SectionRow,
     StatGroup, StatLine, StatRow,
 } from "player.slint";
 import { CoursePanel } from "course_panel.slint";
@@ -40,6 +40,9 @@ export component AppWindow inherits Window {
     background: root.playing ? #000000 : Theme.background;
     default-font-family: "Inter Variable";
     default-font-size: 14px;
+    // A notch heavier than Inter's regular: subpixel text renders thinner
+    // than the Tauri app's did.
+    default-font-weight: 500;
 
     // Keep the maximize/restore glyph honest however the window changed
     // (button, double-click, Win+↑, snapping).
@@ -58,31 +61,41 @@ export component AppWindow inherits Window {
     in property <image> video-frame;
     // The course panel sits beside the video, which narrows to make room.
     property <length> panel-width: root.playing && Playback.panel-open ? 340px : 0px;
+    // In a window the player has a title bar above the video, as the Tauri app.
+    property <length> bar-height: root.playing && !Playback.fullscreen ? 48px : 0px;
     out property <length> video-width: video.width;
     out property <length> video-height: video.height;
 
     video := Image {
         x: 0;
-        y: 0;
+        y: root.bar-height;
         width: parent.width - root.panel-width;
-        height: parent.height;
+        height: parent.height - root.bar-height;
         source: root.video-frame;
         image-fit: fill;
         visible: root.playing;
     }
 
     // Anything after the video in the tree draws on top of it.
+    if root.playing && !Playback.fullscreen: PlayerTopBar {
+        x: 0;
+        y: 0;
+        width: parent.width;
+    }
+
     if root.playing: PlayerOverlay {
         // Explicit x: a fixed-width child is otherwise centred in its parent.
         x: 0;
+        y: root.bar-height;
         width: parent.width - root.panel-width;
-        height: parent.height;
+        height: parent.height - root.bar-height;
     }
 
     if root.playing && Playback.panel-open: CoursePanel {
         x: parent.width - root.panel-width;
+        y: root.bar-height;
         width: root.panel-width;
-        height: parent.height;
+        height: parent.height - root.bar-height;
     }
 
     // Everything but the player: sidebar, top bar and the current page.

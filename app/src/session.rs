@@ -24,6 +24,9 @@ const SAVE_EVERY: Duration = Duration::from_secs(5);
 pub struct NowPlaying {
     pub title: String,
     pub section: String,
+    /// The course ("" and "" for a bare file).
+    pub course: String,
+    pub course_id: String,
     pub up_next: Option<String>,
     pub has_previous: bool,
     pub has_next: bool,
@@ -240,13 +243,15 @@ impl Session {
             }
         }
 
-        let (title, section) = match view {
-            Some((title, _, _, section)) => (title, section),
-            None => (file_title(&item.path), String::new()),
+        let (title, course_id, course, section) = match view {
+            Some(view) => view,
+            None => (file_title(&item.path), String::new(), String::new(), String::new()),
         };
         inner.now = NowPlaying {
             title,
             section,
+            course,
+            course_id,
             up_next,
             has_previous: inner.index > 0,
             has_next: inner.index + 1 < inner.items.len(),

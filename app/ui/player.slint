@@ -2,7 +2,8 @@
 // directly on the video, monochrome, no panels — only soft scrims top and
 // bottom for legibility — with a thin seek bar and "Ends at" time.
 
-import { WindowButtons, WindowChrome } from "shell.slint";
+import { Nav, TitleBar, WindowChrome } from "shell.slint";
+import { Library } from "library.slint";
 
 /// One entry in a track / chapter / speed menu.
 export struct MenuItem {
@@ -85,6 +86,9 @@ export struct BookmarkRow {
 export global Playback {
     in property <string> title;
     in property <string> subtitle;
+    /// The playing lecture's course ("" for a bare file).
+    in property <string> course-title;
+    in property <string> course-id;
     in property <[StatRow]> stats;
     in property <bool> stats-open;
     in property <string> clock;
@@ -314,10 +318,11 @@ component MenuRow inherits Rectangle {
 /// The player overlay. Reads and drives the `Playback` global directly.
 export component PlayerOverlay inherits Rectangle {
     in-out property <bool> controls-shown: true;
-    // Never auto-hide while paused, mid-drag, with a menu open, or while the
-    // pointer is on the controls (it left the picture for one of them).
-    property <bool> pinned: Playback.paused || seek-bar.dragging || volume-bar.dragging || Playback.open-menu != ""
-        || !picture.has-hover;
+    // Never auto-hide mid-drag or with a menu open; nor, while the pointer is
+    // in the window, when paused or while it rests on the controls. Once it
+    // leaves the window they tuck away regardless.
+    property <bool> pinned: seek-bar.dragging || volume-bar.dragging || Playback.open-menu != ""
+        || (hover-area.has-hover && (Playback.paused || !picture.has-hover));
     // In a window the controls always tuck away (they sit over the video); in
     // fullscreen only with the setting on, as the Tauri player.
     property <bool> may-hide: !Playback.fullscreen || Playback.autohide-fullscreen;
@@ -502,13 +507,17 @@ export component PlayerOverlay inherits Rectangle {
         init => { self.focus(); }
         key-pressed(event) => { return root.key(event); }
 
-        // Below the controls: clicking the picture toggles pause, and any pointer
-        // movement brings the controls back. (`moved` only fires mid-press, so
-        // hover movement is read from the pointer position.)
+        // Sees every pointer move over the overlay — its children included —
+        // and loses hover when the pointer leaves the window.
+        hover-area := TouchArea {
+        mouse-cursor: root.shown ? MouseCursor.default : MouseCursor.none;
+        changed mouse-x => { root.wake(); }
+        changed mouse-y => { root.wake(); }
+
+        // Below the controls: clicking the picture toggles pause. (Pointer
+        // movement anywhere wakes the controls — see `hover-area`.)
         picture := TouchArea {
             mouse-cursor: root.shown ? MouseCursor.default : MouseCursor.none;
-            changed mouse-x => { root.wake(); }
-            changed mouse-y => { root.wake(); }
             moved => { root.wake(); }
             clicked => {
                 if Playback.open-menu != "" {
@@ -526,39 +535,32 @@ export component PlayerOverlay inherits Rectangle {
             visible: self.opacity > 0;
             animate opacity { duration: 180ms; }
 
-            // Top: back, title, wall clock.
-            Rectangle {
+            // Fullscreen: back, title and the wall clock over the picture (in a
+            // window the title bar above the video has the way back).
+            if Playback.fullscreen: Rectangle {
                 y: 0;
                 height: 120px;
                 background: @linear-gradient(180deg, #000000b3 0%, #00000000 100%);
             }
-            // The window is frameless, so the header doubles as its title bar:
-            // drag to move, double-click to maximize (not in fullscreen).
-            if !Playback.fullscreen: WindowMoveArea {
+            if Playback.fullscreen: HorizontalLayout {
                 y: 0;
-                width: parent.width;
                 height: 72px;
-                TouchArea {
-                    double-clicked => { WindowChrome.toggle-maximize(); }
-                }
-            }
-            HorizontalLayout {
-                y: 0;
-                height: 96px;
-                padding: 16px;
+                padding-left: 16px;
+                padding-right: 20px;
+                padding-top: 12px;
                 spacing: 12px;
-                alignment: stretch;
 
-                IconButton {
-                    y: 16px;
-                    icon: @image-url("icons/arrow-left.svg");
-                    clicked => { Playback.back(); }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: @image-url("icons/arrow-left.svg");
+                        clicked => { Playback.back(); }
+                    }
                 }
                 VerticalLayout {
                     horizontal-stretch: 1;
-                    alignment: start;
+                    alignment: center;
                     spacing: 2px;
-                    padding-top: 6px;
                     Text {
                         text: Playback.title;
                         color: #ffffff;
@@ -578,14 +580,7 @@ export component PlayerOverlay inherits Rectangle {
                     color: #ffffffcc;
                     font-size: 14px;
                     font-weight: 600;
-                    vertical-alignment: top;
-                    y: 16px;
-                }
-                if !Playback.fullscreen: WindowButtons {
-                    y: 8px;
-                    height: 32px;
-                    tint: #ffffff;
-                    hover: #ffffff26;
+                    vertical-alignment: center;
                 }
             }
 
@@ -1273,6 +1268,24 @@ export component PlayerOverlay inherits Rectangle {
                     }
                 }
             }
+        }
+        }
+    }
+}
+
+/// The title bar above the video in a window, as the Tauri player: where the
+/// lecture sits, with links back to the library and its course.
+export component PlayerTopBar inherits TitleBar {
+    crumbs: Playback.course-id == "" ? ["Library", Playback.title] : ["Library", Playback.course-title, Playback.title];
+    targets: Playback.course-id == "" ? ["library", ""] : ["library", "course", ""];
+    picked(i) => {
+        Playback.back();
+        if i == 0 {
+            Nav.page = "library";
+            Nav.crumbs = ["Library"];
+            Nav.crumb-targets = [""];
+        } else {
+            Library.show-course(Playback.course-id);
         }
     }
 }
