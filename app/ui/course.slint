@@ -485,11 +485,15 @@ export component CoursePage inherits Flickable {
                     if !Course.has-thumbnail: VerticalLayout {
                         alignment: center;
                         spacing: 6px;
-                        Image {
-                            source: @image-url("icons/image-plus.svg");
-                            width: 32px;
-                            height: 32px;
-                            colorize: Theme.outline-variant;
+                        // Centred by its own layout: a fixed-size child otherwise sits left.
+                        HorizontalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("icons/image-plus.svg");
+                                width: 32px;
+                                height: 32px;
+                                colorize: Theme.outline-variant;
+                            }
                         }
                         Text {
                             text: "No thumbnail";
@@ -948,11 +952,15 @@ export component CourseDialogs inherits Rectangle {
                         if !Course.has-thumbnail: VerticalLayout {
                             alignment: center;
                             spacing: 6px;
-                            Image {
-                                source: @image-url("icons/image-plus.svg");
-                                width: 36px;
-                                height: 36px;
-                                colorize: Theme.outline-variant;
+                            // Centred by its own layout: a fixed-size child otherwise sits left.
+                            HorizontalLayout {
+                                alignment: center;
+                                Image {
+                                    source: @image-url("icons/image-plus.svg");
+                                    width: 36px;
+                                    height: 36px;
+                                    colorize: Theme.outline-variant;
+                                }
                             }
                             Text {
                                 text: "No thumbnail";
