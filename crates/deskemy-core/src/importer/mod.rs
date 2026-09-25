@@ -729,6 +729,10 @@ fn match_attachment<'a>(f: &ScannedFile, section: &'a PlannedSection) -> Option<
 }
 
 fn attachment_kind(f: &ScannedFile) -> &'static str {
+    // A code project, listed as one resource (opens in the file manager).
+    if f.is_dir {
+        return "folder";
+    }
     let ext = Path::new(&f.name)
         .extension()
         .and_then(|e| e.to_str())
@@ -741,6 +745,7 @@ fn attachment_kind(f: &ScannedFile) -> &'static str {
         "sql" | "js" | "ts" | "py" | "json" | "dbml" | "java" | "rb" | "go" | "rs" | "css"
         | "c" | "cpp" | "h" | "sh" | "yml" | "yaml" | "xml" | "md" => "code",
         "txt" => "text",
+        "url" | "webloc" => "link",
         _ => "other",
     }
 }

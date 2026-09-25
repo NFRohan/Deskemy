@@ -259,6 +259,8 @@ component ResourceIcon inherits Image {
     in property <string> kind;
     source: root.kind == "pdf" || root.kind == "text" ? @image-url("icons/file-text.svg")
         : root.kind == "archive" ? @image-url("icons/file-archive.svg")
+        : root.kind == "folder" ? @image-url("icons/folder-open.svg")
+        : root.kind == "link" ? @image-url("icons/link.svg")
         : root.kind == "code" || root.kind == "html" ? @image-url("icons/file-code.svg")
         : @image-url("icons/file.svg");
     width: 16px;

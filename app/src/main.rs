@@ -155,6 +155,24 @@ fn main() -> Result<(), slint::PlatformError> {
             }
             tracing::info!(elapsed = ?started.elapsed(), "probed");
         }
+        // "import-course:<folder>" imports a real folder (reading it only) into
+        // the data directory's library and shows its page.
+        if let Some(folder) = page.as_deref().and_then(|p| p.strip_prefix("import-course:")) {
+            let importer = importing::Importing::new(db.clone(), config.clone());
+            match importing::probe(importer.importer(), &db, std::path::Path::new(folder), true, |_, _| {}) {
+                Ok((_, snap, plan)) => {
+                    let mut conn = db.lock().unwrap_or_else(|e| e.into_inner());
+                    match importer.importer().persist(&mut conn, None, &snap, &plan) {
+                        Ok(id) => {
+                            drop(conn);
+                            course.show(&ui, &id);
+                        }
+                        Err(e) => tracing::error!(error = %e, "import"),
+                    }
+                }
+                Err(e) => tracing::error!(error = %e, "probe"),
+            }
+        }
         if page.as_deref() == Some("import-scanning") {
             ui.global::<Import>().set_scanning(true);
             ui.global::<Import>().set_progress(importing::progress_label(7, 42).into());

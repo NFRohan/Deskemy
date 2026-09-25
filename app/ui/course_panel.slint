@@ -111,6 +111,8 @@ component ResourceEntry inherits Rectangle {
         Image {
             source: root.item.kind == "pdf" || root.item.kind == "text" ? @image-url("icons/file-text.svg")
                 : root.item.kind == "archive" ? @image-url("icons/file-archive.svg")
+                : root.item.kind == "folder" ? @image-url("icons/folder-open.svg")
+                : root.item.kind == "link" ? @image-url("icons/link.svg")
                 : root.item.kind == "code" || root.item.kind == "html" ? @image-url("icons/file-code.svg")
                 : @image-url("icons/file.svg");
             width: 16px;
