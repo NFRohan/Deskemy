@@ -863,6 +863,7 @@ dependencies = [
  "blake3",
  "dirs 7.0.0",
  "libloading 0.8.9",
+ "notify-debouncer-mini",
  "rusqlite",
  "serde",
  "serde_json",

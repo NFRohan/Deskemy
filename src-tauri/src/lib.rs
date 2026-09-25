@@ -386,7 +386,7 @@ pub fn run() {
             tracing::info!(active = compositor::decide(), "player compositing path");
 
             // Filesystem watcher: auto-rescan course folders on change.
-            match watcher::LibraryWatcher::start(app.handle().clone()) {
+            match watcher::start(app.handle().clone()) {
                 Ok(mut w) => {
                     if let Ok(conn) = app.state::<AppState>().db.lock() {
                         w.sync(&conn);

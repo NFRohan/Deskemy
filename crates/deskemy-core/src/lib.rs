@@ -19,3 +19,4 @@ pub mod playback;
 pub mod scanner;
 pub mod subtitles;
 pub mod thumbnails;
+pub mod watcher;
