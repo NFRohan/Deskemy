@@ -370,6 +370,7 @@ export component PlayerOverlay inherits Rectangle {
                 { keys: "N / ⇧N", action: "Next / previous lecture" },
                 { keys: "F", action: "Fullscreen" },
                 { keys: "Esc", action: "Exit / back" },
+                { keys: "Mouse back", action: "Leave the player" },
             ],
         },
         {
@@ -529,6 +530,19 @@ export component PlayerOverlay inherits Rectangle {
                     Playback.open-menu = "";
                 }
                 root.wake();
+            }
+            // The mouse's back button leaves the player (as the browser's did
+            // in the Tauri app) — after closing an open menu or dialog.
+            pointer-event(event) => {
+                if event.button == PointerEventButton.back && event.kind == PointerEventKind.up {
+                    if Playback.open-menu == "bookmark" {
+                        Playback.close-bookmark();
+                    } else if Playback.open-menu != "" {
+                        Playback.open-menu = "";
+                    } else {
+                        Playback.back();
+                    }
+                }
             }
             double-clicked => { Playback.toggle-fullscreen(); }
         }
@@ -1283,6 +1297,8 @@ export component PlayerOverlay inherits Rectangle {
 export component PlayerTopBar inherits TitleBar {
     crumbs: Playback.course-id == "" ? ["Library", Playback.title] : ["Library", Playback.course-title, Playback.title];
     targets: Playback.course-id == "" ? ["library", ""] : ["library", "course", ""];
+    back-button: true;
+    back => { Playback.back(); }
     picked(i) => {
         Playback.back();
         if i == 0 {

@@ -81,6 +81,9 @@ export component TitleBar inherits Rectangle {
     /// Per crumb, where it leads ("" = not a link).
     in property <[string]> targets;
     callback picked(int);
+    /// A back arrow before the breadcrumbs.
+    in property <bool> back-button;
+    callback back();
 
     height: 48px;
     background: Theme.surface;
@@ -91,10 +94,19 @@ export component TitleBar inherits Rectangle {
         }
 
         HorizontalLayout {
-            padding-left: 16px;
+            padding-left: root.back-button ? 8px : 16px;
             padding-right: 10px;
             spacing: 6px;
 
+            if root.back-button: HorizontalLayout {
+                padding-right: 4px;
+                WindowButton {
+                    y: (parent.height - self.height) / 2;
+                    label: "Back";
+                    icon: @image-url("icons/arrow-left.svg");
+                    clicked => { root.back(); }
+                }
+            }
             for crumb[i] in root.crumbs: HorizontalLayout {
                 spacing: 6px;
                 if i > 0: Text {
