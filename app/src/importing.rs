@@ -1,9 +1,10 @@
 //! Adding a course: pick a folder, probe it off the UI thread with live
 //! progress, preview what it would create, then import — as the Tauri
-//! sidebar's Add Folder.
+//! sidebar's Add Folder. Also hosts the folder watcher (auto-rescan), which
+//! shares the importer.
 
 use crate::library::format_duration;
-use crate::session::Db;
+use crate::session::{Db, Session};
 use crate::settings::{self, Config};
 use crate::{AppWindow, Import};
 use deskemy_core::domain::ImportPreview;
@@ -11,8 +12,10 @@ use deskemy_core::importer::{ImportPlan, ImportSnapshot, Importer};
 use deskemy_core::media::mpv_prober::MpvProber;
 use deskemy_core::media::stub::StubProber;
 use deskemy_core::media::MediaProber;
+use deskemy_core::watcher::{LibraryWatcher, RescanHost};
+use deskemy_core::db::Connection;
 use slint::ComponentHandle;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// The button's label while a folder is being probed.
@@ -42,7 +45,44 @@ pub fn check(preview: &ImportPreview, folder: &Path) -> Result<(), String> {
     Ok(())
 }
 
-type Staged = Arc<Mutex<Option<(ImportSnapshot, ImportPlan)>>>;
+type Staged = Arc<Mutex<Option<(PathBuf, ImportSnapshot, ImportPlan)>>>;
+type Watcher = Arc<Mutex<Option<LibraryWatcher>>>;
+
+/// What an auto-rescan reads from the app.
+struct Rescans {
+    db: Db,
+    importer: Arc<Importer>,
+    config: Config,
+    session: Arc<Session>,
+    ui: Mutex<slint::Weak<AppWindow>>,
+}
+
+impl RescanHost for Rescans {
+    fn db(&self) -> &Mutex<Connection> {
+        &self.db
+    }
+    fn importer(&self) -> &Importer {
+        &self.importer
+    }
+    fn enabled(&self) -> bool {
+        settings::lock(&self.config).auto_rescan
+    }
+    fn clean_titles(&self) -> bool {
+        settings::lock(&self.config).clean_titles
+    }
+    // The session's lock comes before the db's, as everywhere in the app.
+    fn active_lecture(&self) -> Option<String> {
+        self.session.lecture_id()
+    }
+    fn changed(&self) {
+        let weak = self.ui.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_refresh_library();
+            }
+        });
+    }
+}
 
 /// Probe a folder for import: the snapshot under a brief lock, then the slow
 /// probe without it. `progress` gets (done, total) per video.
@@ -68,6 +108,7 @@ pub struct Importing {
     config: Config,
     /// The previewed folder's probed plan, so confirming doesn't re-probe.
     staged: Staged,
+    watcher: Watcher,
 }
 
 impl Importing {
@@ -84,7 +125,40 @@ impl Importing {
             tracing::warn!("libmpv unavailable — importing with the stub prober (no durations)");
             Box::new(StubProber)
         };
-        Importing { importer: Arc::new(Importer::new(prober)), db, config, staged: Arc::new(Mutex::new(None)) }
+        Importing {
+            importer: Arc::new(Importer::new(prober)),
+            db,
+            config,
+            staged: Arc::new(Mutex::new(None)),
+            watcher: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Start auto-rescan: watch every course folder (and library root) the
+    /// library knows. Changes are acted on only while the setting is on.
+    pub fn start_watching(&self, ui: &AppWindow, session: Arc<Session>) {
+        let host = Rescans {
+            db: self.db.clone(),
+            importer: self.importer.clone(),
+            config: self.config.clone(),
+            session,
+            ui: Mutex::new(ui.as_weak()),
+        };
+        match LibraryWatcher::start(Arc::new(host)) {
+            Ok(watcher) => {
+                *self.watcher.lock().unwrap_or_else(|e| e.into_inner()) = Some(watcher);
+                self.sync_watcher();
+            }
+            Err(e) => tracing::warn!(error = %e, "library watcher failed to start"),
+        }
+    }
+
+    /// Watch any course folder not watched yet (after one is relocated).
+    pub fn sync_watcher(&self) {
+        let conn = self.db.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(watcher) = self.watcher.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            watcher.sync(&conn);
+        }
     }
 
     /// Pick a folder and probe it; the preview opens when that's done.
@@ -116,7 +190,7 @@ impl Importing {
                 });
             };
             let probed = probe(&importer, &db, &folder, clean, progress).map(|(preview, snap, plan)| {
-                *staged.lock().unwrap_or_else(|e| e.into_inner()) = Some((snap, plan));
+                *staged.lock().unwrap_or_else(|e| e.into_inner()) = Some((folder.clone(), snap, plan));
                 preview
             });
             let _ = slint::invoke_from_event_loop(move || {
@@ -137,15 +211,20 @@ impl Importing {
         if import.get_importing() {
             return;
         }
-        let Some((snap, plan)) = self.staged.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        let Some((folder, snap, plan)) = self.staged.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
         import.set_error("".into());
         import.set_importing(true);
-        let (importer, db, weak) = (self.importer.clone(), self.db.clone(), ui.as_weak());
+        let (importer, db, watcher, weak) = (self.importer.clone(), self.db.clone(), self.watcher.clone(), ui.as_weak());
         std::thread::spawn(move || {
             // Phase 3: a brief lock to write it all.
             let result = importer
                 .persist(&mut db.lock().unwrap_or_else(|e| e.into_inner()), None, &snap, &plan)
                 .map_err(|e| e.to_string());
+            if result.is_ok() {
+                if let Some(w) = watcher.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    w.watch(&folder);
+                }
+            }
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(ui) = weak.upgrade() else { return };
                 let import = ui.global::<Import>();

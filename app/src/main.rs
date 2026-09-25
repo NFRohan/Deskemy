@@ -231,7 +231,9 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     wire_tracks(&ui, &tracks);
-    wire_import(&ui, &std::rc::Rc::new(importing::Importing::new(db.clone(), config.clone())));
+    let importing = std::rc::Rc::new(importing::Importing::new(db.clone(), config.clone()));
+    importing.start_watching(&ui, player.session().clone());
+    wire_import(&ui, &importing);
     let (p, weak) = (prefs.clone(), ui.as_weak());
     ui.global::<Prefs>().on_set(move |key, value| {
         if let Some(ui) = weak.upgrade() {
@@ -252,7 +254,7 @@ fn main() -> Result<(), slint::PlatformError> {
     });
     wire_lists(&ui, &db, player.session());
     wire_search(&ui, &db, &course, player.session());
-    wire_course(&ui, &course, player.session());
+    wire_course(&ui, &course, player.session(), &importing);
 
     let result = ui.run();
     player.shutdown();
@@ -261,7 +263,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // library first — the window's callbacks hold it too — so the files
     // aren't locked when it does.
     let restart = prefs.restart_requested();
-    drop((ui, library, course, tracks, prefs, db, config));
+    drop((ui, library, course, tracks, prefs, importing, db, config));
     if restart {
         match std::env::current_exe().and_then(|exe| std::process::Command::new(exe).spawn()) {
             Ok(_) => tracing::info!("relaunching to apply the imported backup"),
@@ -408,7 +410,12 @@ fn wire_tracks(ui: &AppWindow, page: &std::rc::Rc<career::TracksPage>) {
 }
 
 /// The course page's actions.
-fn wire_course(ui: &AppWindow, page: &std::rc::Rc<course_page::CoursePage>, session: &std::sync::Arc<session::Session>) {
+fn wire_course(
+    ui: &AppWindow,
+    page: &std::rc::Rc<course_page::CoursePage>,
+    session: &std::sync::Arc<session::Session>,
+    importing: &std::rc::Rc<importing::Importing>,
+) {
     let library = ui.global::<Library>();
     let (p, weak) = (page.clone(), ui.as_weak());
     library.on_show_course(move |id| {
@@ -446,7 +453,12 @@ fn wire_course(ui: &AppWindow, page: &std::rc::Rc<course_page::CoursePage>, sess
     action!(on_pick_cover, |p, ui| p.pick_cover(&ui));
     action!(on_paste_cover, |p, ui| p.paste_cover(&ui));
     action!(on_clear_cover, |p, ui| p.clear_cover(&ui));
-    action!(on_relocate, |p, ui| p.relocate(&ui));
+    let watch = importing.clone();
+    action!(on_relocate, |p, ui| {
+        p.relocate(&ui);
+        // The course's new folder.
+        watch.sync_watcher()
+    });
     let (p, weak) = (page.clone(), ui.as_weak());
     course.on_delete_course(move || {
         let Some(ui) = weak.upgrade() else { return };

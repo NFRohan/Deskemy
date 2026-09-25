@@ -134,7 +134,11 @@ parent; wrapped `Text` is measured at its unwrapped width, so give it a
   `src/importing.rs`). `--snapshot <png> import-probe:<folder>` probes a real
   folder inline (reads only)
 - ☐ Run it: Add Folder in a real window (native picker, progress, import)
-- ☐ Folder watcher (auto-rescan)
+- ☑ Folder watcher (auto-rescan): the core's `LibraryWatcher`, hosted by
+  the app; skips the course playing, refreshes the library after a rescan;
+  new imports and relocated folders are watched too
+- ☐ Run it: with auto-rescan on, add a video to a course folder and see the
+  library pick it up (~2 s debounce)
 
 ## Later phases
 
