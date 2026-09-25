@@ -54,13 +54,37 @@ fn parse_args() -> Mode {
     }
 }
 
+/// Where this run logs: the console in debug builds; in release (no console)
+/// `<data dir>/logs/deskemy.log`, rewritten each launch with the previous
+/// run's kept as `deskemy.prev.log`.
+fn log_file() -> Option<std::fs::File> {
+    if cfg!(debug_assertions) {
+        return None;
+    }
+    let dir = paths::data_dir()?.join("logs");
+    std::fs::create_dir_all(&dir).ok()?;
+    let log = dir.join("deskemy.log");
+    let _ = std::fs::rename(&log, dir.join("deskemy.prev.log"));
+    std::fs::File::create(log).ok()
+}
+
 fn main() -> Result<(), slint::PlatformError> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("deskemy=debug,deskemy_core=debug,info")),
-        )
-        .init();
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("deskemy=debug,deskemy_core=debug,info"));
+    match log_file() {
+        Some(file) => tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_ansi(false)
+            .with_writer(Mutex::new(file))
+            .init(),
+        None => tracing_subscriber::fmt().with_env_filter(filter).init(),
+    }
+    // A panic in release would otherwise vanish with no console to print to.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!(%info, "panic");
+        default_hook(info);
+    }));
 
     let mode = parse_args();
     let offscreen = match &mode {
