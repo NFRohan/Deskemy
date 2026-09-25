@@ -10,9 +10,13 @@ import { CoursePanel } from "course_panel.slint";
 import { Nav, NotPortedYet, Sidebar, TopBar, WindowChrome } from "shell.slint";
 import { CourseCard, Hero, Library, LibraryPage, SelectOption } from "library.slint";
 import { Course, CourseDialogs, CoursePage, CurriculumLecture, CurriculumSection } from "course.slint";
+import {
+    BookmarkEntry, BookmarkGroup, BookmarksPage, FavoritesPage, HistoryGroup, HistoryPage, HistoryRow, Lists,
+} from "pages.slint";
 import { Theme } from "theme.slint";
 
 export {
+    BookmarkEntry, BookmarkGroup, HistoryGroup, HistoryRow, Lists,
     BookmarkRow, Course, CourseCard, CurriculumLecture, CurriculumSection, Hero, LectureRow, Library, MenuItem,
     Nav, Playback, ResourceGroup, ResourceItem, SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme,
     WindowChrome,
@@ -37,6 +41,10 @@ export component AppWindow inherits Window {
 
     /// Re-read the library (after watching, progress has changed).
     callback refresh-library();
+    /// A page came into view (load its data).
+    callback page-shown(string);
+    property <string> page: Nav.page;
+    changed page => { root.page-shown(root.page); }
 
     // Video: mpv renders into a GL texture that Rust hands us here. Rust reads
     // the element's size back to render at exactly its physical resolution.
@@ -88,8 +96,12 @@ export component AppWindow inherits Window {
 
                 if Nav.page == "library": LibraryPage { }
                 if Nav.page == "course": CoursePage { }
+                if Nav.page == "favorites": FavoritesPage { }
+                if Nav.page == "history": HistoryPage { }
+                if Nav.page == "bookmarks": BookmarksPage { }
 
-                if Nav.page != "library" && Nav.page != "course": NotPortedYet {
+                if Nav.page != "library" && Nav.page != "course" && Nav.page != "favorites"
+                    && Nav.page != "history" && Nav.page != "bookmarks": NotPortedYet {
                     title: Nav.crumbs[0];
                 }
             }

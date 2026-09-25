@@ -1,0 +1,379 @@
+// The simple list pages — Favorites, History and Bookmarks — as the Tauri
+// app's routes/favorites, routes/history and routes/bookmarks.
+
+import { Theme } from "theme.slint";
+import { CourseCard, CourseGrid, Library } from "library.slint";
+
+export struct HistoryRow {
+    lecture: string,
+    /// Time of day it was last watched ("14:05").
+    time: string,
+    title: string,
+    /// "Course · Section".
+    context: string,
+    completed: bool,
+    /// 0-100, or -1 when the duration is unknown.
+    percent: int,
+    /// Where to start: the saved spot, or 0 to watch a finished one again.
+    start: float,
+}
+
+export struct HistoryGroup {
+    /// "Today", "Yesterday", or a date.
+    label: string,
+    items: [HistoryRow],
+}
+
+export struct BookmarkEntry {
+    id: string,
+    lecture: string,
+    time: string,
+    /// The label, else the lecture's title.
+    title: string,
+    /// "Section · Lecture".
+    context: string,
+    position: float,
+}
+
+export struct BookmarkGroup {
+    course: string,
+    title: string,
+    items: [BookmarkEntry],
+}
+
+export global Lists {
+    in property <[CourseCard]> favorites;
+    in property <[HistoryGroup]> history;
+    in property <[BookmarkGroup]> bookmarks;
+
+    /// Play a lecture from `start` seconds.
+    callback play-at(string, float);
+    callback delete-bookmark(string);
+}
+
+component PageTitle inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> text;
+    spacing: 8px;
+    alignment: start;
+    Image {
+        source: root.icon;
+        width: 18px;
+        height: 18px;
+        y: (parent.height - self.height) / 2;
+        colorize: Theme.on-surface;
+    }
+    Text {
+        text: root.text;
+        color: Theme.on-surface;
+        font-size: Theme.headline-sm;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+}
+
+component Empty inherits Text {
+    color: Theme.on-surface-variant;
+    font-size: Theme.body-sm;
+    horizontal-alignment: center;
+    wrap: word-wrap;
+    height: 96px;
+    vertical-alignment: center;
+}
+
+/// A bordered list with hairline dividers — the pages' row container.
+component RowList inherits Rectangle {
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+    clip: true;
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.outline-variant;
+}
+
+export component FavoritesPage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+    property <length> page-width: min(self.width, 1280px) - 48px;
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 24px;
+        alignment: start;
+
+        PageTitle {
+            icon: @image-url("icons/star.svg");
+            text: "Favorites";
+        }
+        if Lists.favorites.length == 0: Empty {
+            text: "No favorites yet. Star a course from its page to pin it here.";
+        }
+        if Lists.favorites.length > 0: CourseGrid {
+            cards: Lists.favorites;
+            grid-width: root.page-width;
+            open(id) => { Library.show-course(id); }
+        }
+    }
+}
+
+export component HistoryPage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+    property <length> page-width: min(self.width - 48px, 1024px);
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 24px;
+        alignment: start;
+
+        PageTitle {
+            icon: @image-url("icons/history.svg");
+            text: "History";
+        }
+        if Lists.history.length == 0: Empty {
+            text: "Nothing watched yet. Play a lecture and it'll show up here so you can pick up where you left off.";
+        }
+        for group in Lists.history: VerticalLayout {
+            spacing: 8px;
+            Text {
+                text: group.label;
+                color: Theme.on-surface-variant;
+                font-size: Theme.label-md;
+                font-weight: 600;
+            }
+            RowList {
+                height: rows.preferred-height;
+                rows := VerticalLayout {
+                    for row[i] in group.items: VerticalLayout {
+                        if i > 0: Divider { }
+                        Rectangle {
+                            height: 56px;
+                            background: touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
+                            accessible-role: button;
+                            accessible-label: "Resume " + row.title;
+                            touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Lists.play-at(row.lecture, row.start); }
+                            }
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                spacing: 12px;
+                                Text {
+                                    text: row.time;
+                                    width: 48px;
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                    vertical-alignment: center;
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    Text {
+                                        text: row.title;
+                                        color: Theme.on-surface;
+                                        font-size: Theme.body-md;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: row.context;
+                                        color: Theme.on-surface-variant;
+                                        font-size: Theme.label-sm;
+                                        overflow: elide;
+                                    }
+                                }
+                                // Done, how far in, or just "Resume".
+                                HorizontalLayout {
+                                    width: 112px;
+                                    spacing: 8px;
+                                    alignment: end;
+                                    if row.completed: HorizontalLayout {
+                                        spacing: 4px;
+                                        Image {
+                                            source: @image-url("icons/circle-check.svg");
+                                            width: 14px;
+                                            height: 14px;
+                                            y: (parent.height - self.height) / 2;
+                                            colorize: Theme.secondary-container;
+                                        }
+                                        Text {
+                                            text: "Done";
+                                            color: Theme.secondary-container;
+                                            font-size: Theme.label-md;
+                                            font-weight: 600;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    if !row.completed && row.percent >= 0: Rectangle {
+                                        width: 64px;
+                                        height: 6px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 3px;
+                                        background: Theme.surface-container-highest;
+                                        clip: true;
+                                        Rectangle {
+                                            x: 0;
+                                            width: parent.width * row.percent / 100;
+                                            border-radius: 3px;
+                                            background: Theme.primary;
+                                        }
+                                    }
+                                    if !row.completed && row.percent >= 0: Text {
+                                        text: row.percent + "%";
+                                        width: 36px;
+                                        color: Theme.on-surface-variant;
+                                        font-size: Theme.label-sm;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                    }
+                                    if !row.completed && row.percent < 0: HorizontalLayout {
+                                        spacing: 4px;
+                                        Image {
+                                            source: @image-url("icons/play-filled.svg");
+                                            width: 13px;
+                                            height: 13px;
+                                            y: (parent.height - self.height) / 2;
+                                            colorize: Theme.accent-blue;
+                                        }
+                                        Text {
+                                            text: "Resume";
+                                            color: Theme.accent-blue;
+                                            font-size: Theme.label-md;
+                                            font-weight: 600;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component BookmarksPage inherits Flickable {
+    content-width: self.width;
+    content-height: page.preferred-height;
+    property <length> page-width: min(self.width - 48px, 1024px);
+
+    page := VerticalLayout {
+        width: root.width;
+        padding: 24px;
+        padding-left: (root.width - root.page-width) / 2;
+        padding-right: self.padding-left;
+        spacing: 24px;
+        alignment: start;
+
+        PageTitle {
+            icon: @image-url("icons/bookmark.svg");
+            text: "Bookmarks";
+        }
+        if Lists.bookmarks.length == 0: Empty {
+            text: "No bookmarks yet. While watching a lecture, open the bookmark panel in the player to add one.";
+        }
+        for group in Lists.bookmarks: VerticalLayout {
+            spacing: 8px;
+            HorizontalLayout {
+                alignment: start;
+                Text {
+                    text: group.title;
+                    color: course-touch.has-hover ? Theme.primary : Theme.on-surface;
+                    font-size: Theme.headline-sm;
+                    font-weight: 600;
+                    overflow: elide;
+                    accessible-role: button;
+                    accessible-label: group.title;
+                    course-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Library.show-course(group.course); }
+                    }
+                }
+            }
+            RowList {
+                height: rows.preferred-height;
+                rows := VerticalLayout {
+                    for mark[i] in group.items: VerticalLayout {
+                        if i > 0: Divider { }
+                        Rectangle {
+                            height: 56px;
+                            background: touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
+                            touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Lists.play-at(mark.lecture, mark.position); }
+                            }
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 8px;
+                                spacing: 12px;
+                                HorizontalLayout {
+                                    width: 80px;
+                                    spacing: 6px;
+                                    Image {
+                                        source: @image-url("icons/play-filled.svg");
+                                        width: 13px;
+                                        height: 13px;
+                                        y: (parent.height - self.height) / 2;
+                                        colorize: Theme.accent-blue;
+                                    }
+                                    Text {
+                                        text: mark.time;
+                                        color: Theme.accent-blue;
+                                        font-size: Theme.label-md;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    Text {
+                                        text: mark.title;
+                                        color: Theme.on-surface;
+                                        font-size: Theme.body-md;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: mark.context;
+                                        color: Theme.on-surface-variant;
+                                        font-size: Theme.label-sm;
+                                        overflow: elide;
+                                    }
+                                }
+                                Rectangle {
+                                    width: 32px;
+                                    height: 32px;
+                                    y: 12px;
+                                    border-radius: 6px;
+                                    background: delete-touch.has-hover ? Theme.surface-container-highest : transparent;
+                                    accessible-role: button;
+                                    accessible-label: "Delete bookmark";
+                                    Image {
+                                        source: @image-url("icons/trash-2.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: delete-touch.has-hover ? Theme.error : Theme.on-surface-variant;
+                                    }
+                                    delete-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { Lists.delete-bookmark(mark.id); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

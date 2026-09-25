@@ -4,6 +4,7 @@
 mod course_page;
 mod course_panel;
 mod library;
+mod pages;
 mod session;
 mod snapshot;
 mod stats;
@@ -82,6 +83,13 @@ fn main() -> Result<(), slint::PlatformError> {
         if let Some(menu) = player {
             snapshot::sample_playback(&ui, &menu, &db);
         }
+        if let Some(list @ ("favorites" | "history" | "bookmarks")) = page.as_deref() {
+            let nav = ui.global::<Nav>();
+            nav.set_page(list.into());
+            let title = format!("{}{}", list[..1].to_uppercase(), &list[1..]);
+            nav.set_crumbs(course_panel::model(vec![title.into()]));
+            show_list(&ui, &db, &library, list);
+        }
         // "course", or "course-cover" / "course-delete" with that dialog open.
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
             snapshot::sample_course(&ui, &db, &course);
@@ -136,19 +144,59 @@ fn main() -> Result<(), slint::PlatformError> {
             page.apply(&ui);
         }
     });
-    // After watching or an edit, both views may be stale.
-    let (weak, page, course_view) = (ui.as_weak(), library.clone(), course.clone());
+    // After watching or an edit, every view may be stale.
+    let (weak, page, course_view, lists_db) = (ui.as_weak(), library.clone(), course.clone(), db.clone());
     ui.on_refresh_library(move || {
         if let Some(ui) = weak.upgrade() {
             page.reload(&ui);
             course_view.refresh(&ui);
+            show_list(&ui, &lists_db, &page, &ui.global::<Nav>().get_page());
         }
     });
+    let (weak, page, lists_db) = (ui.as_weak(), library.clone(), db.clone());
+    ui.on_page_shown(move |name| {
+        if let Some(ui) = weak.upgrade() {
+            show_list(&ui, &lists_db, &page, &name);
+        }
+    });
+    wire_lists(&ui, &db, player.session());
     wire_course(&ui, &course, player.session());
 
     let result = ui.run();
     player.shutdown();
     result
+}
+
+/// Load a list page's data (Favorites, History, Bookmarks) when it shows.
+fn show_list(ui: &AppWindow, db: &Db, library: &library::LibraryPage, page: &str) {
+    match page {
+        "favorites" => ui.global::<Lists>().set_favorites(course_panel::model(library.favorites())),
+        "history" | "bookmarks" => pages::show(ui, db, page),
+        _ => {}
+    }
+}
+
+fn wire_lists(ui: &AppWindow, db: &Db, session: &std::sync::Arc<session::Session>) {
+    let lists = ui.global::<Lists>();
+    let (s, weak) = (session.clone(), ui.as_weak());
+    lists.on_play_at(move |lecture, start| {
+        let Some(ui) = weak.upgrade() else { return };
+        match s.open_at(&lecture, Some(start as f64)) {
+            Ok(()) => ui.set_playing(true),
+            Err(e) => tracing::warn!(error = %e, %lecture, "open lecture"),
+        }
+    });
+    let (db, weak) = (db.clone(), ui.as_weak());
+    lists.on_delete_bookmark(move |id| {
+        let conn = db.lock().unwrap_or_else(|e| e.into_inner());
+        if let Err(e) = deskemy_core::db::queries::delete_bookmark(&conn, &id) {
+            tracing::warn!(error = %e, "delete bookmark");
+        }
+        drop(conn);
+        if let Some(ui) = weak.upgrade() {
+            pages::show(&ui, &db, "bookmarks");
+        }
+    });
 }
 
 /// The course page's actions.

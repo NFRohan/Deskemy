@@ -53,6 +53,16 @@ impl Sleep {
     }
 }
 
+/// Where a lecture starts playing.
+#[derive(Clone, Copy)]
+enum Start {
+    /// Where it was left (see `resume_start`).
+    Resume,
+    /// From the top — previous / next / autoplay / replay.
+    Beginning,
+    At(f64),
+}
+
 #[derive(Clone)]
 struct Item {
     lecture_id: String,
@@ -110,6 +120,12 @@ impl Session {
     /// Open a lecture — resuming where it was left — with its course as the
     /// playlist.
     pub fn open(&self, lecture_id: &str) -> Result<(), String> {
+        self.open_at(lecture_id, None)
+    }
+
+    /// Open a lecture at `start` seconds (a bookmark, or history's "watch
+    /// again" from 0); `None` resumes where it was left.
+    pub fn open_at(&self, lecture_id: &str, start: Option<f64>) -> Result<(), String> {
         self.save_now();
         let (course_id, items) = {
             let db = self.db();
@@ -128,7 +144,7 @@ impl Session {
                 .collect();
             inner.course_id = Some(course_id);
         }
-        self.load_current(true)
+        self.load_current(start.map_or(Start::Resume, Start::At))
     }
 
     /// Play a file that isn't in the library. Nothing is persisted.
@@ -162,7 +178,7 @@ impl Session {
         };
         self.save_now();
         self.inner().index = target;
-        self.load_current(false)
+        self.load_current(Start::Beginning)
     }
 
     /// Play again after reaching the end (mpv is idle by then).
@@ -170,10 +186,10 @@ impl Session {
         if !self.inner().ended {
             return false;
         }
-        self.load_current(false).is_ok()
+        self.load_current(Start::Beginning).is_ok()
     }
 
-    fn load_current(&self, resume: bool) -> Result<(), String> {
+    fn load_current(&self, from: Start) -> Result<(), String> {
         let mut inner = self.inner();
         let item = inner.items.get(inner.index).cloned().ok_or("empty playlist")?;
         let course_id = inner.course_id.clone().unwrap_or_default();
@@ -181,7 +197,11 @@ impl Session {
         let db = self.db();
         let (saved, completed, duration) =
             queries::get_progress(&db, &item.lecture_id).unwrap_or((0.0, false, None));
-        let start = resume_start(resume, saved, completed, duration);
+        let start = match from {
+            Start::Resume => resume_start(true, saved, completed, duration),
+            Start::Beginning => 0.0,
+            Start::At(t) => t.max(0.0),
+        };
         // Per-course prefs override the global default speed where present.
         let prefs = queries::get_course_prefs(&db, &course_id).ok().flatten();
         let speed = prefs.and_then(|p| p.0).unwrap_or(self.config.default_speed);
@@ -294,7 +314,7 @@ impl Session {
             advance
         };
         if advance {
-            if let Err(e) = self.load_current(false) {
+            if let Err(e) = self.load_current(Start::Beginning) {
                 tracing::warn!(error = %e, "autoplay next lecture");
             }
         }

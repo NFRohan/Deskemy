@@ -235,23 +235,31 @@ impl LibraryPage {
             None => Hero::default(),
         });
 
-        let cards: Vec<CourseCard> = filter(&courses, &filters, now)
-            .into_iter()
-            .map(|c| CourseCard {
-                id: c.id.clone().into(),
-                resume: c.last_lecture_id.clone().unwrap_or_default().into(),
-                title: c.title.clone().into(),
-                lectures: c.lecture_count as i32,
-                percent: pct(c.completed_count, c.lecture_count),
-                started: started(c),
-                finished: finished(c),
-                status: c.scan_status.clone().into(),
-                duration: c.total_duration.map(|d| format_duration(Some(d))).unwrap_or_default().into(),
-                thumbnail: self.image(c.thumbnail_path.as_deref()),
-                has_thumbnail: c.thumbnail_path.is_some(),
-            })
-            .collect();
+        let cards: Vec<CourseCard> =
+            filter(&courses, &filters, now).into_iter().map(|c| self.card(c)).collect();
         lib.set_cards(model(cards));
+    }
+
+    /// Cards for the Favorites page (same list, starred only, as loaded).
+    pub fn favorites(&self) -> Vec<CourseCard> {
+        let courses = self.courses.borrow();
+        courses.iter().filter(|c| c.is_favorite).map(|c| self.card(c)).collect()
+    }
+
+    fn card(&self, c: &CourseSummary) -> CourseCard {
+        CourseCard {
+            id: c.id.clone().into(),
+            resume: c.last_lecture_id.clone().unwrap_or_default().into(),
+            title: c.title.clone().into(),
+            lectures: c.lecture_count as i32,
+            percent: pct(c.completed_count, c.lecture_count),
+            started: started(c),
+            finished: finished(c),
+            status: c.scan_status.clone().into(),
+            duration: c.total_duration.map(|d| format_duration(Some(d))).unwrap_or_default().into(),
+            thumbnail: self.image(c.thumbnail_path.as_deref()),
+            has_thumbnail: c.thumbnail_path.is_some(),
+        }
     }
 
     fn track_courses(&self, track: &str) -> HashSet<String> {

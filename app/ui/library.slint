@@ -367,6 +367,30 @@ component CourseCardView inherits Rectangle {
     }
 }
 
+/// Course cards in 1-4 columns (the Tauri grid's breakpoints). Takes the
+/// width to lay out in, since its height follows from it.
+export component CourseGrid inherits Rectangle {
+    in property <[CourseCard]> cards;
+    in property <length> grid-width;
+    callback open(string);
+
+    property <int> columns: root.grid-width >= 1000px ? 4 : root.grid-width >= 740px ? 3 : root.grid-width >= 480px ? 2 : 1;
+    property <length> gap: 20px;
+    property <length> card-width: (root.grid-width - (root.columns - 1) * root.gap) / root.columns;
+    property <length> card-height: root.card-width * 9 / 16 + 96px;
+
+    height: ceil(root.cards.length / root.columns) * (root.card-height + root.gap) - root.gap;
+
+    for card[i] in root.cards: CourseCardView {
+        x: mod(i, root.columns) * (root.card-width + root.gap);
+        y: floor(i / root.columns) * (root.card-height + root.gap);
+        width: root.card-width;
+        height: root.card-height;
+        course: card;
+        clicked => { root.open(card.id); }
+    }
+}
+
 export component LibraryPage inherits Flickable {
     // Scrolls vertically only: the content is exactly as wide as the view.
     content-width: self.width;
@@ -374,10 +398,6 @@ export component LibraryPage inherits Flickable {
 
     // Up to 4 columns, like the Tauri grid's breakpoints (container width).
     property <length> page-width: min(self.width, 1280px) - 48px;
-    property <int> columns: root.page-width >= 1000px ? 4 : root.page-width >= 740px ? 3 : root.page-width >= 480px ? 2 : 1;
-    property <length> gap: 20px;
-    property <length> card-width: (root.page-width - (root.columns - 1) * root.gap) / root.columns;
-    property <length> card-height: root.card-width * 9 / 16 + 96px;
 
     page := VerticalLayout {
         width: root.width;
@@ -627,16 +647,10 @@ export component LibraryPage inherits Flickable {
                 height: 64px;
                 vertical-alignment: center;
             }
-            if Library.cards.length > 0: Rectangle {
-                height: ceil(Library.cards.length / root.columns) * (root.card-height + root.gap) - root.gap;
-                for card[i] in Library.cards: CourseCardView {
-                    x: mod(i, root.columns) * (root.card-width + root.gap);
-                    y: floor(i / root.columns) * (root.card-height + root.gap);
-                    width: root.card-width;
-                    height: root.card-height;
-                    course: card;
-                    clicked => { Library.show-course(card.id); }
-                }
+            if Library.cards.length > 0: CourseGrid {
+                cards: Library.cards;
+                grid-width: root.page-width;
+                open(id) => { Library.show-course(id); }
             }
         }
     }
