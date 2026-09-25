@@ -3,8 +3,8 @@
 import { Theme } from "theme.slint";
 import { Select, SelectOption } from "library.slint";
 
-/// Preferences from config.json. Every change goes through `set(key, value)`
-/// and comes back once saved.
+/// Preferences from config.json (every change goes through `set(key, value)`
+/// and comes back once saved), and the maintenance actions (`run(key)`).
 export global Prefs {
     in property <[SelectOption]> themes;
     in property <[SelectOption]> speeds;
@@ -21,6 +21,76 @@ export global Prefs {
     in property <bool> auto-rescan;
 
     callback set(string, string);
+
+    /// The maintenance action running ("" = none); they run one at a time.
+    in property <string> busy;
+    in-out property <string> result-reconcile;
+    in-out property <string> result-reindex;
+    in-out property <string> result-subs;
+    in-out property <string> result-compact;
+    in-out property <string> result-clearsubs;
+    in-out property <string> result-gc;
+    callback run(string);
+    public function set-result(key: string, message: string) {
+        if key == "reconcile" { self.result-reconcile = message; }
+        if key == "reindex" { self.result-reindex = message; }
+        if key == "subs" { self.result-subs = message; }
+        if key == "compact" { self.result-compact = message; }
+        if key == "clearsubs" { self.result-clearsubs = message; }
+        if key == "gc" { self.result-gc = message; }
+    }
+
+    // Storage ("—" without a data folder; cues -1).
+    in property <string> db-size: "—";
+    in property <string> thumbnail-size: "—";
+    in property <int> cues: -1;
+    in property <string> cues-label: "—";
+}
+
+/// A maintenance button: spins while its action runs, and waits while any other does.
+component ActionButton inherits Rectangle {
+    in property <string> key;
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> active: true;
+    property <bool> running: Prefs.busy == root.key;
+    property <bool> usable: root.active && Prefs.busy == "";
+
+    height: 36px;
+    width: row.preferred-width;
+    border-radius: 4px;
+    background: root.usable && touch.has-hover ? Theme.surface-container-highest : Theme.surface-container-high;
+    opacity: root.usable || root.running ? 1 : 0.6;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.usable;
+    accessible-action-default => { Prefs.run(root.key); }
+
+    row := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        Image {
+            source: root.running ? @image-url("icons/loader-circle.svg") : root.icon;
+            width: 15px;
+            height: 15px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.on-surface;
+            transform-rotation: root.running ? animation-tick() / 1s * 360deg : 0deg;
+        }
+        Text {
+            text: root.text;
+            color: Theme.on-surface;
+            font-size: Theme.label-md;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.usable;
+        mouse-cursor: pointer;
+        clicked => { Prefs.run(root.key); }
+    }
 }
 
 component Switch inherits Rectangle {
@@ -59,8 +129,10 @@ component Switch inherits Rectangle {
 component Row inherits HorizontalLayout {
     in property <string> title;
     in property <string> description;
-    /// Room for the text (the page sets it; see TextWidth below).
+    /// Room for the text (the page sets it from its width).
     in property <length> text-width;
+    /// The last result of the row's action.
+    in property <string> result;
 
     padding: 16px;
     spacing: 16px;
@@ -78,6 +150,12 @@ component Row inherits HorizontalLayout {
         Text {
             text: root.description;
             color: Theme.on-surface-variant;
+            font-size: Theme.label-sm;
+            wrap: word-wrap;
+            max-width: root.text-width;
+        }        if root.result != "": Text {
+            text: root.result;
+            color: Theme.primary;
             font-size: Theme.label-sm;
             wrap: word-wrap;
             max-width: root.text-width;
@@ -225,7 +303,7 @@ export component SettingsPage inherits Flickable {
 
         VerticalLayout {
             spacing: 12px;
-            Heading { text: "LIBRARY"; }
+            Heading { text: "LIBRARY MAINTENANCE"; }
             Group {
                 height: library.preferred-height;
                 library := VerticalLayout {
@@ -248,6 +326,127 @@ export component SettingsPage inherits Flickable {
                             label: "Auto-rescan folders";
                             checked: Prefs.auto-rescan;
                             toggled => { Prefs.set("auto-rescan", Prefs.auto-rescan ? "false" : "true"); }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Check for missing files";
+                        description: "Flag courses whose video files have moved or been deleted.";
+                        text-width: root.text-width;
+                        result: Prefs.result-reconcile;
+                        ActionButton {
+                            key: "reconcile";
+                            text: "Check";
+                            icon: @image-url("icons/file-search.svg");
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Rebuild search index";
+                        description: "Refresh full-text search from the current library.";
+                        text-width: root.text-width;
+                        result: Prefs.result-reindex;
+                        ActionButton {
+                            key: "reindex";
+                            text: "Rebuild";
+                            icon: @image-url("icons/refresh-cw.svg");
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Index subtitle text";
+                        description: "Parse sidecar subtitles so Search can find spoken words.";
+                        text-width: root.text-width;
+                        result: Prefs.result-subs;
+                        ActionButton {
+                            key: "subs";
+                            text: "Index";
+                            icon: @image-url("icons/captions.svg");
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 12px;
+            Heading { text: "STORAGE"; }
+            Group {
+                height: storage.preferred-height;
+                storage := VerticalLayout {
+                    Row {
+                        title: "Database";
+                        description: "Course metadata, progress, bookmarks and search indexes — videos are never stored here. Compact reclaims space freed by removed courses or cleared indexes.";
+                        text-width: root.text-width;
+                        result: Prefs.result-compact;
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: center;
+                            Text {
+                                text: Prefs.db-size;
+                                color: Theme.on-surface;
+                                font-size: Theme.label-md;
+                                horizontal-alignment: right;
+                            }
+                            HorizontalLayout {
+                                alignment: end;
+                                ActionButton {
+                                    key: "compact";
+                                    text: "Compact";
+                                    icon: @image-url("icons/minimize-2.svg");
+                                }
+                            }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Subtitle search index";
+                        description: "Indexed subtitle text — the main database growth. Clearing frees the most space; re-index anytime with \"Index subtitle text\" above.";
+                        text-width: root.text-width;
+                        result: Prefs.result-clearsubs;
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: center;
+                            Text {
+                                text: Prefs.cues-label;
+                                color: Theme.on-surface;
+                                font-size: Theme.label-md;
+                                horizontal-alignment: right;
+                            }
+                            HorizontalLayout {
+                                alignment: end;
+                                ActionButton {
+                                    key: "clearsubs";
+                                    text: "Clear";
+                                    icon: @image-url("icons/trash-2.svg");
+                                    active: Prefs.cues != 0;
+                                }
+                            }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Thumbnail cache";
+                        description: "Cached course covers and resume frames (stored on disk, not in the database). Clean deletes images no longer used by any course.";
+                        text-width: root.text-width;
+                        result: Prefs.result-gc;
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: center;
+                            Text {
+                                text: Prefs.thumbnail-size;
+                                color: Theme.on-surface;
+                                font-size: Theme.label-md;
+                                horizontal-alignment: right;
+                            }
+                            HorizontalLayout {
+                                alignment: end;
+                                ActionButton {
+                                    key: "gc";
+                                    text: "Clean";
+                                    icon: @image-url("icons/trash-2.svg");
+                                }
+                            }
                         }
                     }
                 }

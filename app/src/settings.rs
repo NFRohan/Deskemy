@@ -2,8 +2,11 @@
 //! routes/settings.
 
 use crate::course_panel::model;
+use crate::session::Db;
 use crate::{AppWindow, Playback, Prefs, SelectOption, Theme};
 use deskemy_core::config::AppConfig;
+use deskemy_core::maintenance::{self, GcReport, ReconcileReport};
+use deskemy_core::{courses, paths};
 use slint::ComponentHandle;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -55,16 +58,150 @@ pub fn apply(config: &mut AppConfig, key: &str, value: &str) -> bool {
     true
 }
 
-/// Where config.json lives (None without a data directory: changes then
-/// last only for this run).
+/// 129015 → "129,015".
+pub fn grouped(n: i64) -> String {
+    let digits = n.unsigned_abs().to_string();
+    let mut out = String::new();
+    for (i, d) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(d);
+    }
+    if n < 0 { format!("-{out}") } else { out }
+}
+
+fn plural(n: i64, word: &str) -> String {
+    format!("{n} {word}{}", if n == 1 { "" } else { "s" })
+}
+
+/// "512 B", "12 KB", "3.4 MB" — as the Tauri page.
+pub fn bytes(n: u64) -> String {
+    match n {
+        n if n < 1024 => format!("{n} B"),
+        n if n < 1024 * 1024 => format!("{:.0} KB", n as f64 / 1024.0),
+        n => format!("{:.1} MB", n as f64 / 1024.0 / 1024.0),
+    }
+}
+
+pub fn reconcile_message(r: &ReconcileReport) -> String {
+    if r.files_missing == 0 {
+        format!("All files present across {}.", plural(r.courses_checked, "course"))
+    } else {
+        format!(
+            "{} across {} — flagged in the library.",
+            plural(r.files_missing, "missing file"),
+            plural(r.courses_missing, "course")
+        )
+    }
+}
+
+pub fn subtitles_message(cues: i64) -> String {
+    if cues == 0 {
+        "No sidecar subtitle files found.".into()
+    } else {
+        format!("Indexed {}.", plural(cues, "subtitle line"))
+    }
+}
+
+pub fn gc_message(r: &GcReport) -> String {
+    if r.removed == 0 {
+        "Cache already clean.".into()
+    } else {
+        format!("Removed {} ({}).", plural(r.removed, "file"), bytes(r.freed_bytes.max(0) as u64))
+    }
+}
+
+pub fn clear_message(cues: i64) -> String {
+    if cues == 0 {
+        "Subtitle index already empty.".into()
+    } else {
+        format!("Cleared {}. Compact the database to reclaim the space.", plural(cues, "cue"))
+    }
+}
+
+/// A maintenance action by its page key, run off the UI thread; returns the
+/// line the page shows under it (the error, if it failed).
+pub fn run_task(key: &str, db: &Db, data_dir: Option<&std::path::Path>) -> String {
+    let conn = || db.lock().unwrap_or_else(|e| e.into_inner());
+    let thumbs = data_dir.map(|d| d.join(courses::THUMBNAILS_DIR));
+    let result = match (key, data_dir, thumbs.as_deref()) {
+        ("reconcile", ..) => maintenance::reconcile(db).map(|r| reconcile_message(&r)),
+        ("reindex", ..) => maintenance::reindex_search(&conn()).map(|n| format!("Reindexed {}.", plural(n, "item"))),
+        ("subs", ..) => maintenance::reindex_subtitles(db).map(subtitles_message),
+        ("clearsubs", ..) => maintenance::clear_subtitles(&conn()).map(clear_message),
+        ("compact", Some(dir), _) => {
+            maintenance::compact(&conn(), dir).map(|n| format!("Database compacted — now {}.", bytes(n)))
+        }
+        ("gc", _, Some(thumbs)) => maintenance::gc_thumbnails(&conn(), thumbs).map(|r| gc_message(&r)),
+        _ => return "Not available without a data folder.".into(),
+    };
+    result.unwrap_or_else(|e| e.to_string())
+}
+
+/// Fill the Storage section.
+pub fn show_storage(ui: &AppWindow, db: &Db, data_dir: Option<&std::path::Path>) {
+    let prefs = ui.global::<Prefs>();
+    let stats = data_dir.and_then(|dir| {
+        let conn = db.lock().unwrap_or_else(|e| e.into_inner());
+        maintenance::storage(&conn, dir, &dir.join(courses::THUMBNAILS_DIR)).ok()
+    });
+    match stats {
+        Some(s) => {
+            prefs.set_db_size(bytes(s.db_bytes).into());
+            prefs.set_thumbnail_size(bytes(s.thumbnail_bytes).into());
+            prefs.set_cues(s.subtitle_cues as i32);
+            prefs.set_cues_label(format!("{} cues", grouped(s.subtitle_cues)).into());
+        }
+        None => {
+            prefs.set_db_size("—".into());
+            prefs.set_thumbnail_size("—".into());
+            prefs.set_cues(-1);
+            prefs.set_cues_label("—".into());
+        }
+    }
+}
+
+/// The Settings page: preferences (saved to config.json in the data
+/// directory; without one, changes last only for this run) and maintenance.
 pub struct SettingsPage {
     config: Config,
-    path: Option<PathBuf>,
+    db: Db,
+    data_dir: Option<PathBuf>,
 }
 
 impl SettingsPage {
-    pub fn new(config: Config, path: Option<PathBuf>) -> Self {
-        SettingsPage { config, path }
+    pub fn new(config: Config, db: Db, data_dir: Option<PathBuf>) -> Self {
+        SettingsPage { config, db, data_dir }
+    }
+
+    /// Run a maintenance action in the background; its result line, fresh
+    /// storage figures and (when the library changed) the library follow.
+    pub fn run(&self, ui: &AppWindow, key: &str) {
+        let prefs = ui.global::<Prefs>();
+        if prefs.get_busy() != "" {
+            return;
+        }
+        prefs.set_busy(key.into());
+        let (db, dir, key, weak) = (self.db.clone(), self.data_dir.clone(), key.to_string(), ui.as_weak());
+        std::thread::spawn(move || {
+            let message = run_task(&key, &db, dir.as_deref());
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(ui) = weak.upgrade() else { return };
+                let prefs = ui.global::<Prefs>();
+                prefs.set_busy("".into());
+                prefs.invoke_set_result(key.as_str().into(), message.into());
+                show_storage(&ui, &db, dir.as_deref());
+                // Missing flags and titles show in the library.
+                if key == "reconcile" || key == "reindex" {
+                    ui.invoke_refresh_library();
+                }
+            });
+        });
+    }
+
+    pub fn show_storage(&self, ui: &AppWindow) {
+        show_storage(ui, &self.db, self.data_dir.as_deref());
     }
 
     /// Fill the page, and apply what the rest of the UI shows from config.
@@ -102,8 +239,8 @@ impl SettingsPage {
                 tracing::warn!(key, value, "unknown setting");
                 return;
             }
-            match &self.path {
-                Some(path) => c.save(path).map_err(|e| e.to_string()),
+            match &self.data_dir {
+                Some(dir) => c.save(&dir.join(paths::CONFIG_FILE)).map_err(|e| e.to_string()),
                 None => Ok(()),
             }
         };
@@ -145,5 +282,33 @@ mod tests {
         assert_eq!(speed_label(1.0), "1×");
         assert_eq!(speed_label(0.75), "0.75×");
         assert_eq!(goal_label(90), "90 min");
+    }
+
+    #[test]
+    fn maintenance_results_read_like_the_tauri_page() {
+        assert_eq!(grouped(129015), "129,015");
+        assert_eq!(grouped(1000000), "1,000,000");
+        assert_eq!(grouped(999), "999");
+        assert_eq!(bytes(512), "512 B");
+        assert_eq!(bytes(12 * 1024 + 300), "12 KB");
+        assert_eq!(bytes(3_565_158), "3.4 MB");
+        let ok = ReconcileReport { courses_checked: 1, courses_missing: 0, files_missing: 0 };
+        assert_eq!(reconcile_message(&ok), "All files present across 1 course.");
+        let bad = ReconcileReport { courses_checked: 7, courses_missing: 2, files_missing: 1 };
+        assert_eq!(reconcile_message(&bad), "1 missing file across 2 courses — flagged in the library.");
+        assert_eq!(subtitles_message(0), "No sidecar subtitle files found.");
+        assert_eq!(subtitles_message(2), "Indexed 2 subtitle lines.");
+        assert_eq!(gc_message(&GcReport { removed: 0, freed_bytes: 0 }), "Cache already clean.");
+        assert_eq!(gc_message(&GcReport { removed: 3, freed_bytes: 2048 }), "Removed 3 files (2 KB).");
+        assert_eq!(clear_message(1), "Cleared 1 cue. Compact the database to reclaim the space.");
+    }
+
+    #[test]
+    fn tasks_need_a_data_folder_for_files_on_disk() {
+        let db: Db = std::sync::Arc::new(std::sync::Mutex::new(deskemy_core::db::open_in_memory().unwrap()));
+        assert_eq!(run_task("reindex", &db, None), "Reindexed 0 items.");
+        assert_eq!(run_task("clearsubs", &db, None), "Subtitle index already empty.");
+        assert_eq!(run_task("compact", &db, None), "Not available without a data folder.");
+        assert_eq!(run_task("gc", &db, None), "Not available without a data folder.");
     }
 }

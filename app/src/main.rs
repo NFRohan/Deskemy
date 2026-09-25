@@ -78,10 +78,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let ui = AppWindow::new()?;
     let (db, config) = open_library(&ui);
-    let prefs = std::rc::Rc::new(settings::SettingsPage::new(
-        config.clone(),
-        paths::data_dir().map(|d| d.join(paths::CONFIG_FILE)),
-    ));
+    let prefs = std::rc::Rc::new(settings::SettingsPage::new(config.clone(), db.clone(), paths::data_dir()));
     // Theme, and what the player reads from config.
     prefs.show(&ui);
     wire_window(&ui);
@@ -102,6 +99,16 @@ fn main() -> Result<(), slint::PlatformError> {
             let title = format!("{}{}", list[..1].to_uppercase(), &list[1..]);
             nav.set_crumbs(course_panel::model(vec![title.into()]));
             show_list(&ui, &db, &library, list, &config);
+            prefs.show_storage(&ui);
+        }
+        // "settings-run:<action>" runs a maintenance action (inline — no event
+        // loop here) and shows Settings with its result.
+        if let Some(key) = page.as_deref().and_then(|p| p.strip_prefix("settings-run:")) {
+            ui.global::<Nav>().set_page("settings".into());
+            ui.global::<Nav>().set_crumbs(course_panel::model(vec!["Settings".into()]));
+            let message = settings::run_task(key, &db, paths::data_dir().as_deref());
+            ui.global::<Prefs>().invoke_set_result(key.into(), message.into());
+            prefs.show_storage(&ui);
         }
         // "search:<query>" shows the search page with that query's results.
         if let Some(query) = page.as_deref().and_then(|p| p.strip_prefix("search:")) {
@@ -183,13 +190,15 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         }
     });
-    let (weak, page, track_view, lists_db, cfg) =
-        (ui.as_weak(), library.clone(), tracks.clone(), db.clone(), config.clone());
+    let (weak, page, track_view, lists_db, cfg, p) =
+        (ui.as_weak(), library.clone(), tracks.clone(), db.clone(), config.clone(), prefs.clone());
     ui.on_page_shown(move |name| {
         if let Some(ui) = weak.upgrade() {
             show_list(&ui, &lists_db, &page, &name, &cfg);
-            if name == "tracks" {
-                track_view.show_list(&ui);
+            match name.as_str() {
+                "tracks" => track_view.show_list(&ui),
+                "settings" => p.show_storage(&ui),
+                _ => {}
             }
         }
     });
@@ -198,6 +207,12 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.global::<Prefs>().on_set(move |key, value| {
         if let Some(ui) = weak.upgrade() {
             p.change(&ui, &key, &value);
+        }
+    });
+    let (p, weak) = (prefs.clone(), ui.as_weak());
+    ui.global::<Prefs>().on_run(move |key| {
+        if let Some(ui) = weak.upgrade() {
+            p.run(&ui, &key);
         }
     });
     wire_lists(&ui, &db, player.session());

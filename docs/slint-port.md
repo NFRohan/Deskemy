@@ -112,8 +112,12 @@ Port `src-tauri/src/player/mod.rs` behaviour onto the new surface.
 - ☑ Settings — preferences: theme, default speed, autoplay, fullscreen
   auto-hide, daily goal, title cleanup, auto-rescan; saved to config.json and
   shared live with the player (`ui/settings.slint`, `src/settings.rs`)
-- ☐ Settings — maintenance (missing files, search / subtitle index), backup
-  export / import, storage, version
+- ☑ Settings — maintenance (missing files, search / subtitle index) and
+  storage (sizes, compact, clear subtitles, clean thumbnails), run on a
+  worker thread; `--snapshot <png> settings-run:<action>` runs one inline
+- ☐ Run it: the maintenance buttons in a real window (spinner, result line)
+- ☐ Settings — backup export / import (+ restart), version / updates
+- ☐ Search: highlight matched words instead of showing `[brackets]`
 
 Slint gotchas met so far: a fixed-size child with no `x` is centred in its
 parent; wrapped `Text` is measured at its unwrapped width, so give it a
