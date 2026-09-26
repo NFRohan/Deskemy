@@ -14,6 +14,7 @@ mod snapshot;
 mod stats;
 mod stats_page;
 mod tracks;
+mod updates;
 mod video;
 
 use deskemy_core::{db, paths};
@@ -177,6 +178,16 @@ fn main() -> Result<(), slint::PlatformError> {
             ui.global::<Import>().set_scanning(true);
             ui.global::<Import>().set_progress(importing::progress_label(7, 42).into());
         }
+        // "update:<page>": that page with an update on offer (banner, Settings).
+        if let Some(rest) = page.as_deref().and_then(|p| p.strip_prefix("update:")) {
+            let updates = ui.global::<Updates>();
+            updates.set_version("2.1.0".into());
+            updates.set_status(if rest.ends_with("-downloading") { "downloading" } else { "available" }.into());
+            updates.set_progress(42);
+            let name = rest.trim_end_matches("-downloading");
+            ui.global::<Nav>().set_page(name.into());
+            ui.global::<Nav>().set_crumbs(course_panel::model(vec![if name == "settings" { "Settings" } else { "Library" }.into()]));
+        }
         // "settings-import": Settings with the import confirmation open.
         if page.as_deref() == Some("settings-import") {
             ui.global::<Nav>().set_page("settings".into());
@@ -279,6 +290,29 @@ fn main() -> Result<(), slint::PlatformError> {
     let importing = std::rc::Rc::new(importing::Importing::new(db.clone(), config.clone()));
     importing.start_watching(&ui, player.session().clone());
     wire_import(&ui, &importing);
+
+    // Updates: a quiet check shortly after launch (the Tauri app's), and
+    // sweep the installer a previous update left in the temp dir.
+    let updater = updates::Updater::new();
+    std::thread::spawn(updates::sweep);
+    let (u, weak) = (updater.clone(), ui.as_weak());
+    ui.global::<Updates>().on_check(move || {
+        if let Some(ui) = weak.upgrade() {
+            u.check(&ui, false);
+        }
+    });
+    let (u, weak) = (updater.clone(), ui.as_weak());
+    ui.global::<Updates>().on_install(move || {
+        if let Some(ui) = weak.upgrade() {
+            u.install(&ui);
+        }
+    });
+    let (u, weak) = (updater.clone(), ui.as_weak());
+    slint::Timer::single_shot(std::time::Duration::from_secs(3), move || {
+        if let Some(ui) = weak.upgrade() {
+            u.check(&ui, true);
+        }
+    });
     let (p, weak) = (prefs.clone(), ui.as_weak());
     ui.global::<Prefs>().on_set(move |key, value| {
         if let Some(ui) = weak.upgrade() {
@@ -310,7 +344,17 @@ fn main() -> Result<(), slint::PlatformError> {
     // library first — the window's callbacks hold it too — so the files
     // aren't locked when it does.
     let restart = prefs.restart_requested();
-    drop((ui, library, course, tracks, prefs, importing, db, config));
+    let installer = updater.pending_installer();
+    drop((ui, library, course, tracks, prefs, importing, updater, db, config));
+    // A downloaded, verified update: its installer replaces this build and
+    // relaunches it.
+    if let Some(installer) = installer {
+        match updates::run_installer(&installer) {
+            Ok(()) => tracing::info!(installer = %installer.display(), "installing the update"),
+            Err(e) => tracing::error!(error = %e, "run the update installer"),
+        }
+        return result;
+    }
     if restart {
         match std::env::current_exe().and_then(|exe| std::process::Command::new(exe).spawn()) {
             Ok(_) => tracing::info!("relaunching to apply the imported backup"),

@@ -3,6 +3,7 @@
 import { Theme } from "theme.slint";
 import { Select, SelectOption } from "library.slint";
 import { AboutSlint, Palette } from "std-widgets.slint";
+import { Updates } from "updates.slint";
 
 /// Preferences from config.json (every change goes through `set(key, value)`
 /// and comes back once saved), and the maintenance actions (`run(key)`).
@@ -60,6 +61,57 @@ export global Prefs {
 }
 
 /// A maintenance button: spins while its action runs, and waits while any other does.
+/// Settings → About's update button: Check, Update to X, or progress.
+component UpdateButton inherits Rectangle {
+    property <bool> offer: Updates.status == "available";
+    property <bool> busy: Updates.status == "checking" || Updates.status == "downloading" || Updates.status == "restarting";
+
+    height: 36px;
+    width: row.preferred-width;
+    border-radius: 4px;
+    background: root.offer ? (touch.has-hover ? Theme.inverse-primary : Theme.primary-container)
+        : !root.busy && touch.has-hover ? Theme.surface-container-highest : Theme.surface-container-high;
+    opacity: root.busy ? 0.8 : 1;
+    accessible-role: button;
+    accessible-label: label.text;
+
+    row := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        Image {
+            source: root.busy ? @image-url("icons/loader-circle.svg")
+                : root.offer ? @image-url("icons/download.svg") : @image-url("icons/refresh-cw.svg");
+            width: 15px;
+            height: 15px;
+            y: (parent.height - self.height) / 2;
+            colorize: label.color;
+            transform-rotation: root.busy ? animation-tick() / 1s * 360deg : 0deg;
+        }
+        label := Text {
+            text: Updates.status == "checking" ? "Checking…"
+                : Updates.status == "downloading" ? "Downloading " + Updates.progress + "%"
+                : Updates.status == "restarting" ? "Restarting…"
+                : root.offer ? "Update to " + Updates.version : "Check";
+            color: root.offer ? Theme.on-primary-container : Theme.on-surface;
+            font-size: Theme.label-md;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: !root.busy;
+        mouse-cursor: pointer;
+        clicked => {
+            if root.offer {
+                Updates.install();
+            } else {
+                Updates.check();
+            }
+        }
+    }
+}
+
 component ActionButton inherits Rectangle {
     in property <string> key;
     in property <string> text;
@@ -539,8 +591,13 @@ export component SettingsPage inherits Flickable {
                 about := VerticalLayout {
                     Row {
                         title: "Deskemy " + Prefs.version;
-                        description: "Update checks aren't wired up in this build yet. Third-party licenses are in the licenses folder beside the app.";
+                        description: "Check for a newer release. Nothing downloads until you confirm. Third-party licenses are in the licenses folder beside the app.";
                         text-width: root.text-width;
+                        result: Updates.status == "latest" ? "You're on the latest version."
+                            : Updates.status == "available" ? "Deskemy " + Updates.version + " is available."
+                            : Updates.status == "error" ? Updates.error : "";
+                        result-error: Updates.status == "error";
+                        UpdateButton { }
                     }
                     Divider { }
                     // Slint's Royalty-free License asks for this attribution. The

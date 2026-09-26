@@ -1,0 +1,90 @@
+// In-app updates: the banner over the pages and the state Settings → About
+// shows — as the Tauri app's.
+
+import { Theme } from "theme.slint";
+
+export global Updates {
+    /// "", "checking", "available", "latest", "downloading", "restarting" or "error".
+    in property <string> status;
+    /// The newer version on offer.
+    in property <string> version;
+    /// Download progress, 0-100.
+    in property <int> progress;
+    in property <string> error;
+    /// The banner was closed (Settings still offers the update).
+    in-out property <bool> dismissed;
+
+    callback check();
+    /// Download, verify and install (after a clean shutdown).
+    callback install();
+}
+
+/// "Deskemy 2.1.0 is available.", with Update and a close button.
+export component UpdateBanner inherits Rectangle {
+    property <bool> busy: Updates.status == "downloading" || Updates.status == "restarting";
+
+    height: 40px;
+    background: Theme.primary-container;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 8px;
+        spacing: 12px;
+        Image {
+            source: @image-url("icons/download.svg");
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.on-primary-container;
+        }
+        Text {
+            text: "Deskemy " + Updates.version + " is available.";
+            color: Theme.on-primary-container;
+            font-size: Theme.label-md;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Rectangle {
+            width: label.preferred-width + 24px;
+            height: 28px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: update-touch.has-hover && !root.busy ? #ffffff33 : #ffffff1a;
+            accessible-role: button;
+            accessible-label: label.text;
+            label := Text {
+                text: Updates.status == "downloading" ? "Downloading " + Updates.progress + "%"
+                    : Updates.status == "restarting" ? "Restarting…" : "Update";
+                color: Theme.on-primary-container;
+                font-size: Theme.label-md;
+                font-weight: 600;
+            }
+            update-touch := TouchArea {
+                enabled: !root.busy;
+                mouse-cursor: pointer;
+                clicked => { Updates.install(); }
+            }
+        }
+        Rectangle {
+            width: 28px;
+            height: 28px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: close-touch.has-hover ? #ffffff33 : transparent;
+            accessible-role: button;
+            accessible-label: "Dismiss update notice";
+            Image {
+                source: @image-url("icons/x.svg");
+                width: 16px;
+                height: 16px;
+                colorize: Theme.on-primary-container;
+            }
+            close-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Updates.dismissed = true; }
+            }
+        }
+    }
+}
