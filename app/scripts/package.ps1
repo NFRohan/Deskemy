@@ -20,6 +20,12 @@ $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select
 $out = "target/packages"
 Write-Host "Packaging Deskemy $version"
 
+# 0. Clear the last run's outputs, so a stale signature or manifest can't
+#    ride along with a new build.
+if (Test-Path $out) {
+    Get-ChildItem $out -File | Remove-Item -Force
+}
+
 # 1. Release build + installer (+ .sig when a key is set).
 cargo packager --release
 if ($LASTEXITCODE) { throw "cargo packager failed" }
