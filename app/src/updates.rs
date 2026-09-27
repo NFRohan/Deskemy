@@ -92,6 +92,27 @@ pub fn installer_name(version: &str) -> String {
     format!("Deskemy_{}_x64-setup.exe", version.trim_start_matches('v'))
 }
 
+/// Verify `data` against a signature in the updater's form (base64-wrapped
+/// minisign), with a public key in the same form.
+pub fn verify(data: &[u8], signature: &str, pubkey: &str) -> Result<(), String> {
+    use base64::Engine;
+    let text = |b64: &str| -> Result<String, String> {
+        let bytes = base64::engine::general_purpose::STANDARD.decode(b64.trim()).map_err(|e| e.to_string())?;
+        String::from_utf8(bytes).map_err(|e| e.to_string())
+    };
+    let key = minisign_verify::PublicKey::decode(&text(pubkey)?).map_err(|e| format!("public key: {e}"))?;
+    let sig = minisign_verify::Signature::decode(&text(signature)?).map_err(|e| format!("signature: {e}"))?;
+    key.verify(data, &sig, true).map_err(|e| e.to_string())
+}
+
+/// `deskemy --verify-update <installer> <installer.sig>`: check a signed
+/// installer against the key this build trusts, before publishing it.
+pub fn verify_file(installer: &Path, signature: &Path) -> Result<(), String> {
+    let data = std::fs::read(installer).map_err(|e| format!("{}: {e}", installer.display()))?;
+    let sig = std::fs::read_to_string(signature).map_err(|e| format!("{}: {e}", signature.display()))?;
+    verify(&data, &sig, PUBKEY)
+}
+
 /// A download's progress, 0–100 (0 while the size is unknown).
 pub fn percent(received: u64, total: Option<u64>) -> i32 {
     match total {
@@ -335,6 +356,31 @@ Connection: close
         });
         let update = check_with(&format!("{base}/latest.json"), &other_key, "2.0.0").unwrap().unwrap();
         assert!(download(&update, |_, _| {}).is_err());
+    }
+
+    #[test]
+    fn verifies_signatures_locally() {
+        let (pubkey, signature) = sign(b"installer bytes");
+        assert!(verify(b"installer bytes", &signature, &pubkey).is_ok());
+        assert!(verify(b"other bytes", &signature, &pubkey).is_err());
+        assert!(verify(b"installer bytes", &signature, PUBKEY).is_err(), "not signed with the release key");
+    }
+
+    /// With DESKEMY_TEST_INSTALLER / _SIG / _PUBKEY set (a cargo-packager
+    /// signed installer and its key's .pub file), check they verify.
+    #[test]
+    fn packager_signatures_verify() {
+        let (Ok(installer), Ok(sig), Ok(pubkey)) = (
+            std::env::var("DESKEMY_TEST_INSTALLER"),
+            std::env::var("DESKEMY_TEST_SIG"),
+            std::env::var("DESKEMY_TEST_PUBKEY"),
+        ) else {
+            return;
+        };
+        let data = std::fs::read(installer).unwrap();
+        let sig = std::fs::read_to_string(sig).unwrap();
+        let pubkey = std::fs::read_to_string(pubkey).unwrap();
+        verify(&data, &sig, &pubkey).unwrap();
     }
 
     #[test]

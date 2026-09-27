@@ -51,6 +51,24 @@ fn parse_args() -> Mode {
             }
         }
         Some("--play") => args.next().map_or(Mode::Window, Mode::Play),
+        // Release check: does this signed installer verify against the key
+        // this build trusts? Prints the answer (and exits 1 if not).
+        Some("--verify-update") => {
+            let (Some(installer), Some(sig)) = (args.next(), args.next()) else {
+                eprintln!("usage: deskemy --verify-update <installer.exe> <installer.exe.sig>");
+                std::process::exit(2);
+            };
+            match updates::verify_file(std::path::Path::new(&installer), std::path::Path::new(&sig)) {
+                Ok(()) => {
+                    println!("OK: {installer} is signed with the release key.");
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    eprintln!("NOT VERIFIED: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
         _ => Mode::Window,
     }
 }

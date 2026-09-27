@@ -10,7 +10,7 @@
     <a href="https://github.com/NFRohan/Deskemy/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/NFRohan/Deskemy?color=8e10db&label=release" /></a>
     <a href="https://github.com/NFRohan/Deskemy/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/NFRohan/Deskemy?color=8e10db&label=stars" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-2e7d32" />
-    <img alt="Built with" src="https://img.shields.io/badge/Tauri%20v2%20%C2%B7%20Svelte%205%20%C2%B7%20Rust-111317" />
+    <img alt="Built with" src="https://img.shields.io/badge/Slint%20%C2%B7%20Rust%20%C2%B7%20libmpv-111317" />
   </p>
 
   <p>
@@ -103,22 +103,23 @@ everything Deskemy records lives in a single local SQLite database.
 
 ## Requirements
 
-- **Windows 10 or 11.**
-- The **WebView2** runtime — installed by the setup program if it's missing, and
-  already present on most Windows 10/11 systems.
+- **Windows 10 or 11**, with a GPU that supports OpenGL 3.3 (any integrated GPU
+  from the last decade).
 
-Everything else is bundled. Deskemy plays through **libmpv** (mpv's media
+Everything is bundled. Deskemy plays through **libmpv** (mpv's media
 library, `libmpv-2.dll`), which ships inside both the installer and the portable
 zip — no separate mpv install needed. If you'd rather use your own build, Deskemy
 also picks up `libmpv-2.dll` from your `PATH` or from `DESKEMY_LIBMPV`.
 
 ## Install
 
-1. Download the latest installer (`.exe` or `.msi`) from the releases page.
+1. Download the latest installer (`deskemy_<version>_x64-setup.exe`) from the releases page.
 2. Run it.
 3. Launch Deskemy → **Add Folder** → pick a course folder.
 
-It's a per-user install (no admin required). Uninstalling from **Settings → Apps**
+It's a per-user install (no admin required), and it keeps itself up to date:
+when a new release is out, Deskemy offers it (nothing downloads until you
+click **Update**). Uninstalling from **Settings → Apps**
 removes the program, its shortcuts, and its registry entry. Your library index
 and settings under `%APPDATA%\com.spooksy.deskemy` are left in place so a
 reinstall resumes where you left off — delete that folder for a clean slate.
@@ -128,8 +129,8 @@ reinstall resumes where you left off — delete that folder for a clean slate.
 To run without installing, download the **portable zip**, extract it, and run
 `Deskemy.exe`. A `.portable` marker beside the executable keeps all data (library,
 settings, thumbnails) in a `data/` folder next to it, so nothing is written to
-`%APPDATA%` or the registry. Delete the folder to remove it entirely. (The
-WebView2 runtime still needs to be present on the system, as it is by default.)
+`%APPDATA%` or the registry. Delete the folder to remove it entirely. (A portable
+copy can't update itself; Deskemy points you at the release page instead.)
 
 ## Community Translations
 
@@ -141,19 +142,24 @@ release. For translation-specific issues, please open them on that project's rep
 ## Build from source
 
 ```bash
-# Prerequisites: Node 22+, Rust (stable), MSVC C++ Build Tools, WebView2
-npm install
-npm run tauri dev      # run in development
-npm run tauri build    # build an installer in src-tauri/target/release/bundle/
+# Prerequisites: Rust (stable), MSVC C++ Build Tools, and libmpv-2.dll in
+# app/vendor/ (the "libmpv" build of mpv; the build copies it beside the exe)
+cd app
+cargo run              # run in development
+cargo test             # tests (a headless mpv runs the playback ones)
 ```
+
+Releases are packaged with cargo-packager — see [docs/releasing.md](docs/releasing.md).
+The previous Tauri + Svelte app still lives in `src-tauri/` and `src/` until it's
+retired.
 
 ## Tech stack
 
 | Layer | |
 |---|---|
-| **Frontend** | SvelteKit (`adapter-static` SPA) · Svelte 5 runes · TypeScript · Tailwind v4 |
-| **Backend** | Rust · Tauri v2 · SQLite + FTS5 via `rusqlite` (bundled) |
-| **Playback** | libmpv, loaded at runtime through FFI (`libloading`) — bundled with the app, with system/`DESKEMY_LIBMPV` fallback |
+| **UI** | [Slint](https://slint.dev) (Rust) · Skia renderer, patched for ClearType-style text |
+| **Core** | Rust (`crates/deskemy-core`) · SQLite + FTS5 via `rusqlite` (bundled) |
+| **Playback** | libmpv, loaded at runtime through FFI (`libloading`), rendering straight into the UI's OpenGL context — bundled with the app, with system/`DESKEMY_LIBMPV` fallback |
 | **Storage** | Local SQLite database + a content-addressed thumbnail cache under the app data directory |
 
 Import runs in two phases — probe, then persist — so media probing happens off
@@ -163,14 +169,13 @@ the database connection and scanning a large course doesn't block the UI.
 
 ```mermaid
 flowchart TB
-    subgraph win["Deskemy window · Tauri v2"]
-        ui["SvelteKit UI<br/>Svelte 5 · transparent WebView2"]
+    subgraph win["Deskemy window · Slint"]
+        ui["Slint UI<br/>Skia over OpenGL"]
         subgraph core["Rust core"]
-            cmd["Commands + events"]
+            cmd["Pages + session"]
             imp["Two-phase importer<br/>scan → probe → persist"]
             ply["Player control (FFI)"]
         end
-        dcomp["DirectComposition<br/>video surface"]
     end
 
     mpv["libmpv-2.dll<br/>bundled"]
@@ -178,7 +183,7 @@ flowchart TB
     thumb[("Thumbnail cache")]
     files[/"Your course folders<br/>referenced in place"/]
 
-    ui <-->|IPC| cmd
+    ui <-->|callbacks| cmd
     cmd --> imp
     cmd --> ply
     cmd --> db
@@ -188,15 +193,16 @@ flowchart TB
     imp --> db
     ply --> mpv
     ply --> db
-    mpv -->|renders| dcomp
-    dcomp -.->|shows through| ui
+    mpv -->|renders frames into the UI's GL context| ui
 ```
 
 ## Privacy
 
 No accounts, no telemetry, and no network requests for your content. Your
 library, progress, bookmarks, and stats live only in a local database; the app
-works fully offline.
+works fully offline. The one request it makes is the update check: it reads
+the latest release's manifest from GitHub, and downloads nothing unless you
+choose to update.
 
 ## License
 

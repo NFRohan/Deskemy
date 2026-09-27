@@ -29,17 +29,18 @@ Known follow-ups:
       them up.
 - [ ] Mouse back only works over the video, not over the control bar or title
       bar.
-- [ ] Controls stay up while the pointer is outside the window (not
-      fullscreen) until it returns.
+- [x] Controls hide when the pointer leaves the window (paused or playing).
 
 ## Installer and updater
 
-- An installer (NSIS or MSI — cargo-packager or cargo-wix), bundling
-  `libmpv-2.dll`; portable zip as today (`.portable` marker).
-- Update checks against GitHub releases, signed, "update available" in
-  Settings → About (the Tauri app's banner + Settings flow). Nothing downloads
-  until the user confirms.
-- Then remove `src-tauri/` and the Svelte frontend.
+- [x] Installer (cargo-packager, NSIS, matching the Tauri install so it updates
+      in place) and portable zip — `app/scripts/package.ps1`, see
+      [releasing.md](releasing.md).
+- [x] In-app updates against the signed `latest.json` (the Tauri updater's, plus
+      `format`), banner + Settings → About, nothing downloads until confirmed.
+- [ ] Hand-test 2.0.0 for a couple of days, then release (the user's call).
+- [ ] Rehearse a real update with the release key (releasing.md §3–4).
+- [ ] Then remove `src-tauri/` and the Svelte frontend.
 
 ## Linux
 

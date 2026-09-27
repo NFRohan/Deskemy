@@ -41,6 +41,9 @@ png = "0.18"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 cargo-packager-updater = "0.2"
+# Verifying a signed installer locally (deskemy --verify-update)
+minisign-verify = "0.2"
+base64 = "0.22"
 
 [target."cfg(windows)".dependencies]
 # SetThreadExecutionState — keep the machine awake during playback.
@@ -58,9 +61,38 @@ winresource = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
-# updates.rs tests: the release manifest and the signing key's format
+# updates.rs tests: the release manifest
 serde_json = "1"
-base64 = "0.22"
 # examples/text_aa.rs — the same skia-safe build Slint uses (no Skia rebuild)
 skia-safe = { version = "0.153.3", features = ["gl", "d3d"] }
 minisign = "0.7"
+
+# The Windows installer (cargo-packager): `cargo packager --release` from app/.
+# Matches the Tauri app's installer — per-user NSIS into %LOCALAPPDATA%\Deskemy
+# with the same product name, publisher and binary — so it updates an existing
+# install in place. See docs/releasing.md.
+[package.metadata.packager]
+productName = "Deskemy"
+identifier = "com.spooksy.deskemy"
+publisher = "Spooksy"
+copyright = "© 2026 Nayeem Fardin"
+category = "Education"
+description = "Offline player for your downloaded video courses."
+longDescription = "Deskemy turns folders of downloaded video courses into an offline, Udemy-style library — resume, chapters, subtitles, bookmarks, tags, full-text and subtitle search, career tracks, and a study-stats dashboard. Nothing leaves your machine."
+homepage = "https://github.com/NFRohan/Deskemy"
+licenseFile = "../LICENSE"
+beforePackagingCommand = "cargo build --release"
+outDir = "target/packages"
+formats = ["nsis"]
+icons = ["icons/deskemy.ico"]
+binaries = [{ path = "deskemy", main = true }]
+resources = [
+    { src = "target/release/libmpv-2.dll", target = "libmpv-2.dll" },
+    { src = "target/release/licenses/*", target = "licenses" },
+]
+
+[package.metadata.packager.nsis]
+installMode = "currentUser"
+installerIcon = "icons/deskemy.ico"
+headerImage = "installer/header.bmp"
+sidebarImage = "installer/sidebar.bmp"

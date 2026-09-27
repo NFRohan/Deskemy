@@ -1167,6 +1167,7 @@ dependencies = [
  "deskemy-core",
  "glow",
  "minisign",
+ "minisign-verify",
  "open",
  "png",
  "raw-window-handle",
