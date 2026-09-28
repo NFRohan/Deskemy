@@ -39,7 +39,7 @@ everything Deskemy records lives in a single local SQLite database.
     <td><img src="Images/Deskemy%20Player%20Windowed.png" alt="Player (windowed)" /></td>
   </tr>
   <tr>
-    <td><img src="Images/Deskemy%20player%20Fullscreen.png" alt="Fullscreen player" /></td>
+    <td><img src="Images/Deskemy%20Fullscreen.png" alt="Fullscreen player" /></td>
     <td><img src="Images/Deskemy%20Keyboard%20shortcut%20Cheatsheet.png" alt="Keyboard shortcuts cheat sheet" /></td>
   </tr>
   <tr>
@@ -77,7 +77,7 @@ everything Deskemy records lives in a single local SQLite database.
 - Extensive YouTube-style keyboard shortcuts.
 
 <div align="center">
-  <img src="Images/Deskemy%20Player%20with%20panels.png" alt="The player with the course-contents panel open" width="90%" />
+  <img src="Images/Deskemy%20Player%20Windowed%20With%20Panels.png" alt="The player with the course-contents panel open" width="90%" />
 </div>
 
 **Organize & revisit**
