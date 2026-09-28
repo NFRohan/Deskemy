@@ -22,10 +22,11 @@ $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select
 $out = "target/packages"
 Write-Host "Packaging Deskemy $version"
 
-# 0. Clear the last run's outputs, so a stale signature or manifest can't
-#    ride along with a new build.
+# 0. Clear the last run's signatures, manifest and checksums, so a stale one
+#    can't ride along with a new build. The installers stay until they're
+#    overwritten: an interrupted run leaves the previous build to test.
 if (Test-Path $out) {
-    Get-ChildItem $out -File | Remove-Item -Force
+    Get-ChildItem $out -File | Where-Object { $_.Name -match '\.sig$|^latest\.json$|^SHA256SUMS\.txt$' } | Remove-Item -Force
 }
 
 # 1. Release build + installers (+ .sig when a key is set).
@@ -84,7 +85,8 @@ if ((Test-Path "$setup.sig") -and (Test-Path "$msi.sig")) {
 }
 
 # 4. SHA256SUMS.txt for the downloads, as earlier releases published.
-$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|msi|zip)$' } | Sort-Object Name | ForEach-Object {
+#    This version's only: an earlier version's installers may still be there.
+$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|msi|zip)$' -and $_.Name -like "*_${version}_*" } | Sort-Object Name | ForEach-Object {
     "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
 }
 [System.IO.File]::WriteAllText((Join-Path (Resolve-Path $out).Path "SHA256SUMS.txt"), (($sums -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
