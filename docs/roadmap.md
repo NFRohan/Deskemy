@@ -47,7 +47,8 @@ Known follow-ups:
 - [ ] Hand-test a real 1.2.2 MSI → 2.0 MSI upgrade (per-machine, needs admin).
 - [x] In-app updates against the signed `latest.json` (the Tauri updater's, plus
       `format`), banner + Settings → About, nothing downloads until confirmed.
-- [ ] Hand-test 2.0.0 for a couple of days, then release (the user's call).
+- [x] Hand-test 2.0.0, then release: v2.0.0 published 2026-09-29 (main
+      fast-forwarded to the port).
 - [x] Sign with the release key and verify against the app's key (releasing.md §3).
 - [ ] Optional: rehearse a real update (releasing.md §4).
 - [ ] Then remove `src-tauri/` and the Svelte frontend.
