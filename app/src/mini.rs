@@ -208,6 +208,11 @@ impl MiniPlayer {
             set_maximized(ui, false);
             trace(ui, "enter: un-maximized");
         }
+        // Close any menu; the bookmark dialog through its own close, which
+        // resumes the video it paused.
+        if playback.get_open_menu() == "bookmark" {
+            playback.invoke_close_bookmark();
+        }
         playback.set_open_menu("".into());
         // Lifts the minimum size and puts the window on top.
         playback.set_mini(true);

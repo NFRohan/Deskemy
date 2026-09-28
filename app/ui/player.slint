@@ -532,7 +532,10 @@ export component PlayerOverlay inherits Rectangle {
     // so hand it back to the shortcut scope.
     property <string> menu: Playback.open-menu;
     changed menu => {
-        if root.menu == "" {
+        // Not when the mini player is taking over (entering it closes the
+        // menu): focus would go to this overlay as it's removed, and the
+        // mini player's keys (T) would reach nothing.
+        if root.menu == "" && !Playback.mini {
             keys.focus();
         }
     }

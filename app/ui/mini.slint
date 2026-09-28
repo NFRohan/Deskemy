@@ -10,6 +10,17 @@ export component MiniPlayer inherits Rectangle {
     property <bool> shown: hover.has-hover || seek.dragging;
     property <float> progress: Playback.duration > 0 ? Playback.position / Playback.duration : 0;
 
+    // Take the keys once the switch has settled too: the full player's
+    // closing menus could otherwise leave focus nowhere.
+    Timer {
+        interval: 100ms;
+        running: true;
+        triggered => {
+            keys.focus();
+            self.running = false;
+        }
+    }
+
     keys := FocusScope {
         init => {
             // The full player may have hidden the pointer; the mini one never does.
@@ -54,6 +65,10 @@ export component MiniPlayer inherits Rectangle {
                 TouchArea {
                     double-clicked => { Playback.toggle-mini(); }
                     pointer-event(event) => {
+                        // A click on the picture gives it the keys back.
+                        if event.kind == PointerEventKind.down {
+                            keys.focus();
+                        }
                         if event.button == PointerEventButton.back && event.kind == PointerEventKind.up {
                             Playback.toggle-mini();
                         }
