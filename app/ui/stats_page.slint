@@ -401,6 +401,9 @@ export component StatsPage inherits Flickable {
                                     wrap: word-wrap;
                                     overflow: elide;
                                     max-height: 40px;
+                                    // A long unbroken name (underscores, no spaces) breaks anywhere
+                                    // instead of widening the layout past its card.
+                                    min-width: 0px;
                                 }
                                 HorizontalLayout {
                                     spacing: 6px;

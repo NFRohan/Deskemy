@@ -332,6 +332,9 @@ component CourseCardView inherits Rectangle {
                 font-weight: 600;
                 // Two lines at most, like the Tauri card's line-clamp-2.
                 wrap: word-wrap;
+                // A long unbroken name (underscores, no spaces) breaks anywhere
+                // instead of widening the layout past its card.
+                min-width: 0px;
                 overflow: elide;
                 height: 40px;
                 vertical-alignment: top;
@@ -502,6 +505,9 @@ export component LibraryPage inherits Flickable {
                             font-size: Theme.display-sm;
                             font-weight: 700;
                             wrap: word-wrap;
+                            // A long unbroken name (underscores, no spaces) breaks anywhere
+                            // instead of widening the layout past its card.
+                            min-width: 0px;
                             overflow: elide;
                             max-height: 64px;
                         }

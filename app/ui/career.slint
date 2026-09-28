@@ -434,6 +434,9 @@ export component TrackPage inherits Flickable {
                         font-size: Theme.headline-md;
                         font-weight: 600;
                         wrap: word-wrap;
+                        // A long unbroken name (underscores, no spaces) breaks anywhere
+                        // instead of widening the layout past its card.
+                        min-width: 0px;
                         max-width: root.page-width - 96px;
                     }
                     if Tracks.description != "": Text {
@@ -764,6 +767,9 @@ export component TrackDialogs inherits Rectangle {
                             DialogTitle {
                                 text: "Delete \"" + Tracks.name + "\"?";
                                 wrap: word-wrap;
+                                // A long unbroken name (underscores, no spaces) breaks anywhere
+                                // instead of widening the layout past its card.
+                                min-width: 0px;
                                 max-width: root.text-width;
                             }
                             Text {

@@ -1420,6 +1420,9 @@ export component PlayerOverlay inherits Rectangle {
                         font-size: 13px;
                         wrap: word-wrap;
                         max-width: 400px;
+                        // A long unbroken name (underscores, no spaces) breaks anywhere
+                        // instead of widening the layout past its card.
+                        min-width: 0px;
                     }
                     VerticalLayout {
                         spacing: 2px;

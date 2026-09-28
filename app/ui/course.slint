@@ -545,6 +545,9 @@ export component CoursePage inherits Flickable {
                             font-size: Theme.display-sm;
                             font-weight: 700;
                             wrap: word-wrap;
+                            // A long unbroken name (underscores, no spaces) breaks anywhere
+                            // instead of widening the layout past its card.
+                            min-width: 0px;
                             horizontal-stretch: 1;
                         }
                         IconAction {
@@ -1014,6 +1017,9 @@ export component CourseDialogs inherits Rectangle {
                         color: Theme.on-surface-variant;
                         font-size: Theme.body-sm;
                         wrap: word-wrap;
+                        // A long unbroken name (underscores, no spaces) breaks anywhere
+                        // instead of widening the layout past its card.
+                        min-width: 0px;
                         max-width: root.text-width;
                     }
                     if Course.delete-error != "": Text {

@@ -153,9 +153,17 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
 pub fn sample_course(ui: &crate::AppWindow, db: &crate::session::Db, page: &crate::course_page::CoursePage) {
     let id = {
         let conn = db.lock().unwrap_or_else(|e| e.into_inner());
+        // DESKEMY_SNAPSHOT_COURSE picks one by (part of) its title; otherwise
+        // the most recently opened.
+        let wanted = std::env::var("DESKEMY_SNAPSHOT_COURSE").ok();
         deskemy_core::db::queries::list_course_summaries(&conn)
             .ok()
-            .and_then(|cs| cs.into_iter().find(|c| c.last_opened_at.is_some()))
+            .and_then(|cs| {
+                cs.into_iter().find(|c| match &wanted {
+                    Some(w) => c.title.contains(w.as_str()),
+                    None => c.last_opened_at.is_some(),
+                })
+            })
             .map(|c| c.id)
     };
     if let Some(id) = id {
