@@ -54,17 +54,27 @@ everything Deskemy records lives in a single local SQLite database.
 **Library & import**
 - Structures a course folder into sections and ordered lectures, cleaning
   numeric prefixes and extensions out of the titles.
-- Attaches Subtitles and resource files (PDFs, code, archives) to the
-  lecture or section they belong to.
+- Attaches subtitles and resource files (PDFs, code, archives) to the
+  lecture or section they belong to. Code projects (a folder with
+  `package.json`, `node_modules` and the like) come in as one resource, and
+  TypeScript `.ts` files aren't mistaken for videos.
 - Shows a preview of what will be imported — sections, lectures, resources,
   subtitles, total runtime — with live progress during the scan.
-- References files in place; it never copies or moves your videos.
+- References files in place; it never copies or moves your videos. Adding a
+  course's folder again updates it and keeps your progress.
 
 **Playback**
-- Resume from your last position, autoplay-next, adjustable speed, and per-course
-  preferences (speed, subtitle, audio track) that are remembered.
-- Chapter navigation, and subtitle / audio-track selection.
-- Extensive Youtube-style keyboard shortcuts.
+- Resume from your last position and autoplay-next. A default speed for every
+  course, or a course's own; subtitle and audio-track choices are remembered
+  per course.
+- **Mini player**: press `T` to shrink the player to a small always-on-top
+  window beside your editor or terminal — it keeps the video's shape and opens
+  where you left it.
+- Resources next to their lectures, in the curriculum and the player's course
+  panel, ticked off as you go; optionally, autoplay stops at a lecture with
+  exercises to offer them.
+- Chapter navigation, a sleep timer, and subtitle / audio-track selection.
+- Extensive YouTube-style keyboard shortcuts.
 
 <div align="center">
   <img src="Images/Deskemy%20Player%20with%20panels.png" alt="The player with the course-contents panel open" width="90%" />
@@ -81,7 +91,8 @@ everything Deskemy records lives in a single local SQLite database.
   straight to the matching timestamp.
 
 **Progress & maintenance**
-- Watch-time stats: an activity heatmap, streaks, and a daily goal.
+- Watch-time stats: an activity heatmap (hover a day for what you watched),
+  streaks, and a daily goal.
 - Rename-safe: a moved or renamed file keeps its progress and bookmarks, matched
   by content rather than path.
 - Optional folder auto-rescan, and a storage panel for reclaiming disk space.
@@ -99,13 +110,15 @@ everything Deskemy records lives in a single local SQLite database.
 | `←` / `→` | Skip back / forward 5s | | `N` / `⇧N` | Next / previous lecture |
 | `↑` / `↓` | Volume up / down | | `P` / `R` | Course contents / Resources |
 | `M` | Mute | | `B` | Bookmark this moment |
-| `F` / `Esc` | Fullscreen / exit | | `?` | Show all shortcuts |
-| `T` | Mini player, always on top | | | |
+| `F` / `Esc` | Fullscreen / exit | | `T` | Mini player, always on top |
+| `I` | Playback info | | `?` | Show all shortcuts |
 
 ## Requirements
 
 - **Windows 10 or 11**, with a GPU that supports OpenGL 3.3 (any integrated GPU
-  from the last decade).
+  from the last decade). No WebView2 needed.
+- Linux is in progress (the app is built and tested on Linux in CI, but not
+  released yet); macOS after that.
 
 Everything is bundled. Deskemy plays through **libmpv** (mpv's media
 library, `libmpv-2.dll`), which ships inside the installers and the portable
@@ -120,9 +133,10 @@ also picks up `libmpv-2.dll` from your `PATH` or from `DESKEMY_LIBMPV`.
 
 It's a per-user install (no admin required). For a per-machine install in
 Program Files (admin, for all users), use the MSI (`deskemy_<version>_x64_en-US.msi`)
-instead. Either way it keeps itself up to date:
-when a new release is out, Deskemy offers it (nothing downloads until you
-click **Update**). Uninstalling from **Settings → Apps**
+instead. Either way it keeps itself up to date: when a new release is out,
+Deskemy offers it (nothing downloads until you click **Update**), and
+**Settings → About** has a Check button. Coming from Deskemy 1.x, the update
+installs over it and keeps your library. Uninstalling from **Settings → Apps**
 removes the program, its shortcuts, and its registry entry. Your library index
 and settings under `%APPDATA%\com.spooksy.deskemy` are left in place so a
 reinstall resumes where you left off — delete that folder for a clean slate.
@@ -130,7 +144,7 @@ reinstall resumes where you left off — delete that folder for a clean slate.
 ### Portable (no install)
 
 To run without installing, download the **portable zip**, extract it, and run
-`Deskemy.exe`. A `.portable` marker beside the executable keeps all data (library,
+`deskemy.exe`. A `.portable` marker beside the executable keeps all data (library,
 settings, thumbnails) in a `data/` folder next to it, so nothing is written to
 `%APPDATA%` or the registry. Delete the folder to remove it entirely. (A portable
 copy can't update itself; Deskemy points you at the release page instead.)
