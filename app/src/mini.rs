@@ -35,6 +35,8 @@ const MIN: (f32, f32) = (240.0, 135.0);
 /// How long a switch keeps the window out of sight: enough for the moves
 /// (6–25ms in the logs) and a frame drawn at the new size.
 const REVEAL_MS: u64 = 60;
+/// How long leaving mini waits for Slint to see the restored size.
+const SETTLE_MS: u64 = 30;
 const MARGIN: f32 = 24.0;
 /// The window's size to come back to when it was maximized or fullscreen
 /// before (so un-maximizing later doesn't land on the mini size).
@@ -140,6 +142,10 @@ pub struct MiniPlayer {
     follow: slint::Timer,
     /// The resize hook is in (Windows).
     hooked: Cell<bool>,
+    /// Finishes leaving mini once the window has settled (see `exit`).
+    settle: slint::Timer,
+    /// A switch is under way.
+    switching: Rc<Cell<bool>>,
 }
 
 impl MiniPlayer {
@@ -148,14 +154,27 @@ impl MiniPlayer {
             reveal: slint::Timer::default(),
             follow: slint::Timer::default(),
             hooked: Cell::new(false),
+            settle: slint::Timer::default(),
+            switching: Rc::new(Cell::new(false)),
         });
         let (m, weak) = (mini.clone(), ui.as_weak());
         ui.global::<Playback>().on_toggle_mini(move || {
             let Some(ui) = weak.upgrade() else { return };
+            // Mid-switch (the window is settling out of sight): ignore.
+            if m.switching.get() {
+                return;
+            }
             if ui.global::<Playback>().get_mini() {
-                m.exit(&ui);
+                m.exit(&ui, true);
             } else {
                 m.enter(&ui);
+            }
+        });
+        // Closing the player from the mini one.
+        let (m, weak) = (mini.clone(), ui.as_weak());
+        ui.global::<Playback>().on_leave_mini(move || {
+            if let Some(ui) = weak.upgrade() {
+                m.exit(&ui, false);
             }
         });
         mini
@@ -213,34 +232,57 @@ impl MiniPlayer {
         self.follow_aspect(ui, min);
     }
 
-    fn exit(&self, ui: &AppWindow) {
+    /// Back to the window as it was. `back_to_fullscreen`: false when the
+    /// player is closing (the pages come back maximized or normal instead).
+    fn exit(&self, ui: &AppWindow, back_to_fullscreen: bool) {
         self.remember(ui);
         self.follow.stop();
         LOCKED_ASPECT.store(0, Ordering::Relaxed);
-        ui.global::<Playback>().set_mini(false);
-        let Some(saved) = self.saved.take() else { return };
+        let Some(saved) = self.saved.take() else {
+            ui.global::<Playback>().set_mini(false);
+            return;
+        };
         trace(ui, "exit: before");
-        tracing::debug!(?saved, "mini: exit target");
-        self.hide_while_switching(ui);
+        tracing::debug!(?saved, back_to_fullscreen, "mini: exit target");
+        cloak(ui, true);
+        self.reveal.stop();
+        self.switching.set(true);
         // The normal rect first, even on the way to maximized / fullscreen:
-        // it's what the window returns to when those end. Then both states it
-        // had (fullscreen from a maximized window is both).
+        // it's what the window returns to when those end.
         place(ui, saved.normal);
         trace(ui, "exit: placed");
-        if saved.maximized {
-            set_maximized(ui, true);
-            trace(ui, "exit: maximized");
-        }
-        if saved.fullscreen {
-            // In sight: the shell only puts the taskbar behind a window it
-            // sees go fullscreen. Done cloaked, the taskbar stayed on top of
-            // the video until focus moved.
-            self.reveal.stop();
-            cloak(ui, false);
-            ui.window().set_fullscreen(true);
-            ui.global::<Playback>().set_fullscreen(true);
-            trace(ui, "exit: fullscreen");
-        }
+        // Then leave mini mode once Slint has seen that size (the resize event
+        // comes on its next pass): lifting mini raises the minimum to 900x600,
+        // and against the old mini size Slint resized the window itself,
+        // which un-maximized it again.
+        let (weak, switching) = (ui.as_weak(), self.switching.clone());
+        self.settle.start(slint::TimerMode::SingleShot, Duration::from_millis(SETTLE_MS), move || {
+            switching.set(false);
+            let Some(ui) = weak.upgrade() else { return };
+            let playback = ui.global::<Playback>();
+            playback.set_mini(false);
+            if saved.maximized {
+                set_maximized(&ui, true);
+                trace(&ui, "exit: maximized");
+            }
+            if saved.fullscreen && back_to_fullscreen {
+                // In sight: the shell only puts the taskbar behind a window
+                // it sees go fullscreen (done cloaked, the taskbar stayed on
+                // top of the video until focus moved).
+                cloak(&ui, false);
+                ui.window().set_fullscreen(true);
+                playback.set_fullscreen(true);
+                trace(&ui, "exit: fullscreen");
+            } else {
+                let weak = ui.as_weak();
+                slint::Timer::single_shot(Duration::from_millis(REVEAL_MS), move || {
+                    if let Some(ui) = weak.upgrade() {
+                        cloak(&ui, false);
+                        trace(&ui, "revealed");
+                    }
+                });
+            }
+        });
         self.watch(ui, "exit");
     }
 

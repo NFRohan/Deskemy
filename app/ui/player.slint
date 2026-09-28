@@ -151,6 +151,9 @@ export global Playback {
     callback toggle-mute();
     callback toggle-fullscreen();
     callback toggle-mini();
+    /// Leave the mini player because the player is closing (not back to
+    /// fullscreen).
+    callback leave-mini();
     /// The controls faded (true) or came back: hide / show the pointer.
     callback cursor-hidden(bool);
     callback pick-speed(int);
