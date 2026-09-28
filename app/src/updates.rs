@@ -135,7 +135,16 @@ pub fn check_with(endpoint: &str, pubkey: &str, current: &str, target: Option<&s
         builder = builder.target(target);
     }
     let updater = builder.build().map_err(|e| e.to_string())?;
-    updater.check().map_err(|e| e.to_string())
+    match updater.check() {
+        Ok(update) => Ok(update),
+        // Every manifest this app's releases publish has `format`; one without
+        // is a 1.x (Tauri) release's, never newer than this build.
+        Err(e) if e.to_string().contains("missing field `format`") => {
+            tracing::info!("the published release predates 2.0: up to date");
+            Ok(None)
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Download (verifying the signature) and save the installer.
@@ -454,6 +463,19 @@ Connection: close
         );
         let base = serve(move |_| vec![("/latest.json", nsis_only.into_bytes())]);
         assert!(check_with(&format!("{base}/latest.json"), &pubkey, "2.0.0", Some(MSI_TARGET)).is_err());
+    }
+
+    #[test]
+    fn a_tauri_manifest_means_up_to_date() {
+        // 1.2.2's latest.json, as published: no `format`.
+        let base = serve(|_| {
+            vec![(
+                "/latest.json",
+                br#"{"version":"1.2.2","notes":"","pub_date":"2026-05-01T00:00:00Z","platforms":{"windows-x86_64":{"signature":"c2ln","url":"https://example.com/Deskemy_1.2.2_x64-setup.exe"}}}"#.to_vec(),
+            )]
+        });
+        let (pubkey, _) = sign(b"x");
+        assert!(check_with(&format!("{base}/latest.json"), &pubkey, "2.0.0", None).unwrap().is_none());
     }
 
     #[test]
