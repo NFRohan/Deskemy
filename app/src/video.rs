@@ -883,6 +883,7 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
     let mut shown_revision = u64::MAX;
     let mut shown_tracks = None;
     let mut awake = false;
+    let mut filling = false;
     loop {
         let event = mpv.wait_event(0.2);
         if !event.is_null() {
@@ -908,8 +909,15 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
 
         let s = State::sample(mpv);
         session.tick(s.position, s.duration, s.paused);
-        // The mini player keeps the video's shape.
+        // The mini player keeps the video's shape; being that shape, the
+        // video fills it (mpv keeping the aspect rounded 782.2px down to 782
+        // and left a black column).
         crate::mini::set_video_aspect(mpv.get_f64("video-params/aspect"));
+        let fill = crate::mini::active();
+        if fill != filling {
+            filling = fill;
+            let _ = mpv.set_property("keepaspect", if fill { "no" } else { "yes" });
+        }
 
         let want_awake = !s.paused && session.is_loaded();
         if want_awake != awake {

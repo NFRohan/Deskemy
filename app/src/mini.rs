@@ -74,6 +74,12 @@ pub fn set_video_aspect(aspect: Option<f64>) {
     }
 }
 
+/// The mini player is on (its aspect lock is set): the window is the
+/// video's shape, so the video can fill it.
+pub fn active() -> bool {
+    LOCKED_ASPECT.load(Ordering::Relaxed) != 0
+}
+
 /// The video's aspect, or 16:9 before one is known (or for audio).
 fn video_aspect() -> f64 {
     match f32::from_bits(VIDEO_ASPECT.load(Ordering::Relaxed)) {
