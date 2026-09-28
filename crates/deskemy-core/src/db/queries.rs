@@ -1178,6 +1178,15 @@ pub fn set_pref_speed(conn: &Connection, course_id: &str, speed: f64) -> Result<
     Ok(())
 }
 
+/// Forget saved speeds, so the default applies: one course's, or (None) every
+/// course's. Subtitle and audio choices stay.
+pub fn clear_pref_speed(conn: &Connection, course_id: Option<&str>) -> Result<usize> {
+    Ok(conn.execute(
+        "UPDATE course_prefs SET speed = NULL WHERE speed IS NOT NULL AND (?1 IS NULL OR course_id = ?1)",
+        params![course_id],
+    )?)
+}
+
 /// Remember the subtitle selection: `Some(id)` records the track and marks subs
 /// on; `None` just marks subs off (keeps the last selected track).
 pub fn set_pref_subtitle(conn: &Connection, course_id: &str, sid: Option<i64>) -> Result<()> {

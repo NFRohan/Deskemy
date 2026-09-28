@@ -129,6 +129,11 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
             sample_panel(&playback, db);
         }
         "stats" => {}
+        // The speed menu for a course with its own saved speed.
+        "speed-saved" => {
+            playback.set_speed_default("1×".into());
+            playback.set_open_menu("speed".into());
+        }
         _ => playback.set_open_menu(menu.into()),
     }
 }

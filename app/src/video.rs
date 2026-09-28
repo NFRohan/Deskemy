@@ -624,6 +624,9 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
             s.set_subtitle(Some(first.id));
         }
     });
+    let s = session.clone();
+    playback.on_use_default_speed(move || s.use_default_speed());
+
     let (s, m) = (session.clone(), mpv.clone());
     playback.on_step_speed(move |dir| {
         let current = m.get_f64("speed").unwrap_or(1.0);
@@ -964,6 +967,7 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
                 playback.set_has_previous(np.has_previous);
                 playback.set_has_next(np.has_next);
                 playback.set_in_library(np.in_library);
+                playback.set_speed_default(np.speed_default.into());
                 if playback.get_panel_open() {
                     playback.invoke_refresh_panel();
                 }

@@ -6,6 +6,7 @@ use crate::session::Db;
 use crate::{AppWindow, Playback, Prefs, SelectOption, Theme};
 use deskemy_core::config::AppConfig;
 use deskemy_core::maintenance::{self, GcReport, ReconcileReport};
+use deskemy_core::db::queries;
 use deskemy_core::{backup, courses, db, paths};
 use slint::ComponentHandle;
 use std::cell::{Cell, RefCell};
@@ -28,7 +29,8 @@ pub const THEMES: [(&str, &str); 3] = [("dark", "Dark"), ("light", "Light"), ("s
 pub const SPEEDS: [f64; 7] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 pub const GOALS: [i64; 6] = [15, 30, 45, 60, 90, 120];
 
-fn speed_label(speed: f64) -> String {
+/// "1.25×".
+pub fn speed_label(speed: f64) -> String {
     format!("{speed}×")
 }
 
@@ -343,6 +345,15 @@ impl SettingsPage {
         };
         if let Err(e) = saved {
             tracing::warn!(error = %e, "save config");
+        }
+        // Picking a default speed makes it everyone's: courses given their
+        // own speed in the player follow it again.
+        if key == "speed" {
+            let cleared = queries::clear_pref_speed(&self.db.lock().unwrap_or_else(|e| e.into_inner()), None);
+            match cleared {
+                Ok(n) => tracing::info!(courses = n, "default speed applies everywhere"),
+                Err(e) => tracing::warn!(error = %e, "clear course speeds"),
+            }
         }
         self.show(ui);
     }

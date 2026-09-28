@@ -124,6 +124,9 @@ export global Playback {
     in property <int> sleep-minutes;
     /// Whether the playing file is a library lecture (bookmarks need one).
     in property <bool> in-library;
+    /// This course plays at its own speed: the default's label ("1.25×") for
+    /// the speed menu's "Use default"; empty when the default applies.
+    in property <string> speed-default;
     /// The moment being bookmarked, and the lecture's saved bookmarks.
     in property <string> bookmark-time;
     in property <[BookmarkRow]> bookmarks;
@@ -162,6 +165,8 @@ export global Playback {
     callback toggle-subtitles();
     /// < / >: previous / next preset speed.
     callback step-speed(int);
+    /// Drop the course's own speed for the default.
+    callback use-default-speed();
     /// I: show / hide the playback-info overlay.
     callback toggle-stats();
     /// Rebuild the panel's contents (on opening it, or a lecture change).
@@ -629,10 +634,19 @@ export component PlayerOverlay inherits Rectangle {
                 }
             }
 
+            // Dark enough behind the white controls to read over bright frames.
+            // Before the menus, so it shades the picture and not them.
+            Rectangle {
+                y: parent.height - self.height;
+                height: 190px;
+                background: @linear-gradient(0deg, #000000e6 0%, #000000a6 45%, #00000000 100%);
+            }
+
             // Track / chapter / speed menu, floating above the bar at the right.
             if Playback.open-menu == "speed" || Playback.open-menu == "sub"
                 || Playback.open-menu == "audio" || Playback.open-menu == "chapters": Rectangle {
-                property <length> list-height: min(menu-list.preferred-height, 360px);
+                // Scrolls past 420px, or past the room above the bar in a small window.
+                property <length> list-height: min(menu-list.preferred-height, min(420px, parent.height - 140px));
                 x: parent.width - self.width - 20px;
                 y: parent.height - 108px - self.height;
                 width: 320px;
@@ -672,6 +686,32 @@ export component PlayerOverlay inherits Rectangle {
                                 item: item;
                                 clicked => { Playback.pick-speed(item.id); }
                             }
+                            // The course has its own speed (picked here);
+                            // Settings' default applies again from this row.
+                            if Playback.speed-default != "": VerticalLayout {
+                                spacing: 2px;
+                                Rectangle {
+                                    height: 9px;
+                                    Rectangle {
+                                        height: 1px;
+                                        background: #ffffff1f;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    Text {
+                                        text: "Saved for this course";
+                                        color: #ffffff99;
+                                        font-size: 12px;
+                                        height: 24px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                MenuRow {
+                                    item: { id: -1, label: "Use default (" + Playback.speed-default + ")", detail: "", selected: false };
+                                    clicked => { Playback.use-default-speed(); }
+                                }
+                            }
                         }
                         if Playback.open-menu == "sub": VerticalLayout {
                             spacing: 2px;
@@ -699,12 +739,6 @@ export component PlayerOverlay inherits Rectangle {
             }
 
             // Bottom: seek bar, then transport and track/view controls.
-            // Dark enough behind the white controls to read over bright frames.
-            Rectangle {
-                y: parent.height - self.height;
-                height: 190px;
-                background: @linear-gradient(0deg, #000000e6 0%, #000000a6 45%, #00000000 100%);
-            }
             VerticalLayout {
                 y: parent.height - self.height;
                 height: 104px;

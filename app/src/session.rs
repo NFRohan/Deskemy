@@ -35,6 +35,10 @@ pub struct NowPlaying {
     /// Autoplay stopped at the end of this lecture to offer its resources
     /// ("Pause on exercises and resources").
     pub resources_waiting: bool,
+    /// The course plays at its own saved speed rather than the default: the
+    /// default's label ("1.25×"), for the speed menu's "Use default". Empty
+    /// when the default applies.
+    pub speed_default: String,
 }
 
 /// The sleep timer: pause after a while, or when the playing lecture ends.
@@ -95,6 +99,11 @@ struct Inner {
     /// Lectures already counted as completed today (count each once).
     completed: HashSet<String>,
     sleep: Sleep,
+}
+
+/// Speeds from the menu and from config: equal, give or take float noise.
+fn same_speed(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-6
 }
 
 pub struct Session {
@@ -208,9 +217,11 @@ impl Session {
             Start::Beginning => 0.0,
             Start::At(t) => t.max(0.0),
         };
-        // Per-course prefs override the global default speed where present.
+        // A course's saved speed overrides the default where present.
         let prefs = queries::get_course_prefs(&db, &course_id).ok().flatten();
-        let speed = prefs.and_then(|p| p.0).unwrap_or_else(|| settings::lock(&self.config).default_speed);
+        let default_speed = settings::lock(&self.config).default_speed;
+        let saved_speed = prefs.and_then(|p| p.0);
+        let speed = saved_speed.unwrap_or(default_speed);
         let view = queries::get_lecture_view(&db, &item.lecture_id).ok().flatten();
         let up_next = inner
             .items
@@ -260,6 +271,7 @@ impl Session {
             has_next: inner.index + 1 < inner.items.len(),
             in_library: true,
             resources_waiting: false,
+            speed_default: saved_speed.map(|_| settings::speed_label(default_speed)).unwrap_or_default(),
         };
         inner.revision += 1;
         inner.lecture_id = Some(item.lecture_id);
@@ -346,11 +358,28 @@ impl Session {
         self.flush_watch(&mut inner);
     }
 
-    /// Change speed and remember it for this course.
+    /// Change speed and remember it for this course — or, picking the default,
+    /// forget the course's own so the default applies again.
     pub fn set_speed(&self, speed: f64) {
-        if self.set("speed", &speed.to_string()) {
-            self.remember(|db, course| queries::set_pref_speed(db, course, speed));
+        if !self.set("speed", &speed.to_string()) {
+            return;
         }
+        let default_speed = settings::lock(&self.config).default_speed;
+        let own = !same_speed(speed, default_speed);
+        self.remember(|db, course| match own {
+            true => queries::set_pref_speed(db, course, speed),
+            false => queries::clear_pref_speed(db, Some(course)).map(|_| ()),
+        });
+        let mut inner = self.inner();
+        if inner.course_id.is_some() {
+            inner.now.speed_default = if own { settings::speed_label(default_speed) } else { String::new() };
+            inner.revision += 1;
+        }
+    }
+
+    /// Back to the default speed (the speed menu's "Use default").
+    pub fn use_default_speed(&self) {
+        self.set_speed(settings::lock(&self.config).default_speed);
     }
 
     /// Pick a subtitle track (None = off) and remember it for this course.
