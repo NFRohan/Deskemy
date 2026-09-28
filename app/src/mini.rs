@@ -31,6 +31,9 @@ impl Rect {
 const MINI: (f32, f32) = (480.0, 270.0);
 /// Its smallest (as app.slint's `min-width` / `min-height` in mini mode).
 const MIN: (f32, f32) = (240.0, 135.0);
+/// How long a switch keeps the window out of sight: enough for the moves
+/// (6–25ms in the logs) and a frame drawn at the new size.
+const REVEAL_MS: u64 = 60;
 const MARGIN: f32 = 24.0;
 /// The window's size to come back to when it was maximized or fullscreen
 /// before (so un-maximizing later doesn't land on the mini size).
@@ -64,11 +67,15 @@ pub struct MiniPlayer {
     /// Logs the window's real rectangle for a moment after a switch (see
     /// `watch`), to see what the transition actually does.
     watch: Rc<slint::Timer>,
+    /// Shows the window again after a switch.
+    reveal: slint::Timer,
 }
 
 impl MiniPlayer {
     pub fn new(ui: &AppWindow, config: Config) -> Rc<Self> {
-        let mini = Rc::new(MiniPlayer { config, saved: Cell::new(None), watch: Rc::new(slint::Timer::default()) });
+        let mini = Rc::new(MiniPlayer { config, saved: Cell::new(None), watch: Rc::new(slint::Timer::default()),
+            reveal: slint::Timer::default(),
+        });
         let (m, weak) = (mini.clone(), ui.as_weak());
         ui.global::<Playback>().on_toggle_mini(move || {
             let Some(ui) = weak.upgrade() else { return };
@@ -90,12 +97,15 @@ impl MiniPlayer {
         // Maximized or fullscreen, the window's own rect is the screen's: come
         // back to a normal size instead of that.
         let normal = if maximized || fullscreen {
-            work.map(|w| centred(w, scale)).unwrap_or(current(ui))
+            work.map(|w| centred(w, scale)).unwrap_or(rect(ui))
         } else {
-            current(ui)
+            rect(ui)
         };
         self.saved.set(Some(Saved { normal, maximized, fullscreen }));
         trace(ui, "enter: before");
+        // Leaving fullscreen and un-maximizing each show the window somewhere
+        // on the way (the restore rect) for a frame: switch out of sight.
+        self.hide_while_switching(ui);
 
         if fullscreen {
             window.set_fullscreen(false);
@@ -110,8 +120,7 @@ impl MiniPlayer {
         // Lifts the minimum size and puts the window on top.
         playback.set_mini(true);
         // Slint applies that minimum on its next update; the window has to be
-        // allowed to shrink now, so it moves straight to its spot. (Placing it
-        // later showed the restored pre-fullscreen window in between.)
+        // allowed to shrink now, to move straight to its spot.
         set_min_size(ui, MIN);
 
         let remembered = settings::lock(&self.config).mini_player.map(Rect::from_array).filter(|r| on_screen(*r));
@@ -130,19 +139,36 @@ impl MiniPlayer {
         let Some(saved) = self.saved.take() else { return };
         trace(ui, "exit: before");
         tracing::debug!(?saved, "mini: exit target");
+        self.hide_while_switching(ui);
         // The normal rect first, even on the way to maximized / fullscreen:
-        // it's what the window returns to when those end.
+        // it's what the window returns to when those end. Then both states it
+        // had (fullscreen from a maximized window is both).
         place(ui, saved.normal);
         trace(ui, "exit: placed");
+        if saved.maximized {
+            ui.window().set_maximized(true);
+            trace(ui, "exit: maximized");
+        }
         if saved.fullscreen {
             ui.window().set_fullscreen(true);
             ui.global::<Playback>().set_fullscreen(true);
             trace(ui, "exit: fullscreen");
-        } else if saved.maximized {
-            ui.window().set_maximized(true);
-            trace(ui, "exit: maximized");
         }
         self.watch(ui, "exit");
+    }
+
+    /// Take the window off screen (it keeps its place in the taskbar and
+    /// its focus) until it has settled and Slint has drawn it at its new
+    /// size, a few frames later.
+    fn hide_while_switching(&self, ui: &AppWindow) {
+        cloak(ui, true);
+        let weak = ui.as_weak();
+        self.reveal.start(slint::TimerMode::SingleShot, Duration::from_millis(REVEAL_MS), move || {
+            if let Some(ui) = weak.upgrade() {
+                cloak(&ui, false);
+                trace(&ui, "revealed");
+            }
+        });
     }
 
     /// For 600ms after a switch, log every change in the window's real
@@ -175,7 +201,7 @@ impl MiniPlayer {
         if !ui.global::<Playback>().get_mini() {
             return;
         }
-        let r = current(ui);
+        let r = rect(ui);
         let mut config = settings::lock(&self.config);
         config.mini_player = Some([r.x, r.y, r.w, r.h]);
         if let Some(dir) = paths::data_dir() {
@@ -251,11 +277,53 @@ fn set_min_size(ui: &AppWindow, (w, h): (f32, f32)) {
     ui.window().with_winit_window(|window| window.set_min_inner_size(Some(LogicalSize::new(w, h))));
 }
 
-fn place(ui: &AppWindow, r: Rect) {
-    let window = ui.window();
-    window.set_size(PhysicalSize::new(r.w.max(1) as u32, r.h.max(1) as u32));
-    window.set_position(PhysicalPosition::new(r.x, r.y));
+/// The window's rectangle, outside edges: what `place` sets.
+fn rect(ui: &AppWindow) -> Rect {
+    os_rect(ui).unwrap_or_else(|| current(ui))
 }
+
+/// Move and resize the window to `r` (its outside edges). On Windows in one
+/// SetWindowPos: after fullscreen, Slint's set_size gains an invisible frame
+/// (480x270 became 496x309, and grew on every switch).
+#[cfg(windows)]
+fn place(ui: &AppWindow, r: Rect) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER};
+    let flags = SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE;
+    // SAFETY: a live window handle; no z-order change.
+    let placed = hwnd(ui)
+        .is_some_and(|hwnd| unsafe { SetWindowPos(hwnd, std::ptr::null_mut(), r.x, r.y, r.w.max(1), r.h.max(1), flags) } != 0);
+    if !placed {
+        place_portably(ui, r);
+    }
+}
+
+#[cfg(not(windows))]
+fn place(ui: &AppWindow, r: Rect) {
+    place_portably(ui, r);
+}
+
+fn place_portably(ui: &AppWindow, r: Rect) {
+    let window = ui.window();
+    window.set_position(PhysicalPosition::new(r.x, r.y));
+    window.set_size(PhysicalSize::new(r.w.max(1) as u32, r.h.max(1) as u32));
+}
+
+/// Hide the window from the screen without hiding it from Windows (DWM
+/// cloaking: no taskbar change, focus kept, no event-loop exit).
+#[cfg(windows)]
+fn cloak(ui: &AppWindow, on: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+    let Some(hwnd) = hwnd(ui) else { return };
+    let value: i32 = on.into();
+    // SAFETY: a live window handle; a BOOL-sized value for DWMWA_CLOAK.
+    unsafe {
+        DwmSetWindowAttribute(hwnd, DWMWA_CLOAK as u32, (&value as *const i32).cast(), std::mem::size_of::<i32>() as u32);
+    }
+}
+
+/// Elsewhere the compositor animates or places windows itself.
+#[cfg(not(windows))]
+fn cloak(_: &AppWindow, _: bool) {}
 
 #[cfg(windows)]
 fn hwnd(ui: &AppWindow) -> Option<windows_sys::Win32::Foundation::HWND> {

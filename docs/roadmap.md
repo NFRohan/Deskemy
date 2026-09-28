@@ -55,6 +55,11 @@ Known follow-ups:
 - Keep-awake during playback (freedesktop ScreenSaver inhibit; macOS:
   IOPMAssertion) — Windows only today.
 - rfd's backend: GTK 3 (default) or the XDG portal.
+- Mini player: the portable path (Slint's position/size, `always-on-top`)
+  should do on X11. Wayland lets neither an app place its window nor keep it
+  on top (the compositor decides), so there it's a small window wherever it
+  lands. The Windows-only parts (work area, one-step SetWindowPos, DWM
+  cloaking during the switch) are behind `cfg(windows)` in `mini.rs`.
 - Packaging: AppImage and/or Flatpak.
 
 ## Feature ideas
