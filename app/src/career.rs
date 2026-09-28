@@ -117,7 +117,10 @@ impl TracksPage {
             return;
         }
         let tracks = ui.global::<Tracks>();
-        match queries::create_track(&self.conn(), name, optional(description)) {
+        // Its own statement: a guard in a `match` scrutinee lives to the end of
+        // the match, and `open` locks the database again (it hung the app).
+        let created = queries::create_track(&self.conn(), name, optional(description));
+        match created {
             Ok(id) => {
                 tracks.set_dialog("".into());
                 self.open(ui, &id);

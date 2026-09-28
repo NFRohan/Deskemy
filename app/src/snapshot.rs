@@ -153,6 +153,12 @@ pub fn sample_tracks(ui: &crate::AppWindow, page: &crate::career::TracksPage, wh
     use crate::{Nav, Tracks};
     use slint::ComponentHandle;
     let nav = ui.global::<Nav>();
+    // "tracks-new": create a track, as the dialog's Create button does (and
+    // land on its page) — it once deadlocked on the database lock.
+    if which == "tracks-new" {
+        page.create(ui, "Snapshot track", "Created by --snapshot");
+        return;
+    }
     if let Some(dialog) = which.strip_prefix("tracks") {
         nav.set_page("tracks".into());
         nav.set_crumbs(crate::course_panel::model(vec!["Career Tracks".into()]));

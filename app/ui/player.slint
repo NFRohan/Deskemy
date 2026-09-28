@@ -363,7 +363,12 @@ export component PlayerOverlay inherits Rectangle {
     }
     function wake() {
         root.controls-shown = true;
-        idle.restart();
+        // `restart()` re-arms a stopped Timer whatever `running` says, so only
+        // when it may run: moving the pointer while typing a bookmark (or with
+        // any menu open) would otherwise hide the controls, and the menu with them.
+        if root.may-hide && !root.pinned {
+            idle.restart();
+        }
     }
 
     /// The Tauri player's shortcut map.
@@ -520,7 +525,12 @@ export component PlayerOverlay inherits Rectangle {
     idle := Timer {
         interval: 2.5s;
         running: root.controls-shown && root.may-hide && !root.pinned;
-        triggered => { root.controls-shown = false; }
+        triggered => {
+            // In case it was re-armed anyway: never hide over an open menu.
+            if root.may-hide && !root.pinned {
+                root.controls-shown = false;
+            }
+        }
     }
 
     // Wraps the whole overlay: keys typed into a field inside (the bookmark
