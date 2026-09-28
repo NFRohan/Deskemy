@@ -39,7 +39,8 @@ Known follow-ups:
 - [x] In-app updates against the signed `latest.json` (the Tauri updater's, plus
       `format`), banner + Settings → About, nothing downloads until confirmed.
 - [ ] Hand-test 2.0.0 for a couple of days, then release (the user's call).
-- [ ] Rehearse a real update with the release key (releasing.md §3–4).
+- [x] Sign with the release key and verify against the app's key (releasing.md §3).
+- [ ] Optional: rehearse a real update (releasing.md §4).
 - [ ] Then remove `src-tauri/` and the Svelte frontend.
 
 ## Linux
