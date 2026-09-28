@@ -1,5 +1,10 @@
 # Releasing (Windows)
 
+Releases are Windows-only for now. Linux builds are CI-only
+(`.github/workflows/slint-linux.yml` builds and tests, and publishes nothing)
+until the Linux app has been reviewed and tested; `latest.json` has no Linux
+entry, so no updater is offered one.
+
 The Slint app (`app/`) is packaged with [cargo-packager](https://github.com/crabnebula-dev/cargo-packager)
 (`cargo install cargo-packager --locked`); its config is `[package.metadata.packager]`
 in `app/Cargo.toml`. Both installers match the Tauri app's, so each updates an
@@ -30,6 +35,10 @@ $env:CARGO_PACKAGER_SIGN_PRIVATE_KEY = "<the key, or a path to the key file>"
 $env:CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD = "<its password>"
 powershell -File app/scripts/package.ps1 -Notes "What's new in this release"
 ```
+
+`-Notes` is the one-line summary that goes into `latest.json` (what an
+update prompt can show); the full notes, for the GitHub release, live in
+`docs/release-notes/<version>.md`.
 
 Into `app/target/packages/`:
 

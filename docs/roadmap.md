@@ -29,6 +29,11 @@ Known follow-ups:
       them up.
 - [ ] Mouse back only works over the video, not over the control bar or title
       bar.
+- [ ] The first run after installing / updating with the setup (its "Run
+      Deskemy") comes up minimized, or behind other windows. Not the
+      launcher's show state: STARTUPINFO carries none (`show=None`, logged
+      in a test build). Next: log IsIconic / GetForegroundWindow once the
+      window is up, to tell minimized from foreground-locked.
 - [x] Controls hide when the pointer leaves the window (paused or playing).
 
 ## Installer and updater

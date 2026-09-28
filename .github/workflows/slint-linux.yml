@@ -1,5 +1,9 @@
 # Builds and tests the Slint app and the shared core on Linux (GH #7), with the
 # distribution's libmpv. The session tests drive a real, headless mpv.
+#
+# CI only: it publishes nothing (no release, no binaries; the one artifact is
+# a UI screenshot). Linux isn't released until it's been reviewed and tested
+# (docs/roadmap.md, Linux); releases are Windows-only, see docs/releasing.md.
 name: Slint app on Linux
 
 on:
