@@ -21,8 +21,8 @@ export global Nav {
     in-out property <bool> sidebar-collapsed;
 }
 
-/// A window button as the Tauri app's TopBar.svelte: a Lucide glyph on a
-/// rounded hover background (red for close).
+/// A small title bar button (the player's back arrow): a Lucide glyph on a
+/// rounded hover background.
 component WindowButton inherits Rectangle {
     in property <string> label;
     in property <image> icon;
@@ -50,24 +50,59 @@ component WindowButton inherits Rectangle {
     }
 }
 
-/// Minimize / maximize-restore / close.
-export component WindowButtons inherits HorizontalLayout {
-    spacing: 4px;
+/// A caption button as Windows draws them: 46x32, flush with the window's
+/// top edge, a thin 10px glyph, a tint on hover (solid red for close).
+component CaptionButton inherits Rectangle {
+    in property <string> label;
+    /// The glyph, as path commands on a 10x10 box.
+    in property <string> glyph;
+    in property <bool> danger;
+    callback clicked;
 
-    WindowButton {
+    width: 46px;
+    height: 32px;
+    background: root.danger && touch.pressed ? #f1707a
+        : root.danger && touch.has-hover ? #e81123
+        : touch.pressed ? (Theme.dark ? #ffffff33 : #00000033)
+        : touch.has-hover ? (Theme.dark ? #ffffff1a : #0000001a)
+        : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    Path {
+        width: 10px;
+        height: 10px;
+        viewbox-width: 10;
+        viewbox-height: 10;
+        commands: root.glyph;
+        fill: transparent;
+        stroke: root.danger && touch.has-hover ? #ffffff : Theme.on-surface;
+        stroke-width: 1px;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Minimize / maximize-restore / close, in the window's top-right corner.
+export component WindowButtons inherits HorizontalLayout {
+    CaptionButton {
         label: "Minimize";
-        icon: @image-url("icons/minus.svg");
+        glyph: "M 0 5.5 L 10 5.5";
         clicked => { WindowChrome.minimize(); }
     }
-    WindowButton {
+    CaptionButton {
         label: WindowChrome.maximized ? "Restore" : "Maximize";
-        icon: WindowChrome.maximized ? @image-url("icons/restore.svg") : @image-url("icons/square.svg");
-        icon-size: 13px;
+        // Restore: a square with another behind it, up and to the right.
+        glyph: WindowChrome.maximized
+            ? "M 0.5 2.5 L 7.5 2.5 L 7.5 9.5 L 0.5 9.5 Z M 2.5 2.5 L 2.5 0.5 L 9.5 0.5 L 9.5 7.5 L 7.5 7.5"
+            : "M 0.5 0.5 L 9.5 0.5 L 9.5 9.5 L 0.5 9.5 Z";
         clicked => { WindowChrome.toggle-maximize(); }
     }
-    WindowButton {
+    CaptionButton {
         label: "Close";
-        icon: @image-url("icons/x.svg");
+        glyph: "M 0 0 L 10 10 M 10 0 L 0 10";
         danger: true;
         clicked => { WindowChrome.close(); }
     }
@@ -95,7 +130,8 @@ export component TitleBar inherits Rectangle {
 
         HorizontalLayout {
             padding-left: root.back-button ? 8px : 16px;
-            padding-right: 10px;
+            // Room for the caption buttons (3 x 46px), which sit in the corner.
+            padding-right: 3 * 46px + 8px;
             spacing: 6px;
 
             if root.back-button: HorizontalLayout {
@@ -133,10 +169,13 @@ export component TitleBar inherits Rectangle {
                 }
             }
             Rectangle { horizontal-stretch: 1; }
-            WindowButtons {
-                y: (parent.height - 28px) / 2;
-                height: 28px;
-            }
+        }
+
+        WindowButtons {
+            x: parent.width - 3 * 46px;
+            y: 0;
+            width: 3 * 46px;
+            height: 32px;
         }
     }
 
