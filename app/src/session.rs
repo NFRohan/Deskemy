@@ -271,7 +271,10 @@ impl Session {
             has_next: inner.index + 1 < inner.items.len(),
             in_library: true,
             resources_waiting: false,
-            speed_default: saved_speed.map(|_| settings::speed_label(default_speed)).unwrap_or_default(),
+            speed_default: saved_speed
+                .filter(|s| !same_speed(*s, default_speed))
+                .map(|_| settings::speed_label(default_speed))
+                .unwrap_or_default(),
         };
         inner.revision += 1;
         inner.lecture_id = Some(item.lecture_id);

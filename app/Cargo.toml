@@ -50,7 +50,7 @@ base64 = "0.22"
 # Msi* — whether this copy was installed by the MSI (the updater fetches the same kind).
 # GetMonitorInfo, SetWindowPos, DWM cloaking — placing the mini player and
 # switching to it out of sight, SetWindowSubclass — keeping its aspect ratio
-# while resized; GetWindowRect / GetWindowPlacement — its logs.
+# while resized; GetWindowRect — its debug traces.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",

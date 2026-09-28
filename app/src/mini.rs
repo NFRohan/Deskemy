@@ -65,10 +65,13 @@ static LOCKED_ASPECT: AtomicU32 = AtomicU32::new(0);
 /// the resize hook.
 static MIN_PHYSICAL: AtomicU64 = AtomicU64::new(0);
 
-/// Called by the event thread with mpv's `video-params/aspect`.
+/// Called by the event thread with mpv's `video-params/aspect`. None (between
+/// files, or audio) keeps the last one, so the mini player doesn't flip to
+/// 16:9 and back at every lecture change.
 pub fn set_video_aspect(aspect: Option<f64>) {
-    let bits = aspect.filter(|a| (0.2..=5.0).contains(a)).map_or(0, |a| (a as f32).to_bits());
-    VIDEO_ASPECT.store(bits, Ordering::Relaxed);
+    if let Some(a) = aspect.filter(|a| (0.2..=5.0).contains(a)) {
+        VIDEO_ASPECT.store((a as f32).to_bits(), Ordering::Relaxed);
+    }
 }
 
 /// The video's aspect, or 16:9 before one is known (or for audio).
@@ -114,8 +117,18 @@ pub fn fit_aspect(r: Rect, aspect: f64, work: Option<Rect>, min: (i32, i32)) -> 
     if r.y + r.h / 2 > work.y + work.h / 2 {
         out.y = r.y + r.h - out.h;
     }
-    out.w = out.w.min(work.w);
-    out.h = out.h.min(work.h);
+    // Too big for the screen (a portrait video): shrink both, in shape.
+    if out.h > work.h {
+        out.h = work.h;
+        out.w = (out.h as f64 * aspect).round() as i32;
+    }
+    if out.w > work.w {
+        out.w = work.w;
+        out.h = (out.w as f64 / aspect).round() as i32;
+    }
+    if r.y + r.h / 2 > work.y + work.h / 2 {
+        out.y = r.y + r.h - out.h;
+    }
     out.x = out.x.clamp(work.x, work.x + work.w - out.w);
     out.y = out.y.clamp(work.y, work.y + work.h - out.h);
     out
@@ -132,11 +145,9 @@ struct Saved {
 pub struct MiniPlayer {
     config: Config,
     saved: Cell<Option<Saved>>,
-    /// Logs the window's real rectangle for a moment after a switch (see
-    /// `watch`), to see what the transition actually does.
-    watch: Rc<slint::Timer>,
-    /// Shows the window again after a switch.
-    reveal: slint::Timer,
+    /// Shows the window again after a switch (one timer for both ways, so a
+    /// pending reveal can't fire in the middle of the next switch).
+    reveal: Rc<slint::Timer>,
     /// Reshapes the mini player when the video's aspect changes (the next
     /// lecture).
     follow: slint::Timer,
@@ -144,18 +155,24 @@ pub struct MiniPlayer {
     hooked: Cell<bool>,
     /// Finishes leaving mini once the window has settled (see `exit`).
     settle: slint::Timer,
-    /// A switch is under way.
+    /// A switch is under way (until the window is shown again).
     switching: Rc<Cell<bool>>,
+    /// Leaving mini goes back to fullscreen (if it came from there); the
+    /// player closing mid-switch turns it off.
+    to_fullscreen: Rc<Cell<bool>>,
 }
 
 impl MiniPlayer {
     pub fn new(ui: &AppWindow, config: Config) -> Rc<Self> {
-        let mini = Rc::new(MiniPlayer { config, saved: Cell::new(None), watch: Rc::new(slint::Timer::default()),
-            reveal: slint::Timer::default(),
+        let mini = Rc::new(MiniPlayer {
+            config,
+            saved: Cell::new(None),
+            reveal: Rc::new(slint::Timer::default()),
             follow: slint::Timer::default(),
             hooked: Cell::new(false),
             settle: slint::Timer::default(),
             switching: Rc::new(Cell::new(false)),
+            to_fullscreen: Rc::new(Cell::new(false)),
         });
         let (m, weak) = (mini.clone(), ui.as_weak());
         ui.global::<Playback>().on_toggle_mini(move || {
@@ -170,10 +187,13 @@ impl MiniPlayer {
                 m.enter(&ui);
             }
         });
-        // Closing the player from the mini one.
+        // Closing the player from the mini one: back to the window, never to
+        // fullscreen (even if a switch back there is already under way).
         let (m, weak) = (mini.clone(), ui.as_weak());
         ui.global::<Playback>().on_leave_mini(move || {
-            if let Some(ui) = weak.upgrade() {
+            if m.switching.get() {
+                m.to_fullscreen.set(false);
+            } else if let Some(ui) = weak.upgrade() {
                 m.exit(&ui, false);
             }
         });
@@ -209,11 +229,14 @@ impl MiniPlayer {
             trace(ui, "enter: un-maximized");
         }
         // Close any menu; the bookmark dialog through its own close, which
-        // resumes the video it paused.
-        if playback.get_open_menu() == "bookmark" {
-            playback.invoke_close_bookmark();
+        // resumes the video it paused. The end-of-lecture resources card
+        // stays: the mini player shows it as a chip, and it's there again
+        // back in the full player.
+        match playback.get_open_menu().as_str() {
+            "bookmark" => playback.invoke_close_bookmark(),
+            "exercise" => {}
+            _ => playback.set_open_menu("".into()),
         }
-        playback.set_open_menu("".into());
         // Lifts the minimum size and puts the window on top.
         playback.set_mini(true);
         // Slint applies that minimum on its next update; the window has to be
@@ -225,15 +248,16 @@ impl MiniPlayer {
         let aspect = video_aspect();
         self.lock_aspect(ui, aspect, min);
         let remembered = settings::lock(&self.config).mini_player.map(Rect::from_array).filter(|r| on_screen(*r));
-        let target = remembered
-            .or_else(|| work.map(|w| default_bounds(w, scale)))
-            .map(|r| fit_aspect(r, aspect, work, min));
+        // Fitted to the screen it's on: a spot on another monitor stays there.
+        let target = match remembered {
+            Some(r) => Some(fit_aspect(r, aspect, work_area_at(ui, r), min)),
+            None => work.map(|w| fit_aspect(default_bounds(w, scale), aspect, Some(w), min)),
+        };
         tracing::debug!(?target, ?work, aspect, remembered = remembered.is_some(), "mini: enter target");
         if let Some(r) = target {
             place(ui, r);
         }
         trace(ui, "enter: placed");
-        self.watch(ui, "enter");
         self.follow_aspect(ui, min);
     }
 
@@ -252,6 +276,7 @@ impl MiniPlayer {
         cloak(ui, true);
         self.reveal.stop();
         self.switching.set(true);
+        self.to_fullscreen.set(back_to_fullscreen && saved.fullscreen);
         // The normal rect first, even on the way to maximized / fullscreen:
         // it's what the window returns to when those end.
         place(ui, saved.normal);
@@ -260,9 +285,9 @@ impl MiniPlayer {
         // comes on its next pass): lifting mini raises the minimum to 900x600,
         // and against the old mini size Slint resized the window itself,
         // which un-maximized it again.
-        let (weak, switching) = (ui.as_weak(), self.switching.clone());
+        let (weak, switching, to_fullscreen, reveal) =
+            (ui.as_weak(), self.switching.clone(), self.to_fullscreen.clone(), self.reveal.clone());
         self.settle.start(slint::TimerMode::SingleShot, Duration::from_millis(SETTLE_MS), move || {
-            switching.set(false);
             let Some(ui) = weak.upgrade() else { return };
             let playback = ui.global::<Playback>();
             playback.set_mini(false);
@@ -270,17 +295,19 @@ impl MiniPlayer {
                 set_maximized(&ui, true);
                 trace(&ui, "exit: maximized");
             }
-            if saved.fullscreen && back_to_fullscreen {
+            if to_fullscreen.get() {
                 // In sight: the shell only puts the taskbar behind a window
                 // it sees go fullscreen (done cloaked, the taskbar stayed on
                 // top of the video until focus moved).
                 cloak(&ui, false);
                 ui.window().set_fullscreen(true);
                 playback.set_fullscreen(true);
+                switching.set(false);
                 trace(&ui, "exit: fullscreen");
             } else {
-                let weak = ui.as_weak();
-                slint::Timer::single_shot(Duration::from_millis(REVEAL_MS), move || {
+                let (weak, switching) = (ui.as_weak(), switching.clone());
+                reveal.start(slint::TimerMode::SingleShot, Duration::from_millis(REVEAL_MS), move || {
+                    switching.set(false);
                     if let Some(ui) = weak.upgrade() {
                         cloak(&ui, false);
                         trace(&ui, "revealed");
@@ -288,7 +315,6 @@ impl MiniPlayer {
                 });
             }
         });
-        self.watch(ui, "exit");
     }
 
     /// Keep the window at `aspect` while it's resized (the WM_SIZING hook).
@@ -310,7 +336,8 @@ impl MiniPlayer {
             let locked = f32::from_bits(LOCKED_ASPECT.load(Ordering::Relaxed)) as f64;
             if locked > 0.0 && (aspect / locked - 1.0).abs() > 0.01 {
                 LOCKED_ASPECT.store((aspect as f32).to_bits(), Ordering::Relaxed);
-                place(&ui, fit_aspect(rect(&ui), aspect, work_area(&ui), min));
+                let r = rect(&ui);
+                place(&ui, fit_aspect(r, aspect, work_area_at(&ui, r), min));
                 tracing::debug!(aspect, "mini: video shape changed");
             }
         });
@@ -321,35 +348,13 @@ impl MiniPlayer {
     /// size, a few frames later.
     fn hide_while_switching(&self, ui: &AppWindow) {
         cloak(ui, true);
-        let weak = ui.as_weak();
+        self.switching.set(true);
+        let (weak, switching) = (ui.as_weak(), self.switching.clone());
         self.reveal.start(slint::TimerMode::SingleShot, Duration::from_millis(REVEAL_MS), move || {
+            switching.set(false);
             if let Some(ui) = weak.upgrade() {
                 cloak(&ui, false);
                 trace(&ui, "revealed");
-            }
-        });
-    }
-
-    /// For 600ms after a switch, log every change in the window's real
-    /// rectangle with the time since the switch: where it went, and for how
-    /// long, frame by frame.
-    fn watch(&self, ui: &AppWindow, what: &'static str) {
-        let (weak, start) = (ui.as_weak(), std::time::Instant::now());
-        let timer = Rc::downgrade(&self.watch);
-        let last = Cell::new(None);
-        self.watch.start(slint::TimerMode::Repeated, Duration::from_millis(1), move || {
-            if start.elapsed() > Duration::from_millis(600) {
-                if let Some(timer) = timer.upgrade() {
-                    timer.stop();
-                }
-                return;
-            }
-            let Some(ui) = weak.upgrade() else { return };
-            let now = (os_rect(&ui), current(&ui));
-            if last.get() != Some(now) {
-                last.set(Some(now));
-                let ms = start.elapsed().as_secs_f64() * 1000.0;
-                tracing::debug!(what, ms = %format!("{ms:.1}"), os = ?now.0, slint = ?now.1, "mini: window moved");
             }
         });
     }
@@ -371,14 +376,13 @@ impl MiniPlayer {
     }
 }
 
-/// One line on the window's state: the rectangle Windows reports (and, when
-/// maximized, the one it restores to), and what Slint thinks.
+/// One debug line on the window's state at a step of a switch: the rectangle
+/// Windows reports and what Slint thinks (they differ mid-switch).
 fn trace(ui: &AppWindow, step: &str) {
     let window = ui.window();
     tracing::debug!(
         step,
         os = ?os_rect(ui),
-        restore = ?restore_rect(ui),
         slint = ?current(ui),
         maximized = window.is_maximized(),
         fullscreen = window.is_fullscreen(),
@@ -398,29 +402,8 @@ fn os_rect(ui: &AppWindow) -> Option<Rect> {
         .then(|| Rect { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top })
 }
 
-/// Where Windows returns the window when it stops being maximized.
-#[cfg(windows)]
-fn restore_rect(ui: &AppWindow) -> Option<Rect> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowPlacement, WINDOWPLACEMENT};
-    let hwnd = hwnd(ui)?;
-    // SAFETY: a live window handle; WINDOWPLACEMENT is sized for the call.
-    unsafe {
-        let mut p: WINDOWPLACEMENT = std::mem::zeroed();
-        p.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
-        (GetWindowPlacement(hwnd, &mut p) != 0).then(|| {
-            let r = p.rcNormalPosition;
-            Rect { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top }
-        })
-    }
-}
-
 #[cfg(not(windows))]
 fn os_rect(_: &AppWindow) -> Option<Rect> {
-    None
-}
-
-#[cfg(not(windows))]
-fn restore_rect(_: &AppWindow) -> Option<Rect> {
     None
 }
 
@@ -561,6 +544,29 @@ fn work_area(ui: &AppWindow) -> Option<Rect> {
     }
 }
 
+/// The work area of the monitor `r` is (mostly) on.
+#[cfg(windows)]
+fn work_area_at(_: &AppWindow, r: Rect) -> Option<Rect> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromRect, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    let rect = RECT { left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h };
+    // SAFETY: plain values in; MONITORINFO is sized for the call.
+    unsafe {
+        let monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        (GetMonitorInfoW(monitor, &mut info) != 0).then(|| {
+            let w = info.rcWork;
+            Rect { x: w.left, y: w.top, w: w.right - w.left, h: w.bottom - w.top }
+        })
+    }
+}
+
+#[cfg(not(windows))]
+fn work_area_at(ui: &AppWindow, _: Rect) -> Option<Rect> {
+    work_area(ui)
+}
+
 /// Elsewhere: the monitor's full area (winit knows no work area).
 #[cfg(not(windows))]
 fn work_area(ui: &AppWindow) -> Option<Rect> {
@@ -633,10 +639,12 @@ mod tests {
         // Near the top, the top stays.
         let r = Rect { x: 24, y: 24, w: 480, h: 360 };
         assert_eq!(fit_aspect(r, wide, Some(WORK), (240, 135)), Rect { x: 24, y: 24, w: 480, h: 270 });
-        // A portrait video can't run off the bottom.
-        let r = Rect { x: 1400, y: 700, w: 480, h: 270 };
+        // A portrait video too tall for the screen shrinks in shape, and
+        // can't run off the bottom.
+        let r = Rect { x: 1400, y: 700, w: 720, h: 405 };
         let f = fit_aspect(r, 9.0 / 16.0, Some(WORK), (240, 135));
-        assert!(f.y + f.h <= WORK.h, "{f:?}");
+        assert!(f.y + f.h <= WORK.h && f.h == WORK.h, "{f:?}");
+        assert!(((f.w as f64 / f.h as f64) - 9.0 / 16.0).abs() < 0.01, "{f:?}");
     }
 
     #[test]
