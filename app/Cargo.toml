@@ -51,6 +51,7 @@ base64 = "0.22"
 # GetMonitorInfo, SetWindowPos, DWM cloaking — placing the mini player and
 # switching to it out of sight, SetWindowSubclass — keeping its aspect ratio
 # while resized; GetWindowRect — its debug traces.
+# GetStartupInfo — the show state an installer launches it with.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
@@ -58,6 +59,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Power",
+    "Win32_System_Threading",
     "Win32_System_ApplicationInstallationAndServicing",
 ] }
 

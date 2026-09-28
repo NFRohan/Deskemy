@@ -359,6 +359,23 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_search(&ui, &db, &course, player.session());
     wire_course(&ui, &course, player.session(), &importing);
 
+    // An installer's "launch Deskemy" can pass a minimized show state, which
+    // Windows applies to the first window: come up normally instead (a
+    // shortcut set to "Run: Minimized" is still honoured).
+    if launched_minimized_by_a_program() {
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+            if let Some(ui) = weak.upgrade() {
+                use slint::winit_030::WinitWindowAccessor;
+                ui.window().with_winit_window(|w| {
+                    w.set_minimized(false);
+                    w.focus_window();
+                });
+                tracing::info!("restored a window launched minimized");
+            }
+        });
+    }
+
     let result = ui.run();
     // Quitting from the mini player: keep where it sat for next time.
     mini.remember(&ui);
@@ -604,6 +621,31 @@ fn wire_course(
             tracing::warn!(error = %e, %path, "open resource");
         }
     });
+}
+
+/// Whether the process that started Deskemy asked for its window minimized,
+/// and wasn't a shortcut (logged either way: what installers pass).
+#[cfg(windows)]
+fn launched_minimized_by_a_program() -> bool {
+    use windows_sys::Win32::System::Threading::{GetStartupInfoW, STARTF_TITLEISLINKNAME, STARTF_USESHOWWINDOW, STARTUPINFOW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_FORCEMINIMIZE, SW_MINIMIZE, SW_SHOWMINIMIZED, SW_SHOWMINNOACTIVE};
+    // SAFETY: fills a STARTUPINFOW sized for the call.
+    let info = unsafe {
+        let mut info: STARTUPINFOW = std::mem::zeroed();
+        info.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
+        GetStartupInfoW(&mut info);
+        info
+    };
+    let show = (info.dwFlags & STARTF_USESHOWWINDOW != 0).then_some(info.wShowWindow as i32);
+    let shortcut = info.dwFlags & STARTF_TITLEISLINKNAME != 0;
+    tracing::info!(?show, shortcut, "launch show state");
+    let minimized = show.is_some_and(|s| [SW_SHOWMINIMIZED, SW_MINIMIZE, SW_SHOWMINNOACTIVE, SW_FORCEMINIMIZE].contains(&s));
+    minimized && !shortcut
+}
+
+#[cfg(not(windows))]
+fn launched_minimized_by_a_program() -> bool {
+    false
 }
 
 /// Frameless-window actions for the custom title bars.
