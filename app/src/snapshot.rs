@@ -227,6 +227,17 @@ fn sample_panel(playback: &crate::Playback, db: &crate::session::Db) {
 
 /// Draw the current frame of `window` and save it to `path`.
 pub fn save(window: &MinimalSoftwareWindow, path: &Path) -> Result<(), String> {
+    // DESKEMY_SNAPSHOT_POINTER="x,y": rest the pointer there first, to see
+    // hover states (tooltips, highlights).
+    if let Some((x, y)) = std::env::var("DESKEMY_SNAPSHOT_POINTER")
+        .ok()
+        .and_then(|p| p.split_once(',').and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?))))
+    {
+        slint::platform::update_timers_and_animations();
+        window.dispatch_event(slint::platform::WindowEvent::PointerMoved { position: slint::LogicalPosition::new(x, y) });
+        // Hover can open elements (a tooltip) that lay out on the next pass.
+        slint::platform::update_timers_and_animations();
+    }
     slint::platform::update_timers_and_animations();
     let size = window.size();
     let (w, h) = (size.width as usize, size.height as usize);

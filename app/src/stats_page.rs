@@ -4,7 +4,7 @@
 use crate::course_panel::model;
 use crate::library::{format_duration, pct};
 use crate::session::Db;
-use crate::{AppWindow, LearningStats, WeekBar};
+use crate::{AppWindow, HeatCell, LearningStats, WeekBar};
 use chrono::{Datelike, Duration, Local, NaiveDate};
 use deskemy_core::db::queries;
 use deskemy_core::domain::{DayActivity, LibraryStats};
@@ -26,44 +26,73 @@ pub fn level(seconds: f64) -> i32 {
     }
 }
 
-fn by_day(activity: &[DayActivity]) -> HashMap<&str, f64> {
-    activity.iter().map(|a| (a.day.as_str(), a.watch_seconds)).collect()
+/// A day's activity, for the heatmap and the week chart.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Day {
+    pub date: NaiveDate,
+    pub seconds: f64,
+    pub lectures: i64,
 }
 
-fn key(date: NaiveDate) -> String {
-    date.format("%Y-%m-%d").to_string()
+/// Look up days by date.
+struct Days<'a>(HashMap<&'a str, &'a DayActivity>);
+
+impl<'a> Days<'a> {
+    fn new(activity: &'a [DayActivity]) -> Self {
+        Days(activity.iter().map(|a| (a.day.as_str(), a)).collect())
+    }
+
+    fn on(&self, date: NaiveDate) -> Day {
+        let a = self.0.get(date.format("%Y-%m-%d").to_string().as_str());
+        Day {
+            date,
+            seconds: a.map_or(0.0, |a| a.watch_seconds),
+            lectures: a.map_or(0, |a| a.lectures_completed),
+        }
+    }
 }
 
 /// The heatmap's cells, column by column (oldest week first, Sunday to
-/// Saturday), ending with the week holding `today`; days after today are -1.
-pub fn heatmap(today: NaiveDate, activity: &[DayActivity]) -> Vec<i32> {
-    let seconds = by_day(activity);
+/// Saturday), ending with the week holding `today`; days after today are None.
+pub fn heatmap(today: NaiveDate, activity: &[DayActivity]) -> Vec<Option<Day>> {
+    let days = Days::new(activity);
     let last_saturday = today + Duration::days(6 - today.weekday().num_days_from_sunday() as i64);
     let first_sunday = last_saturday - Duration::days(WEEKS * 7 - 1);
     (0..WEEKS * 7)
-        .map(|i| {
-            let date = first_sunday + Duration::days(i);
-            if date > today {
-                -1
-            } else {
-                level(seconds.get(key(date).as_str()).copied().unwrap_or(0.0))
-            }
-        })
+        .map(|i| Some(first_sunday + Duration::days(i)).filter(|date| *date <= today).map(|date| days.on(date)))
         .collect()
 }
 
-/// The last seven days, oldest first: (weekday initial, seconds watched).
-pub fn week(today: NaiveDate, activity: &[DayActivity]) -> Vec<(&'static str, f64)> {
+/// The last seven days, oldest first, with their weekday initials.
+pub fn week(today: NaiveDate, activity: &[DayActivity]) -> Vec<(&'static str, Day)> {
     const INITIALS: [&str; 7] = ["S", "M", "T", "W", "T", "F", "S"];
-    let seconds = by_day(activity);
+    let days = Days::new(activity);
     (0..7)
         .rev()
         .map(|back| {
             let date = today - Duration::days(back);
-            let initial = INITIALS[date.weekday().num_days_from_sunday() as usize];
-            (initial, seconds.get(key(date).as_str()).copied().unwrap_or(0.0))
+            (INITIALS[date.weekday().num_days_from_sunday() as usize], days.on(date))
         })
         .collect()
+}
+
+/// A day's hover text: what was done ("1h 5m watched · 2 lectures") and when
+/// ("Mon, Sep 28", with the year when it isn't this one).
+pub fn tip(day: &Day, today: NaiveDate) -> (String, String) {
+    let mut done = Vec::new();
+    if day.seconds >= 1.0 {
+        done.push(format!("{} watched", format_duration(Some(day.seconds))));
+    }
+    if day.lectures > 0 {
+        done.push(format!("{} {}", day.lectures, if day.lectures == 1 { "lecture" } else { "lectures" }));
+    }
+    let what = if done.is_empty() { "Nothing watched".to_string() } else { done.join(" · ") };
+    let when = if day.date.year() == today.year() {
+        day.date.format("%a, %b %-d").to_string()
+    } else {
+        day.date.format("%a, %b %-d, %Y").to_string()
+    };
+    (what, when)
 }
 
 /// Today's share of the daily goal, 0-100.
@@ -146,17 +175,33 @@ pub fn show(ui: &AppWindow, db: &Db, goal_minutes: i64) {
     page.set_courses_total(stats.courses_total as i32);
 
     page.set_active_days_month(stats.active_days_month as i32);
-    page.set_heatmap(model(heatmap(today, &stats.activity)));
+    page.set_heatmap(model(
+        heatmap(today, &stats.activity)
+            .into_iter()
+            .map(|day| match day {
+                Some(day) => {
+                    let (what, when) = tip(&day, today);
+                    HeatCell { level: level(day.seconds), what: what.into(), when: when.into() }
+                }
+                None => HeatCell { level: -1, ..Default::default() },
+            })
+            .collect(),
+    ));
     let week = week(today, &stats.activity);
-    let most = week.iter().map(|(_, s)| *s).fold(1.0, f64::max);
+    let most = week.iter().map(|(_, d)| d.seconds).fold(1.0, f64::max);
     let last = week.len() - 1;
     page.set_week(model(
         week.into_iter()
             .enumerate()
-            .map(|(i, (label, seconds))| WeekBar {
-                label: label.into(),
-                fraction: (seconds / most).max(0.04) as f32,
-                today: i == last,
+            .map(|(i, (label, day))| {
+                let (what, when) = tip(&day, today);
+                WeekBar {
+                    label: label.into(),
+                    fraction: (day.seconds / most).max(0.04) as f32,
+                    today: i == last,
+                    what: what.into(),
+                    when: when.into(),
+                }
             })
             .collect(),
     ));
@@ -190,7 +235,7 @@ mod tests {
         // 2026-09-25 is a Friday: the last cell (Saturday) is in the future.
         let today = date("2026-09-25");
         let activity = [day("2026-09-25", 45.0), day("2026-09-20", 5.0), day("2026-03-29", 90.0)];
-        let cells = heatmap(today, &activity);
+        let cells: Vec<i32> = heatmap(today, &activity).iter().map(|d| d.map_or(-1, |d| level(d.seconds))).collect();
         assert_eq!(cells.len(), (WEEKS * 7) as usize);
         assert_eq!(cells[cells.len() - 1], -1);
         assert_eq!(cells[cells.len() - 2], 3);
@@ -207,8 +252,29 @@ mod tests {
         let w = week(today, &[day("2026-09-25", 10.0), day("2026-09-19", 2.0)]);
         let labels: Vec<&str> = w.iter().map(|(l, _)| *l).collect();
         assert_eq!(labels, ["S", "S", "M", "T", "W", "T", "F"]);
-        assert_eq!(w[0].1, 120.0);
-        assert_eq!(w[6].1, 600.0);
+        assert_eq!(w[0].1.seconds, 120.0);
+        assert_eq!(w[6].1.seconds, 600.0);
+        assert_eq!(w[6].1.date, today);
+    }
+
+    #[test]
+    fn tips_say_what_was_done_and_when() {
+        let today = date("2026-09-28");
+        let on = |d: &str, seconds: f64, lectures: i64| tip(&Day { date: date(d), seconds, lectures }, today);
+        assert_eq!(on("2026-09-28", 3900.0, 2), ("1h 5m watched · 2 lectures".into(), "Mon, Sep 28".into()));
+        assert_eq!(on("2026-09-27", 45.0 * 60.0, 1), ("45m watched · 1 lecture".into(), "Sun, Sep 27".into()));
+        assert_eq!(on("2026-09-26", 0.0, 0).0, "Nothing watched");
+        assert_eq!(on("2026-09-26", 0.0, 3).0, "3 lectures");
+        assert_eq!(on("2025-12-31", 30.0, 0), ("30s watched".into(), "Wed, Dec 31, 2025".into()));
+    }
+
+    #[test]
+    fn days_carry_their_lectures() {
+        let today = date("2026-09-25");
+        let activity = [DayActivity { day: "2026-09-25".into(), watch_seconds: 600.0, lectures_completed: 3 }];
+        let cells = heatmap(today, &activity);
+        let last = cells.iter().rev().flatten().next().unwrap();
+        assert_eq!((last.date, last.lectures), (today, 3));
     }
 
     #[test]

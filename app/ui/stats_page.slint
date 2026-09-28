@@ -10,6 +10,18 @@ export struct WeekBar {
     /// Height relative to the week's best day (at least a sliver).
     fraction: float,
     today: bool,
+    /// Hover text: "45m watched · 2 lectures", "Mon, Sep 28".
+    what: string,
+    when: string,
+}
+
+/// A day in the activity heatmap.
+export struct HeatCell {
+    /// Shade, 0-4; -1 for days still to come.
+    level: int,
+    /// Hover text, as `WeekBar`'s.
+    what: string,
+    when: string,
 }
 
 export global LearningStats {
@@ -37,9 +49,9 @@ export global LearningStats {
     in property <int> courses-completed;
     in property <int> courses-total;
 
-    // Activity: heatmap shades (0-4, -1 = future), week by week.
+    // Activity: the heatmap's days, week by week.
     in property <int> active-days-month;
-    in property <[int]> heatmap;
+    in property <[HeatCell]> heatmap;
     in property <[WeekBar]> week;
     in property <string> week-total;
 
@@ -165,20 +177,78 @@ component Shade inherits Rectangle {
         : Theme.surface-container-high;
 }
 
+/// A day's hover card: what was done, and when.
+component Tip inherits Rectangle {
+    in property <string> what;
+    in property <string> when;
+    width: body.preferred-width;
+    height: body.preferred-height;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+    background: Theme.surface-container-highest;
+    drop-shadow-blur: 8px;
+    drop-shadow-color: #00000059;
+
+    body := VerticalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 2px;
+        Text {
+            text: root.what;
+            color: Theme.on-surface;
+            font-size: Theme.label-md;
+            font-weight: 600;
+        }
+        Text {
+            text: root.when;
+            color: Theme.on-surface-variant;
+            font-size: Theme.label-sm;
+        }
+    }
+}
+
 component Heatmap inherits Rectangle {
-    in property <[int]> cells;
+    in property <[HeatCell]> cells;
     property <length> gap: 4px;
     property <int> weeks: ceil(root.cells.length / 7);
     property <length> cell: (root.width - (root.weeks - 1) * root.gap) / max(1, root.weeks);
+    property <length> pitch: root.cell + root.gap;
     height: 7 * root.cell + 6 * root.gap;
 
-    for level[i] in root.cells: Shade {
-        x: floor(i / 7) * (root.cell + root.gap);
-        y: mod(i, 7) * (root.cell + root.gap);
+    // The day under the pointer (not the gap beside it), or -1. One hover
+    // area for the grid, rather than one per cell.
+    property <int> hover-week: floor(hover.mouse-x / root.pitch);
+    property <int> hover-day: floor(hover.mouse-y / root.pitch);
+    property <int> index: root.hover-week * 7 + root.hover-day;
+    property <bool> on-cell: hover.has-hover && root.hover-week >= 0 && root.hover-day >= 0 && root.hover-day < 7
+        && hover.mouse-x - root.hover-week * root.pitch < root.cell
+        && hover.mouse-y - root.hover-day * root.pitch < root.cell
+        && root.index < root.cells.length;
+    property <int> hovered: (root.on-cell && root.cells[root.index].level >= 0) ? root.index : -1;
+
+    for day[i] in root.cells: Shade {
+        x: floor(i / 7) * root.pitch;
+        y: mod(i, 7) * root.pitch;
         width: root.cell;
         height: root.cell;
-        level: level;
-        visible: level >= 0;
+        level: day.level;
+        visible: day.level >= 0;
+        // The hovered day, outlined.
+        border-width: i == root.hovered ? 1px : 0;
+        border-color: Theme.on-surface-variant;
+    }
+
+    hover := TouchArea { }
+
+    // Above the day; below it for the top two rows, so it stays on the card.
+    if root.hovered >= 0: Tip {
+        what: root.cells[root.hovered].what;
+        when: root.cells[root.hovered].when;
+        x: max(0px, min(root.width - self.width, root.hover-week * root.pitch + (root.cell - self.width) / 2));
+        y: root.hover-day < 2 ? (root.hover-day + 1) * root.pitch + 2px : root.hover-day * root.pitch - self.height - 6px;
     }
 }
 
@@ -496,26 +566,56 @@ export component StatsPage inherits Flickable {
                                 vertical-alignment: center;
                             }
                         }
-                        HorizontalLayout {
+                        chart := Rectangle {
                             height: 96px;
-                            spacing: 8px;
-                            for day in LearningStats.week: VerticalLayout {
-                                horizontal-stretch: 1;
-                                spacing: 4px;
-                                alignment: end;
-                                Rectangle {
-                                    height: (96px - 20px) * day.fraction;
-                                    border-top-left-radius: 4px;
-                                    border-top-right-radius: 4px;
-                                    background: day.today ? Theme.primary-container : Theme.surface-container-highest;
+                            // The day under the pointer, or -1.
+                            property <int> hovered: -1;
+                            property <length> spacing: 8px;
+                            property <length> column: (self.width - 6 * self.spacing) / 7;
+                            property <length> bar-area: 96px - 20px;
+
+                            HorizontalLayout {
+                                spacing: chart.spacing;
+                                for day[i] in LearningStats.week: Rectangle {
+                                    horizontal-stretch: 1;
+                                    VerticalLayout {
+                                        spacing: 4px;
+                                        alignment: end;
+                                        Rectangle {
+                                            height: chart.bar-area * day.fraction;
+                                            border-top-left-radius: 4px;
+                                            border-top-right-radius: 4px;
+                                            background: day.today ? Theme.primary-container
+                                                : i == chart.hovered ? Theme.outline-variant
+                                                : Theme.surface-container-highest;
+                                        }
+                                        Text {
+                                            height: 16px;
+                                            text: day.label;
+                                            color: Theme.on-surface-variant;
+                                            font-size: Theme.label-sm;
+                                            horizontal-alignment: center;
+                                        }
+                                    }
+                                    TouchArea {
+                                        changed has-hover => {
+                                            if self.has-hover {
+                                                chart.hovered = i;
+                                            } else if chart.hovered == i {
+                                                chart.hovered = -1;
+                                            }
+                                        }
+                                    }
                                 }
-                                Text {
-                                    height: 16px;
-                                    text: day.label;
-                                    color: Theme.on-surface-variant;
-                                    font-size: Theme.label-sm;
-                                    horizontal-alignment: center;
-                                }
+                            }
+
+                            // Over the bar.
+                            if chart.hovered >= 0: Tip {
+                                what: LearningStats.week[chart.hovered].what;
+                                when: LearningStats.week[chart.hovered].when;
+                                x: max(0px, min(chart.width - self.width,
+                                    chart.hovered * (chart.column + chart.spacing) + (chart.column - self.width) / 2));
+                                y: chart.bar-area * (1 - LearningStats.week[chart.hovered].fraction) - self.height - 6px;
                             }
                         }
                     }
