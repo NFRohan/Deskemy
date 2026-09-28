@@ -1,7 +1,8 @@
 // The follow-along mini player's overlay (see mini.rs): the window small and
 // on top, beside an editor or terminal. Controls show while the pointer is
 // over it, leaving the picture clear otherwise; drag anywhere to move it,
-// double-click (or T, Esc, mouse back) to go back to the full player.
+// double-click (or T, Esc, mouse back) to go back to the full player, close
+// to leave the player (the full window comes back where it was).
 
 import { Playback, IconButton, Scrubber } from "player.slint";
 
@@ -66,10 +67,19 @@ export component MiniPlayer inherits Rectangle {
                 animate opacity { duration: 150ms; }
                 background: @linear-gradient(180deg, #000000b3 0%, #00000040 35%, #00000040 60%, #000000cc 100%);
 
+                // As Edge's picture-in-picture: back to the full player on the
+                // left, close (leave the player) on the right.
+                IconButton {
+                    x: 4px;
+                    y: 2px;
+                    icon: @image-url("icons/m-open-in-full.svg");
+                    icon-size: 18px;
+                    clicked => { Playback.toggle-mini(); }
+                }
                 Text {
-                    x: 12px;
+                    x: 44px;
                     y: 11px;
-                    width: parent.width - 60px;
+                    width: parent.width - 88px;
                     text: Playback.title;
                     color: #ffffff;
                     font-size: 12px;
@@ -79,9 +89,9 @@ export component MiniPlayer inherits Rectangle {
                 IconButton {
                     x: parent.width - self.width - 4px;
                     y: 2px;
-                    icon: @image-url("icons/m-open-in-full.svg");
-                    icon-size: 18px;
-                    clicked => { Playback.toggle-mini(); }
+                    icon: @image-url("icons/m-close.svg");
+                    icon-size: 20px;
+                    clicked => { Playback.back(); }
                 }
 
                 HorizontalLayout {

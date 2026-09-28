@@ -9,6 +9,7 @@ use deskemy_core::paths;
 use slint::{ComponentHandle, PhysicalPosition, PhysicalSize};
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 /// A screen rectangle in physical pixels.
@@ -53,6 +54,71 @@ pub fn centred(work: Rect, scale: f32) -> Rect {
     Rect { x: work.x + (work.w - w) / 2, y: work.y + (work.h - h) / 2, w, h }
 }
 
+/// The playing video's display aspect (width / height) as f32 bits, 0 when
+/// unknown; the event thread keeps it current.
+static VIDEO_ASPECT: AtomicU32 = AtomicU32::new(0);
+/// The aspect the window keeps while it's resized (mini mode), 0 for none.
+static LOCKED_ASPECT: AtomicU32 = AtomicU32::new(0);
+/// The window's minimum size in physical pixels (width << 32 | height), for
+/// the resize hook.
+static MIN_PHYSICAL: AtomicU64 = AtomicU64::new(0);
+
+/// Called by the event thread with mpv's `video-params/aspect`.
+pub fn set_video_aspect(aspect: Option<f64>) {
+    let bits = aspect.filter(|a| (0.2..=5.0).contains(a)).map_or(0, |a| (a as f32).to_bits());
+    VIDEO_ASPECT.store(bits, Ordering::Relaxed);
+}
+
+/// The video's aspect, or 16:9 before one is known (or for audio).
+fn video_aspect() -> f64 {
+    match f32::from_bits(VIDEO_ASPECT.load(Ordering::Relaxed)) {
+        a if a > 0.0 => a as f64,
+        _ => 16.0 / 9.0,
+    }
+}
+
+// WM_SIZING's edges (WMSZ_*).
+const LEFT: u32 = 1;
+const TOP: u32 = 3;
+const TOP_LEFT: u32 = 4;
+const TOP_RIGHT: u32 = 5;
+const BOTTOM: u32 = 6;
+const BOTTOM_LEFT: u32 = 7;
+
+/// A rectangle being resized from `edge` (a WMSZ_* value), corrected to
+/// `aspect` and to at least `min`: the dragged edge leads, the opposite one
+/// stays put. Dragging the top or bottom sets the height, any other edge or
+/// corner the width.
+pub fn keep_aspect(r: Rect, edge: u32, aspect: f64, min: (i32, i32)) -> Rect {
+    let (mut w, mut h) = if matches!(edge, TOP | BOTTOM) {
+        ((r.h as f64 * aspect).round() as i32, r.h)
+    } else {
+        (r.w, (r.w as f64 / aspect).round() as i32)
+    };
+    if w < min.0 || h < min.1 {
+        w = min.0.max((min.1 as f64 * aspect).ceil() as i32);
+        h = ((w as f64 / aspect).round() as i32).max(min.1);
+    }
+    let x = if matches!(edge, LEFT | TOP_LEFT | BOTTOM_LEFT) { r.x + r.w - w } else { r.x };
+    let y = if matches!(edge, TOP | TOP_LEFT | TOP_RIGHT) { r.y + r.h - h } else { r.y };
+    Rect { x, y, w, h }
+}
+
+/// A mini player rectangle reshaped to `aspect`, keeping its width and the
+/// edge nearest the screen's (bottom in the lower half), and kept on screen.
+pub fn fit_aspect(r: Rect, aspect: f64, work: Option<Rect>, min: (i32, i32)) -> Rect {
+    let mut out = keep_aspect(r, 2, aspect, min);
+    let Some(work) = work else { return out };
+    if r.y + r.h / 2 > work.y + work.h / 2 {
+        out.y = r.y + r.h - out.h;
+    }
+    out.w = out.w.min(work.w);
+    out.h = out.h.min(work.h);
+    out.x = out.x.clamp(work.x, work.x + work.w - out.w);
+    out.y = out.y.clamp(work.y, work.y + work.h - out.h);
+    out
+}
+
 /// What to go back to on leaving the mini player.
 #[derive(Clone, Copy, Debug)]
 struct Saved {
@@ -69,12 +135,19 @@ pub struct MiniPlayer {
     watch: Rc<slint::Timer>,
     /// Shows the window again after a switch.
     reveal: slint::Timer,
+    /// Reshapes the mini player when the video's aspect changes (the next
+    /// lecture).
+    follow: slint::Timer,
+    /// The resize hook is in (Windows).
+    hooked: Cell<bool>,
 }
 
 impl MiniPlayer {
     pub fn new(ui: &AppWindow, config: Config) -> Rc<Self> {
         let mini = Rc::new(MiniPlayer { config, saved: Cell::new(None), watch: Rc::new(slint::Timer::default()),
             reveal: slint::Timer::default(),
+            follow: slint::Timer::default(),
+            hooked: Cell::new(false),
         });
         let (m, weak) = (mini.clone(), ui.as_weak());
         ui.global::<Playback>().on_toggle_mini(move || {
@@ -113,7 +186,7 @@ impl MiniPlayer {
             trace(ui, "enter: left fullscreen");
         }
         if maximized {
-            window.set_maximized(false);
+            set_maximized(ui, false);
             trace(ui, "enter: un-maximized");
         }
         playback.set_open_menu("".into());
@@ -123,18 +196,27 @@ impl MiniPlayer {
         // allowed to shrink now, to move straight to its spot.
         set_min_size(ui, MIN);
 
+        // The video's shape: no letterboxing, and resizing keeps it.
+        let min = ((MIN.0 * scale).round() as i32, (MIN.1 * scale).round() as i32);
+        let aspect = video_aspect();
+        self.lock_aspect(ui, aspect, min);
         let remembered = settings::lock(&self.config).mini_player.map(Rect::from_array).filter(|r| on_screen(*r));
-        let target = remembered.or_else(|| work.map(|w| default_bounds(w, scale)));
-        tracing::debug!(?target, ?work, remembered = remembered.is_some(), "mini: enter target");
+        let target = remembered
+            .or_else(|| work.map(|w| default_bounds(w, scale)))
+            .map(|r| fit_aspect(r, aspect, work, min));
+        tracing::debug!(?target, ?work, aspect, remembered = remembered.is_some(), "mini: enter target");
         if let Some(r) = target {
             place(ui, r);
         }
         trace(ui, "enter: placed");
         self.watch(ui, "enter");
+        self.follow_aspect(ui, min);
     }
 
     fn exit(&self, ui: &AppWindow) {
         self.remember(ui);
+        self.follow.stop();
+        LOCKED_ASPECT.store(0, Ordering::Relaxed);
         ui.global::<Playback>().set_mini(false);
         let Some(saved) = self.saved.take() else { return };
         trace(ui, "exit: before");
@@ -146,7 +228,7 @@ impl MiniPlayer {
         place(ui, saved.normal);
         trace(ui, "exit: placed");
         if saved.maximized {
-            ui.window().set_maximized(true);
+            set_maximized(ui, true);
             trace(ui, "exit: maximized");
         }
         if saved.fullscreen {
@@ -160,6 +242,31 @@ impl MiniPlayer {
             trace(ui, "exit: fullscreen");
         }
         self.watch(ui, "exit");
+    }
+
+    /// Keep the window at `aspect` while it's resized (the WM_SIZING hook).
+    fn lock_aspect(&self, ui: &AppWindow, aspect: f64, min: (i32, i32)) {
+        LOCKED_ASPECT.store((aspect as f32).to_bits(), Ordering::Relaxed);
+        MIN_PHYSICAL.store(((min.0 as u64) << 32) | min.1 as u64, Ordering::Relaxed);
+        if !self.hooked.get() {
+            self.hooked.set(hook_resizing(ui));
+        }
+    }
+
+    /// While mini: when the video's aspect changes (another lecture), take
+    /// its shape.
+    fn follow_aspect(&self, ui: &AppWindow, min: (i32, i32)) {
+        let weak = ui.as_weak();
+        self.follow.start(slint::TimerMode::Repeated, Duration::from_millis(500), move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let aspect = video_aspect();
+            let locked = f32::from_bits(LOCKED_ASPECT.load(Ordering::Relaxed)) as f64;
+            if locked > 0.0 && (aspect / locked - 1.0).abs() > 0.01 {
+                LOCKED_ASPECT.store((aspect as f32).to_bits(), Ordering::Relaxed);
+                place(&ui, fit_aspect(rect(&ui), aspect, work_area(&ui), min));
+                tracing::debug!(aspect, "mini: video shape changed");
+            }
+        });
     }
 
     /// Take the window off screen (it keeps its place in the taskbar and
@@ -274,6 +381,57 @@ fn current(ui: &AppWindow) -> Rect {
     let window = ui.window();
     let (p, s) = (window.position(), window.size());
     Rect { x: p.x, y: p.y, w: s.width as i32, h: s.height as i32 }
+}
+
+/// Maximize or restore through winit, at once. Slint's `set_maximized` is
+/// applied on its next update, and the resize event from placing the window
+/// in between reset it: coming back from mini lost the maximized state.
+fn set_maximized(ui: &AppWindow, on: bool) {
+    use slint::winit_030::WinitWindowAccessor;
+    ui.window().with_winit_window(|w| w.set_maximized(on));
+}
+
+/// Hook the window's WM_SIZING, where Windows lets a resize be corrected
+/// before it's drawn (winit has no aspect ratio). Only acts in mini mode.
+#[cfg(windows)]
+fn hook_resizing(ui: &AppWindow) -> bool {
+    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
+    let Some(hwnd) = hwnd(ui) else { return false };
+    // SAFETY: a live window handle, on its own thread; the procedure is
+    // 'static and forwards everything it doesn't handle.
+    unsafe { SetWindowSubclass(hwnd, Some(on_sizing), 0x6d696e69, 0) != 0 }
+}
+
+#[cfg(not(windows))]
+fn hook_resizing(_: &AppWindow) -> bool {
+    false
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn on_sizing(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+    _id: usize,
+    _data: usize,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::WM_SIZING;
+    let aspect = f32::from_bits(LOCKED_ASPECT.load(Ordering::Relaxed)) as f64;
+    if msg == WM_SIZING && aspect > 0.0 && lparam != 0 {
+        let min = MIN_PHYSICAL.load(Ordering::Relaxed);
+        let min = ((min >> 32) as i32, (min & 0xffff_ffff) as i32);
+        // SAFETY: for WM_SIZING, lparam points at the window's proposed RECT.
+        let rect = unsafe { &mut *(lparam as *mut RECT) };
+        let r = Rect { x: rect.left, y: rect.top, w: rect.right - rect.left, h: rect.bottom - rect.top };
+        let r = keep_aspect(r, wparam as u32, aspect, min);
+        *rect = RECT { left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h };
+        return 1;
+    }
+    // SAFETY: forwarding the message as received.
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
 /// Set the window's minimum size right away (Slint's own follows).
@@ -399,6 +557,39 @@ mod tests {
         // A second monitor to the left.
         let left = Rect { x: -1280, y: 0, w: 1280, h: 984 };
         assert_eq!(default_bounds(left, 1.0).x, -1280 + 1280 - 480 - 24);
+    }
+
+    #[test]
+    fn resizing_keeps_the_shape_from_the_dragged_edge() {
+        let r = Rect { x: 100, y: 100, w: 480, h: 270 };
+        let wide = 16.0 / 9.0;
+        // Right edge wider: the height follows, the top-left stays.
+        assert_eq!(keep_aspect(Rect { w: 640, ..r }, 2, wide, (240, 135)), Rect { x: 100, y: 100, w: 640, h: 360 });
+        // Top edge up: the width follows, the bottom stays.
+        let taller = Rect { y: 10, h: 360, ..r };
+        assert_eq!(keep_aspect(taller, TOP, wide, (240, 135)), Rect { x: 100, y: 10, w: 640, h: 360 });
+        // Top-left corner: the width leads, the bottom-right corner stays.
+        let dragged = Rect { x: 0, y: 50, w: 580, h: 320 };
+        assert_eq!(keep_aspect(dragged, TOP_LEFT, wide, (240, 135)), Rect { x: 0, y: 44, w: 580, h: 326 });
+        // Never below the minimum, still in shape (a 2.4:1 film).
+        let tiny = Rect { w: 200, h: 90, ..r };
+        let k = keep_aspect(tiny, 2, 2.4, (240, 135));
+        assert!(k.w >= 240 && k.h >= 135 && ((k.w as f64 / k.h as f64) - 2.4).abs() < 0.02, "{k:?}");
+    }
+
+    #[test]
+    fn fitting_keeps_the_width_and_the_near_edge() {
+        let wide = 16.0 / 9.0;
+        // A 4:3 remembered spot bottom-right becomes 16:9, still on the bottom edge.
+        let r = Rect { x: 1416, y: 648, w: 480, h: 360 };
+        assert_eq!(fit_aspect(r, wide, Some(WORK), (240, 135)), Rect { x: 1416, y: 738, w: 480, h: 270 });
+        // Near the top, the top stays.
+        let r = Rect { x: 24, y: 24, w: 480, h: 360 };
+        assert_eq!(fit_aspect(r, wide, Some(WORK), (240, 135)), Rect { x: 24, y: 24, w: 480, h: 270 });
+        // A portrait video can't run off the bottom.
+        let r = Rect { x: 1400, y: 700, w: 480, h: 270 };
+        let f = fit_aspect(r, 9.0 / 16.0, Some(WORK), (240, 135));
+        assert!(f.y + f.h <= WORK.h, "{f:?}");
     }
 
     #[test]

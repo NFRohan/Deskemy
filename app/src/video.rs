@@ -907,6 +907,8 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
 
         let s = State::sample(mpv);
         session.tick(s.position, s.duration, s.paused);
+        // The mini player keeps the video's shape.
+        crate::mini::set_video_aspect(mpv.get_f64("video-params/aspect"));
 
         let want_awake = !s.paused && session.is_loaded();
         if want_awake != awake {
