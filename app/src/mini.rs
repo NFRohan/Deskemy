@@ -9,7 +9,6 @@ use deskemy_core::paths;
 use slint::{ComponentHandle, PhysicalPosition, PhysicalSize};
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::Duration;
 
 /// A screen rectangle in physical pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -29,6 +28,8 @@ impl Rect {
 /// Logical size of a first-time mini player (16:9), and its gap from the
 /// screen's edges.
 const MINI: (f32, f32) = (480.0, 270.0);
+/// Its smallest (as app.slint's `min-width` / `min-height` in mini mode).
+const MIN: (f32, f32) = (240.0, 135.0);
 const MARGIN: f32 = 24.0;
 /// The window's size to come back to when it was maximized or fullscreen
 /// before (so un-maximizing later doesn't land on the mini size).
@@ -101,16 +102,15 @@ impl MiniPlayer {
         playback.set_open_menu("".into());
         // Lifts the minimum size and puts the window on top.
         playback.set_mini(true);
+        // Slint applies that minimum on its next update; the window has to be
+        // allowed to shrink now, so it moves straight to its spot. (Placing it
+        // later showed the restored pre-fullscreen window in between.)
+        set_min_size(ui, MIN);
 
         let remembered = settings::lock(&self.config).mini_player.map(Rect::from_array).filter(|r| on_screen(*r));
-        let target = remembered.or_else(|| work.map(|w| default_bounds(w, scale)));
-        // After the window has left maximized / fullscreen, or that would undo it.
-        let weak = ui.as_weak();
-        slint::Timer::single_shot(Duration::from_millis(80), move || {
-            if let (Some(ui), Some(r)) = (weak.upgrade(), target) {
-                place(&ui, r);
-            }
-        });
+        if let Some(r) = remembered.or_else(|| work.map(|w| default_bounds(w, scale))) {
+            place(ui, r);
+        }
         tracing::info!(remembered = remembered.is_some(), "mini player");
     }
 
@@ -118,18 +118,14 @@ impl MiniPlayer {
         self.remember(ui);
         ui.global::<Playback>().set_mini(false);
         let Some(saved) = self.saved.take() else { return };
+        // The normal rect first, even on the way to maximized / fullscreen:
+        // it's what the window returns to when those end.
         place(ui, saved.normal);
-        if saved.maximized || saved.fullscreen {
-            let weak = ui.as_weak();
-            slint::Timer::single_shot(Duration::from_millis(80), move || {
-                let Some(ui) = weak.upgrade() else { return };
-                if saved.fullscreen {
-                    ui.window().set_fullscreen(true);
-                    ui.global::<Playback>().set_fullscreen(true);
-                } else {
-                    ui.window().set_maximized(true);
-                }
-            });
+        if saved.fullscreen {
+            ui.window().set_fullscreen(true);
+            ui.global::<Playback>().set_fullscreen(true);
+        } else if saved.maximized {
+            ui.window().set_maximized(true);
         }
     }
 
@@ -154,6 +150,12 @@ fn current(ui: &AppWindow) -> Rect {
     let window = ui.window();
     let (p, s) = (window.position(), window.size());
     Rect { x: p.x, y: p.y, w: s.width as i32, h: s.height as i32 }
+}
+
+/// Set the window's minimum size right away (Slint's own follows).
+fn set_min_size(ui: &AppWindow, (w, h): (f32, f32)) {
+    use slint::winit_030::{winit::dpi::LogicalSize, WinitWindowAccessor};
+    ui.window().with_winit_window(|window| window.set_min_inner_size(Some(LogicalSize::new(w, h))));
 }
 
 fn place(ui: &AppWindow, r: Rect) {
