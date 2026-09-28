@@ -150,6 +150,11 @@ impl MiniPlayer {
             trace(ui, "exit: maximized");
         }
         if saved.fullscreen {
+            // In sight: the shell only puts the taskbar behind a window it
+            // sees go fullscreen. Done cloaked, the taskbar stayed on top of
+            // the video until focus moved.
+            self.reveal.stop();
+            cloak(ui, false);
             ui.window().set_fullscreen(true);
             ui.global::<Playback>().set_fullscreen(true);
             trace(ui, "exit: fullscreen");
