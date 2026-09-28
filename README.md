@@ -107,7 +107,7 @@ everything Deskemy records lives in a single local SQLite database.
   from the last decade).
 
 Everything is bundled. Deskemy plays through **libmpv** (mpv's media
-library, `libmpv-2.dll`), which ships inside both the installer and the portable
+library, `libmpv-2.dll`), which ships inside the installers and the portable
 zip — no separate mpv install needed. If you'd rather use your own build, Deskemy
 also picks up `libmpv-2.dll` from your `PATH` or from `DESKEMY_LIBMPV`.
 
@@ -117,7 +117,9 @@ also picks up `libmpv-2.dll` from your `PATH` or from `DESKEMY_LIBMPV`.
 2. Run it.
 3. Launch Deskemy → **Add Folder** → pick a course folder.
 
-It's a per-user install (no admin required), and it keeps itself up to date:
+It's a per-user install (no admin required). For a per-machine install in
+Program Files (admin, for all users), use the MSI (`deskemy_<version>_x64_en-US.msi`)
+instead. Either way it keeps itself up to date:
 when a new release is out, Deskemy offers it (nothing downloads until you
 click **Update**). Uninstalling from **Settings → Apps**
 removes the program, its shortcuts, and its registry entry. Your library index

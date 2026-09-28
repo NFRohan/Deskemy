@@ -36,6 +36,10 @@ Known follow-ups:
 - [x] Installer (cargo-packager, NSIS, matching the Tauri install so it updates
       in place) and portable zip — `app/scripts/package.ps1`, see
       [releasing.md](releasing.md).
+- [x] MSI (per-machine) with the Tauri MSI's upgrade code, so 1.x MSI installs
+      upgrade in place; `latest.json`'s `windows-x86_64-msi` entry, read by the
+      Tauri updater and ours. Verified against the 1.2.2 MSI's tables.
+- [ ] Hand-test a real 1.2.2 MSI → 2.0 MSI upgrade (per-machine, needs admin).
 - [x] In-app updates against the signed `latest.json` (the Tauri updater's, plus
       `format`), banner + Settings → About, nothing downloads until confirmed.
 - [ ] Hand-test 2.0.0 for a couple of days, then release (the user's call).

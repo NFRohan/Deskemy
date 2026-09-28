@@ -1,10 +1,11 @@
 # Build the Windows release artifacts into app/target/packages:
 #
-#   deskemy_<version>_x64-setup.exe       the installer (cargo-packager, NSIS)
-#   deskemy_<version>_x64-setup.exe.sig   its signature, when a signing key is set
+#   deskemy_<version>_x64-setup.exe       the per-user installer (cargo-packager, NSIS)
+#   deskemy_<version>_x64_en-US.msi       the per-machine installer (WiX, installer/main.wxs)
+#   *.sig                                 their signatures, when a signing key is set
 #   Deskemy_<version>_x64-portable.zip    the portable build (with its .portable marker)
 #   latest.json                           the update manifest, when signed
-#   SHA256SUMS.txt                        checksums of the installer and zip
+#   SHA256SUMS.txt                        checksums of the installers and zip
 #
 # Signing: set CARGO_PACKAGER_SIGN_PRIVATE_KEY (the key, or a path to it) and
 # CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD — the same minisign key the Tauri
@@ -27,12 +28,16 @@ if (Test-Path $out) {
     Get-ChildItem $out -File | Remove-Item -Force
 }
 
-# 1. Release build + installer (+ .sig when a key is set).
+# 1. Release build + installers (+ .sig when a key is set).
 cargo packager --release
 if ($LASTEXITCODE) { throw "cargo packager failed" }
 $setupName = "deskemy_${version}_x64-setup.exe"
+$msiName = "deskemy_${version}_x64_en-US.msi"
 $setup = Join-Path $out $setupName
-if (-not (Test-Path $setup)) { throw "no installer at $setup" }
+$msi = Join-Path $out $msiName
+foreach ($installer in $setup, $msi) {
+    if (-not (Test-Path $installer)) { throw "no installer at $installer" }
+}
 
 # 2. Portable zip: the app, libmpv, licenses and the .portable marker, which
 #    keeps its data in a data/ folder beside it.
@@ -48,19 +53,26 @@ Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
 Remove-Item -Recurse -Force $stage
 
 # 3. latest.json: read by the Tauri 1.x updater and this app's, from
-#    releases/latest/download/latest.json. `format` is for cargo-packager's
+#    releases/latest/download/latest.json. MSI installs read
+#    windows-x86_64-msi (both updaters), the rest windows-x86_64 — each
+#    updates its own kind of install in place. `format` is for cargo-packager's
 #    updater; the Tauri one ignores it.
-$sig = "$setup.sig"
-if (Test-Path $sig) {
+$download = "https://github.com/NFRohan/Deskemy/releases/download/v$version"
+if ((Test-Path "$setup.sig") -and (Test-Path "$msi.sig")) {
     $manifest = [ordered]@{
         version   = $version
         notes     = $Notes
         pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         platforms = [ordered]@{
-            "windows-x86_64" = [ordered]@{
-                signature = (Get-Content -Raw $sig).Trim()
-                url       = "https://github.com/NFRohan/Deskemy/releases/download/v$version/$setupName"
+            "windows-x86_64"     = [ordered]@{
+                signature = (Get-Content -Raw "$setup.sig").Trim()
+                url       = "$download/$setupName"
                 format    = "nsis"
+            }
+            "windows-x86_64-msi" = [ordered]@{
+                signature = (Get-Content -Raw "$msi.sig").Trim()
+                url       = "$download/$msiName"
+                format    = "wix"
             }
         }
     }
@@ -68,11 +80,11 @@ if (Test-Path $sig) {
     $json = $manifest | ConvertTo-Json -Depth 5
     [System.IO.File]::WriteAllText((Join-Path (Resolve-Path $out).Path "latest.json"), $json, (New-Object System.Text.UTF8Encoding $false))
 } else {
-    Write-Warning "No signing key set: the installer is unsigned and there's no latest.json (the updaters need both)."
+    Write-Warning "No signing key set: the installers are unsigned and there's no latest.json (the updaters need both)."
 }
 
 # 4. SHA256SUMS.txt for the downloads, as earlier releases published.
-$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|zip)$' } | Sort-Object Name | ForEach-Object {
+$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|msi|zip)$' } | Sort-Object Name | ForEach-Object {
     "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
 }
 [System.IO.File]::WriteAllText((Join-Path (Resolve-Path $out).Path "SHA256SUMS.txt"), (($sums -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
