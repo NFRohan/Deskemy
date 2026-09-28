@@ -4,6 +4,7 @@
 #   deskemy_<version>_x64-setup.exe.sig   its signature, when a signing key is set
 #   Deskemy_<version>_x64-portable.zip    the portable build (with its .portable marker)
 #   latest.json                           the update manifest, when signed
+#   SHA256SUMS.txt                        checksums of the installer and zip
 #
 # Signing: set CARGO_PACKAGER_SIGN_PRIVATE_KEY (the key, or a path to it) and
 # CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD — the same minisign key the Tauri
@@ -69,6 +70,12 @@ if (Test-Path $sig) {
 } else {
     Write-Warning "No signing key set: the installer is unsigned and there's no latest.json (the updaters need both)."
 }
+
+# 4. SHA256SUMS.txt for the downloads, as earlier releases published.
+$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|zip)$' } | Sort-Object Name | ForEach-Object {
+    "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
+}
+[System.IO.File]::WriteAllText((Join-Path (Resolve-Path $out).Path "SHA256SUMS.txt"), (($sums -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
 
 Write-Host ""
 Get-ChildItem $out -File | Format-Table Name, @{ n = "MB"; e = { [math]::Round($_.Length / 1MB, 1) } } -AutoSize

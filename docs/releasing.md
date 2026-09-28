@@ -31,6 +31,7 @@ Into `app/target/packages/`:
 | `deskemy_<v>_x64-setup.exe.sig` | its signature |
 | `Deskemy_<v>_x64-portable.zip` | portable build (`.portable` marker; data in `data/` beside it) |
 | `latest.json` | the update manifest |
+| `SHA256SUMS.txt` | checksums of the installer and zip |
 
 Without a key the installer and zip still build, but there's no `.sig` or
 `latest.json` — so no auto-update.
@@ -67,7 +68,7 @@ This really installs the build — do it on a machine where that's fine.
 ## 5. Publish
 
 Create a GitHub release tagged `v<version>` with the installer, the portable
-zip and `latest.json` (the `.sig` is inside `latest.json`; attaching it is
+zip, `SHA256SUMS.txt` and `latest.json` (the `.sig` is inside `latest.json`; attaching it is
 optional). Marking it **latest** is what updates people: both the Tauri 1.x
 updater and this app read
 `https://github.com/NFRohan/Deskemy/releases/latest/download/latest.json`.
