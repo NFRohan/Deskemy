@@ -106,6 +106,9 @@ export global Playback {
     in property <float> volume: 100;
     in property <bool> muted;
     in property <bool> fullscreen;
+    /// The follow-along mini player: the window small and on top (Rust
+    /// resizes it; see mini.rs).
+    in-out property <bool> mini;
     /// Settings' "Auto-hide controls in fullscreen".
     in property <bool> autohide-fullscreen;
     in property <bool> has-previous;
@@ -147,6 +150,7 @@ export global Playback {
     callback set-volume(float);
     callback toggle-mute();
     callback toggle-fullscreen();
+    callback toggle-mini();
     /// The controls faded (true) or came back: hide / show the pointer.
     callback cursor-hidden(bool);
     callback pick-speed(int);
@@ -180,7 +184,7 @@ export global Playback {
     in property <[ResourceItem]> prompt-items;
 }
 
-component IconButton inherits Rectangle {
+export component IconButton inherits Rectangle {
     in property <image> icon;
     in property <length> icon-size: 22px;
     in property <bool> enabled: true;
@@ -209,7 +213,7 @@ component IconButton inherits Rectangle {
 
 // A thin scrubbable track; `value` is 0..1. `changed` fires continuously while
 // dragging, `committed` once on release (seeking commits, volume follows live).
-component Scrubber inherits Rectangle {
+export component Scrubber inherits Rectangle {
     in property <float> value;
     out property <float> preview;
     out property <bool> dragging: touch.pressed;
@@ -397,6 +401,7 @@ export component PlayerOverlay inherits Rectangle {
             items: [
                 { keys: "N / ⇧N", action: "Next / previous lecture" },
                 { keys: "F", action: "Fullscreen" },
+                { keys: "T", action: "Mini player, on top" },
                 { keys: "Esc", action: "Exit / back" },
                 { keys: "Mouse back", action: "Leave the player" },
             ],
@@ -482,6 +487,8 @@ export component PlayerOverlay inherits Rectangle {
             Playback.toggle-mute();
         } else if event.text == "f" {
             Playback.toggle-fullscreen();
+        } else if event.text == "t" {
+            Playback.toggle-mini();
         } else if event.text == "c" {
             Playback.toggle-subtitles();
         } else if event.text == "," || event.text == "<" {
@@ -914,6 +921,10 @@ export component PlayerOverlay inherits Rectangle {
                         icon: @image-url("icons/m-view-sidebar.svg");
                         active: Playback.panel-open;
                         clicked => { root.toggle-panel(); }
+                    }
+                    IconButton {
+                        icon: @image-url("icons/m-picture-in-picture.svg");
+                        clicked => { Playback.toggle-mini(); }
                     }
                     IconButton {
                         icon: Playback.fullscreen ? @image-url("icons/m-fullscreen-exit.svg") : @image-url("icons/m-fullscreen.svg");

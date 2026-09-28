@@ -35,6 +35,9 @@ pub struct AppConfig {
     pub pause_at_resources: bool,
     /// Last library root the user registered (convenience).
     pub last_root: Option<String>,
+    /// Where the mini player last sat: [x, y, width, height] in physical
+    /// pixels. None until it's first used (it opens bottom-right).
+    pub mini_player: Option<[i32; 4]>,
 }
 
 impl Default for AppConfig {
@@ -50,6 +53,7 @@ impl Default for AppConfig {
             resources_inline: true,
             pause_at_resources: false,
             last_root: None,
+            mini_player: None,
         }
     }
 }

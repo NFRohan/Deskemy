@@ -7,6 +7,7 @@ import {
     StatGroup, StatLine, StatRow,
 } from "player.slint";
 import { CoursePanel } from "course_panel.slint";
+import { MiniPlayer } from "mini.slint";
 import { Nav, Sidebar, TopBar, WindowChrome } from "shell.slint";
 import { CourseCard, Hero, Library, LibraryPage, SelectOption } from "library.slint";
 import { Course, CourseDialogs, CoursePage, CurriculumLecture, CurriculumSection } from "course.slint";
@@ -35,8 +36,10 @@ export component AppWindow inherits Window {
     icon: @image-url("logo.png");
     preferred-width: 1280px;
     preferred-height: 800px;
-    min-width: 900px;
-    min-height: 600px;
+    // The mini player goes down to a small 16:9 tile.
+    min-width: Playback.mini ? 240px : 900px;
+    min-height: Playback.mini ? 135px : 600px;
+    always-on-top: Playback.mini;
     // Frameless: the top bar (and the player's header) are the title bar.
     no-frame: true;
     resize-border-width: root.maximized || Playback.fullscreen ? 0px : 6px;
@@ -63,9 +66,9 @@ export component AppWindow inherits Window {
     in property <bool> playing;
     in property <image> video-frame;
     // The course panel sits beside the video, which narrows to make room.
-    property <length> panel-width: root.playing && Playback.panel-open ? 340px : 0px;
+    property <length> panel-width: root.playing && Playback.panel-open && !Playback.mini ? 340px : 0px;
     // In a window the player has a title bar above the video, as the Tauri app.
-    property <length> bar-height: root.playing && !Playback.fullscreen ? 48px : 0px;
+    property <length> bar-height: root.playing && !Playback.fullscreen && !Playback.mini ? 48px : 0px;
     out property <length> video-width: video.width;
     out property <length> video-height: video.height;
 
@@ -80,13 +83,13 @@ export component AppWindow inherits Window {
     }
 
     // Anything after the video in the tree draws on top of it.
-    if root.playing && !Playback.fullscreen: PlayerTopBar {
+    if root.playing && !Playback.fullscreen && !Playback.mini: PlayerTopBar {
         x: 0;
         y: 0;
         width: parent.width;
     }
 
-    if root.playing: PlayerOverlay {
+    if root.playing && !Playback.mini: PlayerOverlay {
         // Explicit x: a fixed-width child is otherwise centred in its parent.
         x: 0;
         y: root.bar-height;
@@ -94,7 +97,14 @@ export component AppWindow inherits Window {
         height: parent.height - root.bar-height;
     }
 
-    if root.playing && Playback.panel-open: CoursePanel {
+    if root.playing && Playback.mini: MiniPlayer {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if root.playing && Playback.panel-open && !Playback.mini: CoursePanel {
         x: parent.width - root.panel-width;
         y: root.bar-height;
         width: root.panel-width;

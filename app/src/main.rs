@@ -6,6 +6,7 @@ mod course_page;
 mod course_panel;
 mod importing;
 mod library;
+mod mini;
 mod pages;
 mod search;
 mod session;
@@ -107,10 +108,12 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let mode = parse_args();
     let offscreen = match &mode {
-        // DESKEMY_SNAPSHOT_HEIGHT renders a taller frame, to see a long page whole.
+        // DESKEMY_SNAPSHOT_HEIGHT renders a taller frame, to see a long page
+        // whole; DESKEMY_SNAPSHOT_WIDTH a narrower one (the mini player).
         Mode::Snapshot { .. } => {
-            let height = std::env::var("DESKEMY_SNAPSHOT_HEIGHT").ok().and_then(|h| h.parse().ok());
-            Some(snapshot::install(1280, height.unwrap_or(800))?)
+            let dimension = |name: &str| std::env::var(name).ok().and_then(|v| v.parse().ok());
+            let width = dimension("DESKEMY_SNAPSHOT_WIDTH").unwrap_or(1280);
+            Some(snapshot::install(width, dimension("DESKEMY_SNAPSHOT_HEIGHT").unwrap_or(800))?)
         }
         // Video is rendered by mpv through OpenGL, so real windows need an
         // OpenGL-backed renderer: Skia, for its text, or FemtoVG with
@@ -308,6 +311,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let importing = std::rc::Rc::new(importing::Importing::new(db.clone(), config.clone()));
     importing.start_watching(&ui, player.session().clone());
     wire_import(&ui, &importing);
+    let mini = mini::MiniPlayer::new(&ui, config.clone());
 
     // Updates: a quiet check shortly after launch (the Tauri app's), and
     // sweep the installer a previous update left in the temp dir.
@@ -356,6 +360,8 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_course(&ui, &course, player.session(), &importing);
 
     let result = ui.run();
+    // Quitting from the mini player: keep where it sat for next time.
+    mini.remember(&ui);
     player.shutdown();
 
     // A staged backup import is swapped in by the next start. Let go of the

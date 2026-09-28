@@ -48,7 +48,13 @@ base64 = "0.22"
 [target."cfg(windows)".dependencies]
 # SetThreadExecutionState — keep the machine awake during playback.
 # Msi* — whether this copy was installed by the MSI (the updater fetches the same kind).
-windows-sys = { version = "0.61", features = ["Win32_System_Power", "Win32_System_ApplicationInstallationAndServicing"] }
+# GetMonitorInfo — the screen's work area, for placing the mini player.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Power",
+    "Win32_System_ApplicationInstallationAndServicing",
+] }
 
 # Slint's Skia renderer with subpixel (ClearType-style) text on Windows; see
 # patches/i-slint-renderer-skia/README.md. Must match the slint version.

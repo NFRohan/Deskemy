@@ -64,8 +64,11 @@ Roughly by value to someone working through a course:
 - **Transcript panel** — the lecture's subtitles as a scrolling transcript:
   click a line to jump, the current line highlighted, search within the
   lecture. Subtitle files are already parsed and indexed.
-- **Follow-along mini player** — a small always-on-top window beside an editor
-  or terminal for coding courses: play/pause, ±10s, next.
+- [x] **Follow-along mini player** — `T` or the player's picture-in-picture
+  button shrinks the window to a small always-on-top video (bottom-right the
+  first time, then wherever it was left); hover for play/pause, ±10s, next and
+  seek; drag to move; double-click, `T`, `Esc` or mouse back returns. A mode
+  of the one window, not a second one (mpv renders into its GL context).
 - **Timestamped notes** — bookmarks with a body: notes per lecture, jump to the
   moment, export a course's notes as Markdown.
 - **Drag & drop / batch import** — drop a course folder on the window to import

@@ -665,6 +665,10 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
         s.save_now();
         run(&m, &["stop"]);
         if let Some(ui) = weak.upgrade() {
+            // Back to the full-size window first (it restores its size).
+            if ui.global::<Playback>().get_mini() {
+                ui.global::<Playback>().invoke_toggle_mini();
+            }
             // The pages always show the pointer, however the player left it.
             set_cursor_visible(&ui, true);
             ui.window().set_fullscreen(false);

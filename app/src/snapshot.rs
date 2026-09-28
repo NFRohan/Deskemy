@@ -54,6 +54,16 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
             item("1. NAT01 – Soluzioni.pdf", false),
         ]));
     }
+    // "mini" / "mini-exercise": the mini player (with DESKEMY_SNAPSHOT_WIDTH
+    // and _HEIGHT for its size, _POINTER over it for the controls), over a
+    // mid-grey frame.
+    if menu.starts_with("mini") {
+        playback.set_mini(true);
+        playback.set_has_next(true);
+        let mut frame = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(480, 270);
+        frame.make_mut_slice().fill(slint::Rgba8Pixel { r: 96, g: 104, b: 120, a: 255 });
+        ui.set_video_frame(slint::Image::from_rgba8(frame));
+    }
     // "light": a bright frame behind the controls, to check they read over it.
     if menu == "light" {
         let mut frame = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(1280, 720);
@@ -128,7 +138,8 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
             playback.set_panel_open(true);
             sample_panel(&playback, db);
         }
-        "stats" => {}
+        "stats" | "mini" => {}
+        "mini-exercise" => playback.set_open_menu("exercise".into()),
         // The speed menu for a course with its own saved speed.
         "speed-saved" => {
             playback.set_speed_default("1×".into());

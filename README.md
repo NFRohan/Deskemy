@@ -100,6 +100,7 @@ everything Deskemy records lives in a single local SQLite database.
 | `↑` / `↓` | Volume up / down | | `P` / `R` | Course contents / Resources |
 | `M` | Mute | | `B` | Bookmark this moment |
 | `F` / `Esc` | Fullscreen / exit | | `?` | Show all shortcuts |
+| `T` | Mini player, always on top | | | |
 
 ## Requirements
 
