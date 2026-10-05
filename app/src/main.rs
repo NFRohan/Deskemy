@@ -360,6 +360,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_search(&ui, &db, &course, player.session());
     wire_course(&ui, &course, player.session(), &importing);
 
+    log_launch_window(&ui);
     let result = ui.run();
     // Quitting from the mini player: keep where it sat for next time.
     mini.remember(&ui);
@@ -605,6 +606,78 @@ fn wire_course(
             tracing::warn!(error = %e, %path, "open resource");
         }
     });
+}
+
+/// Diagnostics for "the first run after installing comes up minimized / behind
+/// other windows" (roadmap): who launched Deskemy, and the window's state a
+/// moment after it's up — minimized, visible, in front — logged at 0.3s, 1s
+/// and 3s.
+#[cfg(windows)]
+fn log_launch_window(ui: &AppWindow) {
+    tracing::info!(launcher = %parent_process_name().unwrap_or_else(|| "?".into()), "launched by");
+    for ms in [300, 1000, 3000] {
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let Some(hwnd) = mini::hwnd(&ui) else { return };
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                GetForegroundWindow, GetWindowPlacement, IsIconic, IsWindowVisible, WINDOWPLACEMENT,
+            };
+            // SAFETY: a live window handle; WINDOWPLACEMENT is sized for the call.
+            let (minimized, visible, foreground, show) = unsafe {
+                let mut p: WINDOWPLACEMENT = std::mem::zeroed();
+                p.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+                let show = (GetWindowPlacement(hwnd, &mut p) != 0).then_some(p.showCmd);
+                (IsIconic(hwnd) != 0, IsWindowVisible(hwnd) != 0, GetForegroundWindow() == hwnd, show)
+            };
+            tracing::info!(after_ms = ms, minimized, visible, foreground, ?show, "launch window state");
+        });
+    }
+}
+
+#[cfg(not(windows))]
+fn log_launch_window(_: &AppWindow) {}
+
+/// The executable name of the process that started this one.
+#[cfg(windows)]
+fn parent_process_name() -> Option<String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    // SAFETY: a process snapshot walked with a correctly sized entry, then closed.
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let name = |e: &PROCESSENTRY32W| {
+            let len = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+            String::from_utf16_lossy(&e.szExeFile[..len])
+        };
+        let mut entries = Vec::new();
+        let mut e: PROCESSENTRY32W = std::mem::zeroed();
+        e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        if Process32FirstW(snap, &mut e) != 0 {
+            loop {
+                entries.push((e.th32ProcessID, e.th32ParentProcessID, name(&e)));
+                if Process32NextW(snap, &mut e) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+        let me = GetCurrentProcessId();
+        let parent = entries.iter().find(|(pid, _, _)| *pid == me)?.1;
+        Some(
+            entries
+                .iter()
+                .find(|(pid, _, _)| *pid == parent)
+                .map(|(_, _, n)| n.clone())
+                .unwrap_or_else(|| format!("pid {parent} (exited)")),
+        )
+    }
 }
 
 /// The mouse's back button, anywhere in the player's window — over the

@@ -652,7 +652,7 @@ fn cloak(ui: &AppWindow, on: bool) {
 fn cloak(_: &AppWindow, _: bool) {}
 
 #[cfg(windows)]
-fn hwnd(ui: &AppWindow) -> Option<windows_sys::Win32::Foundation::HWND> {
+pub(crate) fn hwnd(ui: &AppWindow) -> Option<windows_sys::Win32::Foundation::HWND> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     match ui.window().window_handle().window_handle().map(|h| h.as_raw()) {
         Ok(RawWindowHandle::Win32(h)) => Some(h.hwnd.get() as _),
