@@ -10,7 +10,6 @@ use crate::{AppWindow, Course, CurriculumLecture, CurriculumSection, Nav, Resour
 use deskemy_core::courses;
 use deskemy_core::db::queries;
 use deskemy_core::domain::{Attachment, CourseDetail, Lecture, Section};
-use deskemy_core::importer::structure::leading_number;
 use slint::ComponentHandle;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -47,11 +46,6 @@ fn file_name(path: &str, fallback: &str) -> String {
     std::path::Path::new(path).file_name().map_or_else(|| fallback.to_string(), |n| n.to_string_lossy().into_owned())
 }
 
-/// The number a file name starts with (`003 Configuring Git.html` → 3).
-fn file_number(path: &str, fallback: &str) -> Option<i64> {
-    leading_number(&file_name(path, fallback))
-}
-
 /// Where a section resource sits among the lectures by its number: a flat
 /// `003 …` is its own item, so it follows the lecture before it (`Before(3)`);
 /// a dotted `16.1 …` is Udemy's "lecture 16's first resource", so it goes
@@ -62,15 +56,26 @@ enum Slot {
     With(i64),
 }
 
-fn slot(path: &str, fallback: &str) -> Option<Slot> {
+/// The number a file name starts with, and whether `.digit` follows it.
+/// Only a number at the very start counts — the same rule for lectures and
+/// resources (`Python 3 basics.mp4` isn't lecture 3).
+fn leading(path: &str, fallback: &str) -> Option<(i64, bool)> {
     let name = file_name(path, fallback);
     let t = name.trim_start();
     let digits = t.bytes().take_while(u8::is_ascii_digit).count();
     let n: i64 = t.get(..digits)?.parse().ok()?;
     let rest = &t.as_bytes()[digits..];
-    let dotted = rest.first() == Some(&b'.') && rest.get(1).is_some_and(u8::is_ascii_digit);
-    Some(if dotted { Slot::With(n) } else { Slot::Before(n) })
+    Some((n, rest.first() == Some(&b'.') && rest.get(1).is_some_and(u8::is_ascii_digit)))
 }
+
+fn slot(path: &str, fallback: &str) -> Option<Slot> {
+    leading(path, fallback).map(|(n, dotted)| if dotted { Slot::With(n) } else { Slot::Before(n) })
+}
+
+/// How far past a section's last lecture number a resource may be numbered
+/// and still count as one of its items (an article after the last lecture);
+/// beyond that it's some other number — a year, "100 Days of …".
+const SLOT_REACH: i64 = 3;
 
 /// Resources to show inside the curriculum: per lecture, and per section
 /// for the section's resources that belong to no one lecture. Course-wide
@@ -89,7 +94,7 @@ pub fn inline_resources<'a>(sections: &[Section], attachments: &'a [Attachment])
             let lectures = s
                 .lectures
                 .iter()
-                .filter_map(|l| Some((file_number(&l.file_path, &l.title)?, l.id.as_str())))
+                .filter_map(|l| Some((leading(&l.file_path, &l.title)?.0, l.id.as_str())))
                 .collect();
             (s.id.as_str(), lectures)
         })
@@ -99,11 +104,17 @@ pub fn inline_resources<'a>(sections: &[Section], attachments: &'a [Attachment])
             (Some(lecture), _) => by_lecture.entry(lecture.to_string()).or_default().push(a),
             (None, Some(section)) => {
                 let before = slot(&a.file_path, &a.name).and_then(|slot| {
+                    let lectures = numbered.get(section)?;
+                    let last = lectures.iter().map(|(m, _)| *m).max()?;
+                    let (Slot::Before(n) | Slot::With(n)) = slot;
+                    if n > last + SLOT_REACH {
+                        return None;
+                    }
                     let fits = |m: i64| match slot {
                         Slot::Before(n) => m < n,
                         Slot::With(n) => m <= n,
                     };
-                    numbered.get(section)?.iter().filter(|(m, _)| fits(*m)).max_by_key(|(m, _)| *m).map(|(_, id)| *id)
+                    lectures.iter().filter(|(m, _)| fits(*m)).max_by_key(|(m, _)| *m).map(|(_, id)| *id)
                 });
                 match before {
                     Some(lecture) => by_lecture.entry(lecture.to_string()).or_default().push(a),
@@ -578,6 +589,13 @@ mod tests {
         assert_eq!(slot("x/1. Intro.html", ""), Some(Slot::Before(1)), "\"1. \" is a flat number");
         assert_eq!(slot("x/16.1 Jobs.html", ""), Some(Slot::With(16)));
         assert_eq!(slot("x/notes.pdf", ""), None);
+        // Numbers far past the section's lectures aren't its items.
+        let far = [att("2024 Syllabus.pdf"), att("100 Days of Git.pdf")];
+        let (far_lecture, far_section) = inline_resources(std::slice::from_ref(&s1), &far);
+        assert!(far_lecture.is_empty());
+        assert_eq!(names(far_section.get("s1")).map(|v| v.len()), Some(2));
+        // A number later in a lecture's name isn't its number.
+        assert_eq!(leading("x/Python 3 basics.mp4", ""), None);
         // Before every lecture, or unnumbered: the end of the section, as before.
         assert_eq!(names(by_section.get("s1")), Some(vec!["001 Welcome.html".to_string(), "notes.pdf".into()]));
     }

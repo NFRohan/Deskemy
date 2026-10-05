@@ -943,7 +943,8 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             shown_tracks = Some(signature);
             let mut t = tracks::read(mpv);
             let path = mpv.get_property_string("path");
-            t.chapters = tracks::steady_chapters(std::mem::take(&mut t.chapters), path.as_deref(), &mut known_chapters);
+            t.chapters =
+                tracks::steady_chapters(std::mem::take(&mut t.chapters), t.chapters_known, path.as_deref(), &mut known_chapters);
             Menus::from(&t)
         });
 

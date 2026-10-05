@@ -22,19 +22,21 @@ pub struct Chapter {
     pub time: f64,
 }
 
-/// The chapters to show for the playing file. mpv can briefly report none
-/// while it's busy (a cache refill, a seek); the menus rebuilt then would
-/// hide the Chapters button until the next rebuild (GH #6). So for the same
-/// file an empty read keeps the last list it had; a new file starts over.
+/// The chapters to show for the playing file. While busy (a cache refill, a
+/// seek) mpv can leave the chapter count unanswered; read as "none", the
+/// menus rebuilt then hid the Chapters button until the next rebuild (GH #6).
+/// So for the same file an unanswered read (`answered` false) keeps the last
+/// list; an answer — even 0 — is trusted, and a new file starts over.
 pub fn steady_chapters(
     read: Vec<Chapter>,
+    answered: bool,
     path: Option<&str>,
     known: &mut Option<(String, Vec<Chapter>)>,
 ) -> Vec<Chapter> {
     let Some(path) = path else { return read };
     match known {
-        Some((p, list)) if p == path && read.is_empty() && !list.is_empty() => {
-            tracing::debug!(path, kept = list.len(), "chapters read empty for the same file; keeping the list");
+        Some((p, list)) if p == path && !answered && !list.is_empty() => {
+            tracing::debug!(path, kept = list.len(), "chapter count unanswered for the same file; keeping the list");
             list.clone()
         }
         _ => {
@@ -50,6 +52,8 @@ pub struct Tracks {
     pub audio: Vec<Track>,
     pub subtitles: Vec<Track>,
     pub chapters: Vec<Chapter>,
+    /// mpv answered how many chapters there are (it doesn't while busy).
+    pub chapters_known: bool,
     /// Active subtitle / audio track ids (None = off) and chapter (-1 = none).
     pub sid: Option<i64>,
     pub aid: Option<i64>,
@@ -90,7 +94,9 @@ pub fn read(mpv: &Mpv) -> Tracks {
             _ => {}
         }
     }
-    tracks.chapters = (0..mpv.get_i64("chapters").unwrap_or(0).max(0))
+    let count = mpv.get_i64("chapters");
+    tracks.chapters_known = count.is_some();
+    tracks.chapters = (0..count.unwrap_or(0).max(0))
         .map(|i| Chapter {
             title: mpv.get_property_string(&format!("chapter-list/{i}/title")),
             time: mpv.get_f64(&format!("chapter-list/{i}/time")).unwrap_or(0.0),
@@ -259,14 +265,16 @@ mod tests {
         let ch = |t: f64| Chapter { title: Some(format!("at {t}")), time: t };
         let mut known = None;
         let list = vec![ch(0.0), ch(60.0)];
-        assert_eq!(steady_chapters(list.clone(), Some("a.mp4"), &mut known), list);
-        // mpv busy: none read, same file -> the list stays.
-        assert_eq!(steady_chapters(vec![], Some("a.mp4"), &mut known), list);
+        assert_eq!(steady_chapters(list.clone(), true, Some("a.mp4"), &mut known), list);
+        // mpv busy: count unanswered, same file -> the list stays.
+        assert_eq!(steady_chapters(vec![], false, Some("a.mp4"), &mut known), list);
+        // An answer of 0 for the same file is trusted.
+        assert_eq!(steady_chapters(vec![], true, Some("a.mp4"), &mut known), vec![]);
         // A new file without chapters really has none.
-        assert_eq!(steady_chapters(vec![], Some("b.mp4"), &mut known), vec![]);
+        assert_eq!(steady_chapters(vec![], true, Some("b.mp4"), &mut known), vec![]);
         // Back to a.mp4 later: it's read afresh.
-        assert_eq!(steady_chapters(vec![ch(5.0)], Some("a.mp4"), &mut known), vec![ch(5.0)]);
+        assert_eq!(steady_chapters(vec![ch(5.0)], true, Some("a.mp4"), &mut known), vec![ch(5.0)]);
         // No path (nothing loaded): passed through.
-        assert_eq!(steady_chapters(vec![], None, &mut known), vec![]);
+        assert_eq!(steady_chapters(vec![], false, None, &mut known), vec![]);
     }
 }

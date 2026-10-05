@@ -42,11 +42,9 @@ pub fn sections(
 ) -> Vec<SectionRow> {
     // The course page's placement: a lecture's own resources, plus numbered
     // section resources in lecture order.
-    let (by_lecture, _) = crate::course_page::inline_resources(&course.sections, attachments);
+    let by_lecture =
+        if inline { crate::course_page::inline_resources(&course.sections, attachments).0 } else { Default::default() };
     let resources_of = |lecture: &str| -> Vec<ResourceItem> {
-        if !inline {
-            return Vec::new();
-        }
         by_lecture.get(lecture).map(|list| list.iter().map(|a| resource_item(a)).collect()).unwrap_or_default()
     };
     course

@@ -325,6 +325,11 @@ impl Session {
     pub fn on_eof(&self) {
         let advance = {
             let mut inner = self.inner();
+            // The player was left as the lecture ended (its end-of-file event
+            // was already queued): nothing to save, nothing to autoplay.
+            if inner.lecture_id.is_none() {
+                return;
+            }
             let duration = inner.duration;
             self.save(&mut inner, duration, true);
             self.flush_watch(&mut inner);
@@ -460,15 +465,18 @@ impl Session {
         self.resources_of(&inner)
     }
 
+    /// The playing lecture's resources — placed as the curriculum shows them
+    /// (its own, plus numbered section resources in lecture order), so the
+    /// end-of-lecture pause offers what's listed under it.
     fn resources_of(&self, inner: &Inner) -> Vec<Attachment> {
         let (Some(course), Some(lecture)) = (inner.course_id.as_deref(), inner.lecture_id.as_deref()) else {
             return Vec::new();
         };
-        queries::list_course_attachments(&self.db(), course)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|a| a.lecture_id.as_deref() == Some(lecture))
-            .collect()
+        let db = self.db();
+        let attachments = queries::list_course_attachments(&db, course).unwrap_or_default();
+        let sections = queries::get_course_detail(&db, course).ok().flatten().map(|c| c.sections).unwrap_or_default();
+        let (by_lecture, _) = crate::course_page::inline_resources(&sections, &attachments);
+        by_lecture.get(lecture).map(|list| list.iter().map(|a| (*a).clone()).collect()).unwrap_or_default()
     }
 
     /// Mark a resource done or not.
@@ -668,6 +676,17 @@ mod tests {
         session.tick(Some(0.0), 0.0, true);
         assert_eq!(progress(&db, &lectures[0]).0, 42.0);
         assert!(!session.is_loaded());
+    }
+
+    #[test]
+    fn leaving_as_a_lecture_ends_doesnt_autoplay_the_next() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db, settings::shared(AppConfig::default()));
+        session.open(&lectures[0]).unwrap();
+        session.unload();
+        session.on_eof();
+        assert!(!session.is_loaded(), "the next lecture wasn't loaded");
     }
 
     #[test]

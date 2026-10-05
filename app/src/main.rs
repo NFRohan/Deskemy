@@ -614,16 +614,15 @@ fn wire_course(
 /// it still was — take the front. The logs showed it: visible, not
 /// minimized, not in front, launched by an exited process.
 ///
-/// So at 0.3s, if the window is visible but not in front and Explorer (the
-/// Start menu, a shortcut) didn't launch it, it's brought forward once. The
-/// launcher and the window's state at 0.3s / 1s / 3s are logged.
+/// So the first check (0.3s, or 1s on a slower start) that finds the window
+/// visible but not in front brings it forward once — unless Explorer (the
+/// Start menu, a shortcut) launched it. The process list is only walked
+/// then, to tell. The window's state at 0.3s / 1s / 3s is logged.
 #[cfg(windows)]
 fn log_launch_window(ui: &AppWindow) {
-    let launcher = parent_process_name().unwrap_or_else(|| "?".into());
-    tracing::info!(%launcher, "launched by");
-    let from_shell = launcher.eq_ignore_ascii_case("explorer.exe");
+    let tried = std::rc::Rc::new(std::cell::Cell::new(false));
     for ms in [300, 1000, 3000] {
-        let weak = ui.as_weak();
+        let (weak, tried) = (ui.as_weak(), tried.clone());
         slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
             let Some(ui) = weak.upgrade() else { return };
             let Some(hwnd) = mini::hwnd(&ui) else { return };
@@ -638,9 +637,15 @@ fn log_launch_window(ui: &AppWindow) {
                 (IsIconic(hwnd) != 0, IsWindowVisible(hwnd) != 0, GetForegroundWindow() == hwnd, show)
             };
             tracing::info!(after_ms = ms, minimized, visible, foreground, ?show, "launch window state");
-            if ms == 300 && visible && !minimized && !foreground && !from_shell {
-                let raised = bring_to_front(hwnd);
-                tracing::info!(raised, "brought the first window to the front");
+            if ms < 3000 && !tried.get() && visible && !minimized && !foreground {
+                tried.set(true);
+                let launcher = parent_process_name().unwrap_or_else(|| "?".into());
+                if launcher.eq_ignore_ascii_case("explorer.exe") {
+                    tracing::info!(%launcher, "launched by the shell; left where it is");
+                } else {
+                    let raised = bring_to_front(hwnd);
+                    tracing::info!(%launcher, raised, "brought the first window to the front");
+                }
             }
         });
     }
