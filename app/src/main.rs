@@ -657,8 +657,10 @@ fn open_library(ui: &AppWindow) -> (Db, settings::Config) {
         .and_then(|p| deskemy_core::config::AppConfig::load(&p).ok())
         .unwrap_or_default();
 
+    // Created on first run (a fresh install has none). Only with no data
+    // directory at all does the library live in memory.
     let db_path = dir.map(|d| d.join(paths::DB_FILE));
-    let conn = match db_path.as_ref().filter(|p| p.exists()).map(|p| db::open(p)) {
+    let conn = match db_path.as_ref().map(|p| db::open(p)) {
         Some(Ok(mut conn)) => {
             tracing::info!(db = %db_path.as_ref().unwrap().display(), "database ready");
             repair_titles(&mut conn);
@@ -674,7 +676,10 @@ fn open_library(ui: &AppWindow) -> (Db, settings::Config) {
             ui.global::<Library>().set_status_text(format!("Could not open the library: {e}").into());
             None
         }
-        None => None,
+        None => {
+            tracing::warn!("no data directory: the library won't be saved");
+            None
+        }
     };
     let conn = conn.unwrap_or_else(|| db::open_in_memory().expect("in-memory database"));
     (Arc::new(Mutex::new(conn)), settings::shared(config))
