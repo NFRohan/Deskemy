@@ -115,6 +115,22 @@ pub fn keep_aspect(r: Rect, edge: u32, aspect: f64, min: (i32, i32)) -> Rect {
     Rect { x, y, w, h }
 }
 
+/// The mini player's minimum size in physical pixels at a monitor's DPI.
+pub fn min_at_dpi(dpi: u32) -> (i32, i32) {
+    let scale = dpi.max(1) as f64 / 96.0;
+    ((MIN.0 as f64 * scale).round() as i32, (MIN.1 as f64 * scale).round() as i32)
+}
+
+/// Where the mini player goes when it crosses onto a monitor of another scale:
+/// the rectangle Windows suggests (scaled for the new DPI, and placed so the
+/// pointer keeps its spot on the window), corrected to the video's shape and
+/// to the minimum at that DPI. Taking Windows' rectangle as it is matters:
+/// winit nudges the window off it, the drag pulls it back over the first
+/// monitor, and the scale flips back and forth (GH #8).
+pub fn on_new_monitor(suggested: Rect, dpi: u32, aspect: f64) -> Rect {
+    keep_aspect(suggested, 2, aspect, min_at_dpi(dpi))
+}
+
 /// A mini player rectangle reshaped to `aspect`, keeping its width and the
 /// edge nearest the screen's (bottom in the lower half), and kept on screen.
 pub fn fit_aspect(r: Rect, aspect: f64, work: Option<Rect>, min: (i32, i32)) -> Rect {
@@ -428,7 +444,8 @@ fn set_maximized(ui: &AppWindow, on: bool) {
 }
 
 /// Hook the window's WM_SIZING, where Windows lets a resize be corrected
-/// before it's drawn (winit has no aspect ratio). Only acts in mini mode.
+/// before it's drawn (winit has no aspect ratio), and WM_DPICHANGED, for
+/// crossing onto a monitor of another scale. Only acts in mini mode.
 #[cfg(windows)]
 fn hook_resizing(ui: &AppWindow) -> bool {
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
@@ -454,8 +471,28 @@ unsafe extern "system" fn on_sizing(
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
-    use windows_sys::Win32::UI::WindowsAndMessaging::WM_SIZING;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, WM_DPICHANGED, WM_SIZING,
+    };
     let aspect = f32::from_bits(LOCKED_ASPECT.load(Ordering::Relaxed)) as f64;
+    if msg == WM_DPICHANGED && aspect > 0.0 && lparam != 0 {
+        // SAFETY: for WM_DPICHANGED, lparam points at Windows' suggested RECT.
+        let s = unsafe { *(lparam as *const RECT) };
+        let dpi = (wparam & 0xffff) as u32;
+        // winit first: it updates the scale factor and tells Slint.
+        // SAFETY: forwarding the message as received.
+        let result = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
+        let min = min_at_dpi(dpi);
+        MIN_PHYSICAL.store(((min.0 as u64) << 32) | min.1 as u64, Ordering::Relaxed);
+        let r = on_new_monitor(Rect { x: s.left, y: s.top, w: s.right - s.left, h: s.bottom - s.top }, dpi, aspect);
+        // Then Windows' rectangle, in place of the one winit nudged.
+        // SAFETY: a live window handle; no z-order change.
+        unsafe {
+            SetWindowPos(hwnd, std::ptr::null_mut(), r.x, r.y, r.w, r.h, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE);
+        }
+        tracing::debug!(dpi, ?r, "mini: onto a monitor of another scale");
+        return result;
+    }
     if msg == WM_SIZING && aspect > 0.0 && lparam != 0 {
         let min = MIN_PHYSICAL.load(Ordering::Relaxed);
         let min = ((min >> 32) as i32, (min & 0xffff_ffff) as i32);
@@ -634,6 +671,21 @@ mod tests {
         let tiny = Rect { w: 200, h: 90, ..r };
         let k = keep_aspect(tiny, 2, 2.4, (240, 135));
         assert!(k.w >= 240 && k.h >= 135 && ((k.w as f64 / k.h as f64) - 2.4).abs() < 0.02, "{k:?}");
+    }
+
+    #[test]
+    fn crossing_monitors_keeps_windows_rectangle_in_shape() {
+        let wide = 16.0 / 9.0;
+        // 100% -> 150%: Windows suggests the window scaled 1.5x around the
+        // pointer; it's kept (corner and width), the height made exact.
+        let suggested = Rect { x: 1700, y: 300, w: 720, h: 406 };
+        assert_eq!(on_new_monitor(suggested, 144, wide), Rect { x: 1700, y: 300, w: 720, h: 405 });
+        // 150% -> 100%: smaller, still never under the minimum at 96 DPI.
+        let tiny = Rect { x: 0, y: 0, w: 200, h: 112 };
+        assert_eq!(min_at_dpi(96), (240, 135));
+        assert_eq!(on_new_monitor(tiny, 96, wide), Rect { x: 0, y: 0, w: 240, h: 135 });
+        // The minimum follows the DPI.
+        assert_eq!(min_at_dpi(144), (360, 203));
     }
 
     #[test]
