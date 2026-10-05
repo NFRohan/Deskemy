@@ -6,7 +6,8 @@
 
 import { Playback, IconButton, Scrubber } from "player.slint";
 
-/// The picture: double-click (or mouse back) for the full player, a click
+/// The picture: double-click for the full player (mouse back too, handled
+/// for the whole window in main.rs), a click
 /// takes the keys, and with `native-drag` a drag moves the window.
 component Picture inherits TouchArea {
     in property <bool> native-drag;
@@ -19,9 +20,6 @@ component Picture inherits TouchArea {
             if root.native-drag && event.button == PointerEventButton.left {
                 Playback.mini-drag-start();
             }
-        }
-        if event.button == PointerEventButton.back && event.kind == PointerEventKind.up {
-            Playback.toggle-mini();
         }
     }
     moved => {

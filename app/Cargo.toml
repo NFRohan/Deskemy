@@ -1,6 +1,6 @@
 [package]
 name = "deskemy-app"
-version = "2.0.1"
+version = "2.1.0"
 description = "Deskemy — offline course player (Slint frontend)"
 authors = ["Spooksy"]
 license = "MIT"
@@ -50,14 +50,17 @@ base64 = "0.22"
 # Msi* — whether this copy was installed by the MSI (the updater fetches the same kind).
 # GetMonitorInfo, SetWindowPos, DWM cloaking — placing the mini player and
 # switching to it out of sight, SetWindowSubclass — keeping its aspect ratio
-# while resized; GetWindowRect — its debug traces.
+# while resized; GetWindowRect — its debug traces. ToolHelp — the launching
+# process, for the minimized-first-launch logs.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Power",
+    "Win32_System_Threading",
     "Win32_System_ApplicationInstallationAndServicing",
 ] }
 

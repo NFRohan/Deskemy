@@ -6,10 +6,10 @@ offline course player"** — deepen the core watch/learn loop, don't expand scop
 
 **1.0.1 shipped** (first public release). The next feature release — data
 export/import, an in-app auto-updater, plus daily-use quick wins — is planned in
-[docs/v1.1-plan.md](docs/v1.1-plan.md).
+[v1.1-plan.md](v1.1-plan.md).
 
 Visual / theming work (custom themes from a color palette, etc.) is tracked
-separately in [docs/visual-overhaul.md](docs/visual-overhaul.md) — **deferred**
+separately in [visual-overhaul.md](visual-overhaul.md) — **deferred**
 until the core features land; the palette→semantic-role mapping is already proven.
 
 Legend: ✅ done · 🔜 next · ⏳ planned · 🔑 key enabler · ❌ cut (with reason)

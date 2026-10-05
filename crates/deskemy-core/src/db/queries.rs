@@ -163,14 +163,6 @@ pub fn update_course_stats(
     Ok(())
 }
 
-pub fn set_scan_status(conn: &Connection, id: &str, status: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE courses SET scan_status = ?2 WHERE id = ?1",
-        params![id, status],
-    )?;
-    Ok(())
-}
-
 pub fn set_favorite(conn: &Connection, id: &str, favorite: bool) -> Result<()> {
     conn.execute(
         "UPDATE courses SET is_favorite = ?2 WHERE id = ?1",
@@ -183,15 +175,6 @@ pub fn set_favorite(conn: &Connection, id: &str, favorite: bool) -> Result<()> {
 pub fn set_thumbnail(conn: &Connection, id: &str, path: Option<&str>) -> Result<()> {
     conn.execute(
         "UPDATE courses SET thumbnail_path = ?2 WHERE id = ?1",
-        params![id, path],
-    )?;
-    Ok(())
-}
-
-/// Set (or clear) a course's Continue-Watching resume frame.
-pub fn set_resume_thumbnail(conn: &Connection, id: &str, path: Option<&str>) -> Result<()> {
-    conn.execute(
-        "UPDATE courses SET resume_thumbnail_path = ?2 WHERE id = ?1",
         params![id, path],
     )?;
     Ok(())

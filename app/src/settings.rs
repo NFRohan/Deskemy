@@ -58,6 +58,7 @@ pub fn apply(config: &mut AppConfig, key: &str, value: &str) -> bool {
         "auto-rescan" => config.auto_rescan = on,
         "resources-inline" => config.resources_inline = on,
         "pause-at-resources" => config.pause_at_resources = on,
+        "mini-return-here" => config.mini_return_here = on,
         _ => return false,
     }
     true
@@ -328,6 +329,7 @@ impl SettingsPage {
         prefs.set_auto_rescan(c.auto_rescan);
         prefs.set_resources_inline(c.resources_inline);
         prefs.set_pause_at_resources(c.pause_at_resources);
+        prefs.set_mini_return_here(c.mini_return_here);
     }
 
     /// Change a setting, save it, and redraw.
@@ -374,6 +376,9 @@ mod tests {
         assert!(apply(&mut c, "resources-inline", "false"));
         assert!(apply(&mut c, "pause-at-resources", "true"));
         assert!(!c.resources_inline && c.pause_at_resources);
+        assert!(c.mini_return_here, "on by default");
+        assert!(apply(&mut c, "mini-return-here", "false"));
+        assert!(!c.mini_return_here);
         assert_eq!(
             (c.theme.as_str(), c.default_speed, c.daily_goal_minutes, c.autoplay_next, c.autohide_controls),
             ("system", 1.25, 45, false, true)

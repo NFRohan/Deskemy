@@ -133,6 +133,7 @@ fn main() -> Result<(), slint::PlatformError> {
     prefs.show(&ui);
     ui.global::<Prefs>().set_version(settings::VERSION.into());
     wire_window(&ui);
+    wire_mouse_back(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
     let thumbs = paths::data_dir().map(|d| d.join(deskemy_core::courses::THUMBNAILS_DIR));
@@ -359,6 +360,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_search(&ui, &db, &course, player.session());
     wire_course(&ui, &course, player.session(), &importing);
 
+    log_launch_window(&ui);
     let result = ui.run();
     // Quitting from the mini player: keep where it sat for next time.
     mini.remember(&ui);
@@ -603,6 +605,147 @@ fn wire_course(
         if let Err(e) = open::that_detached(path.as_str()) {
             tracing::warn!(error = %e, %path, "open resource");
         }
+    });
+}
+
+/// The first window after installing came up behind other windows (it looked
+/// minimized): the setup launches Deskemy and exits before the window is up,
+/// and Windows only lets the foreground program — and what it launched while
+/// it still was — take the front. The logs showed it: visible, not
+/// minimized, not in front, launched by an exited process.
+///
+/// So the first check (0.3s, or 1s on a slower start) that finds the window
+/// visible but not in front brings it forward once — unless Explorer (the
+/// Start menu, a shortcut) launched it. The process list is only walked
+/// then, to tell. The window's state at 0.3s / 1s / 3s is logged.
+#[cfg(windows)]
+fn log_launch_window(ui: &AppWindow) {
+    let tried = std::rc::Rc::new(std::cell::Cell::new(false));
+    for ms in [300, 1000, 3000] {
+        let (weak, tried) = (ui.as_weak(), tried.clone());
+        slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let Some(hwnd) = mini::hwnd(&ui) else { return };
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                GetForegroundWindow, GetWindowPlacement, IsIconic, IsWindowVisible, WINDOWPLACEMENT,
+            };
+            // SAFETY: a live window handle; WINDOWPLACEMENT is sized for the call.
+            let (minimized, visible, foreground, show) = unsafe {
+                let mut p: WINDOWPLACEMENT = std::mem::zeroed();
+                p.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+                let show = (GetWindowPlacement(hwnd, &mut p) != 0).then_some(p.showCmd);
+                (IsIconic(hwnd) != 0, IsWindowVisible(hwnd) != 0, GetForegroundWindow() == hwnd, show)
+            };
+            tracing::info!(after_ms = ms, minimized, visible, foreground, ?show, "launch window state");
+            if ms < 3000 && !tried.get() && visible && !minimized && !foreground {
+                tried.set(true);
+                let launcher = parent_process_name().unwrap_or_else(|| "?".into());
+                if launcher.eq_ignore_ascii_case("explorer.exe") {
+                    tracing::info!(%launcher, "launched by the shell; left where it is");
+                } else {
+                    let raised = bring_to_front(hwnd);
+                    tracing::info!(%launcher, raised, "brought the first window to the front");
+                }
+            }
+        });
+    }
+}
+
+/// Bring `hwnd` in front of the foreground window: share input with the
+/// foreground window's thread for the call, which lets SetForegroundWindow
+/// through the foreground lock.
+#[cfg(windows)]
+fn bring_to_front(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+    };
+    // SAFETY: live window handles and thread ids; input is detached again.
+    unsafe {
+        let ours = GetCurrentThreadId();
+        let theirs = GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
+        let attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, 1) != 0;
+        BringWindowToTop(hwnd);
+        let ok = SetForegroundWindow(hwnd) != 0;
+        if attached {
+            AttachThreadInput(ours, theirs, 0);
+        }
+        ok
+    }
+}
+
+#[cfg(not(windows))]
+fn log_launch_window(_: &AppWindow) {}
+
+/// The executable name of the process that started this one.
+#[cfg(windows)]
+fn parent_process_name() -> Option<String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    // SAFETY: a process snapshot walked with a correctly sized entry, then closed.
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let name = |e: &PROCESSENTRY32W| {
+            let len = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+            String::from_utf16_lossy(&e.szExeFile[..len])
+        };
+        let mut entries = Vec::new();
+        let mut e: PROCESSENTRY32W = std::mem::zeroed();
+        e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        if Process32FirstW(snap, &mut e) != 0 {
+            loop {
+                entries.push((e.th32ProcessID, e.th32ParentProcessID, name(&e)));
+                if Process32NextW(snap, &mut e) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+        let me = GetCurrentProcessId();
+        let parent = entries.iter().find(|(pid, _, _)| *pid == me)?.1;
+        Some(
+            entries
+                .iter()
+                .find(|(pid, _, _)| *pid == parent)
+                .map(|(_, _, n)| n.clone())
+                .unwrap_or_else(|| format!("pid {parent} (exited)")),
+        )
+    }
+}
+
+/// The mouse's back button, anywhere in the player's window — over the
+/// video, the control bar, the title bar or the mini player (a button under
+/// the pointer would otherwise take the click). As the browser's back did in
+/// the Tauri app: close an open dialog or menu first, then leave the mini
+/// player, then the player.
+fn wire_mouse_back(ui: &AppWindow) {
+    use slint::winit_030::winit::event::{ElementState, MouseButton, WindowEvent};
+    use slint::winit_030::{EventResult, WinitWindowAccessor};
+    let weak = ui.as_weak();
+    ui.window().on_winit_window_event(move |_, event| {
+        let WindowEvent::MouseInput { button: MouseButton::Back, state, .. } = event else {
+            return EventResult::Propagate;
+        };
+        let Some(ui) = weak.upgrade() else { return EventResult::Propagate };
+        if !ui.get_playing() {
+            return EventResult::Propagate;
+        }
+        if *state == ElementState::Released {
+            let playback = ui.global::<Playback>();
+            match playback.get_open_menu().as_str() {
+                "bookmark" => playback.invoke_close_bookmark(),
+                "" if playback.get_mini() => playback.invoke_toggle_mini(),
+                "" => playback.invoke_back(),
+                _ => playback.set_open_menu("".into()),
+            }
+        }
+        EventResult::PreventDefault
     });
 }
 

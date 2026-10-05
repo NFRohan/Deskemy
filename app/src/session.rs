@@ -287,8 +287,11 @@ impl Session {
     }
 
     /// Called ~5×/s by the event thread with freshly sampled playback state:
-    /// accumulates watch time and persists periodically.
-    pub fn tick(&self, position: f64, duration: f64, paused: bool) {
+    /// accumulates watch time and persists periodically. `position` is None
+    /// while mpv has no file (stopped, or the next one still opening) — then
+    /// there's nothing to save: writing 0 there wiped the lecture's real
+    /// position.
+    pub fn tick(&self, position: Option<f64>, duration: f64, paused: bool) {
         let mut inner = self.inner();
         if duration > 0.0 {
             inner.duration = duration;
@@ -309,7 +312,9 @@ impl Session {
         }
         if inner.last_save.is_none_or(|t| now.duration_since(t) >= SAVE_EVERY) {
             inner.last_save = Some(now);
-            self.save(&mut inner, position, false);
+            if let Some(position) = position {
+                self.save(&mut inner, position, false);
+            }
             self.flush_watch(&mut inner);
         }
     }
@@ -320,6 +325,11 @@ impl Session {
     pub fn on_eof(&self) {
         let advance = {
             let mut inner = self.inner();
+            // The player was left as the lecture ended (its end-of-file event
+            // was already queued): nothing to save, nothing to autoplay.
+            if inner.lecture_id.is_none() {
+                return;
+            }
             let duration = inner.duration;
             self.save(&mut inner, duration, true);
             self.flush_watch(&mut inner);
@@ -359,6 +369,15 @@ impl Session {
             self.save(&mut inner, position, false);
         }
         self.flush_watch(&mut inner);
+    }
+
+    /// Leaving the player: save, then let go of the lecture, so nothing more
+    /// is written to it (mpv is stopped next and reports no position).
+    pub fn unload(&self) {
+        self.save_now();
+        let mut inner = self.inner();
+        inner.lecture_id = None;
+        inner.last_tick = None;
     }
 
     /// Change speed and remember it for this course — or, picking the default,
@@ -446,15 +465,18 @@ impl Session {
         self.resources_of(&inner)
     }
 
+    /// The playing lecture's resources — placed as the curriculum shows them
+    /// (its own, plus numbered section resources in lecture order), so the
+    /// end-of-lecture pause offers what's listed under it.
     fn resources_of(&self, inner: &Inner) -> Vec<Attachment> {
         let (Some(course), Some(lecture)) = (inner.course_id.as_deref(), inner.lecture_id.as_deref()) else {
             return Vec::new();
         };
-        queries::list_course_attachments(&self.db(), course)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|a| a.lecture_id.as_deref() == Some(lecture))
-            .collect()
+        let db = self.db();
+        let attachments = queries::list_course_attachments(&db, course).unwrap_or_default();
+        let sections = queries::get_course_detail(&db, course).ok().flatten().map(|c| c.sections).unwrap_or_default();
+        let (by_lecture, _) = crate::course_page::inline_resources(&sections, &attachments);
+        by_lecture.get(lecture).map(|list| list.iter().map(|a| (*a).clone()).collect()).unwrap_or_default()
     }
 
     /// Mark a resource done or not.
@@ -626,7 +648,7 @@ mod tests {
         let session = Session::new(mpv, db.clone(), settings::shared(AppConfig::default()));
 
         session.open(&lectures[0]).unwrap();
-        session.tick(99.0, 100.0, false);
+        session.tick(Some(99.0), 100.0, false);
         session.on_eof();
 
         assert_eq!(progress(&db, &lectures[0]), (100.0, true));
@@ -636,16 +658,48 @@ mod tests {
     }
 
     #[test]
+    fn no_position_or_leaving_the_player_never_wipes_progress() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db.clone(), settings::shared(AppConfig::default()));
+        queries::save_progress(&db.lock().unwrap(), &lectures[0], 42.0, false).unwrap();
+
+        session.open(&lectures[0]).unwrap();
+        // mpv has no position yet (or any more): a due save writes nothing.
+        session.inner().last_save = None;
+        session.tick(None, 100.0, false);
+        assert_eq!(progress(&db, &lectures[0]).0, 42.0);
+
+        // After leaving the player, saves stop: a stopped mpv's "0" isn't one.
+        session.unload();
+        session.inner().last_save = None;
+        session.tick(Some(0.0), 0.0, true);
+        assert_eq!(progress(&db, &lectures[0]).0, 42.0);
+        assert!(!session.is_loaded());
+    }
+
+    #[test]
+    fn leaving_as_a_lecture_ends_doesnt_autoplay_the_next() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv, db, settings::shared(AppConfig::default()));
+        session.open(&lectures[0]).unwrap();
+        session.unload();
+        session.on_eof();
+        assert!(!session.is_loaded(), "the next lecture wasn't loaded");
+    }
+
+    #[test]
     fn a_completion_counts_once_per_session() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
         let session = Session::new(mpv, db.clone(), settings::shared(AppConfig::default()));
 
         session.open(&lectures[0]).unwrap();
-        session.tick(99.0, 100.0, false);
+        session.tick(Some(99.0), 100.0, false);
         session.on_eof();
         session.step(-1).unwrap();
-        session.tick(99.0, 100.0, false);
+        session.tick(Some(99.0), 100.0, false);
         session.on_eof();
 
         assert_eq!(today(&db).1, 1);
@@ -691,7 +745,7 @@ mod tests {
         let session = Session::new(mpv, db.clone(), settings::shared(config));
 
         session.open(&lectures[0]).unwrap();
-        session.tick(99.0, 100.0, false);
+        session.tick(Some(99.0), 100.0, false);
         session.on_eof();
 
         assert_eq!(session.now_playing().1.title, "First", "stays on the lecture");
@@ -707,7 +761,7 @@ mod tests {
 
         session.open(&lectures[0]).unwrap();
         session.set_sleep(Sleep::EndOfLecture);
-        session.tick(99.0, 100.0, false);
+        session.tick(Some(99.0), 100.0, false);
         session.on_eof();
 
         assert_eq!(session.now_playing().1.title, "First", "did not advance");
@@ -724,7 +778,7 @@ mod tests {
         session.open(&lectures[0]).unwrap();
         mpv.set_property("pause", "no").unwrap();
         session.set_sleep(Sleep::At { deadline: Instant::now(), minutes: 15 });
-        session.tick(10.0, 100.0, false);
+        session.tick(Some(10.0), 100.0, false);
 
         assert_eq!(mpv.get_property_string("pause").as_deref(), Some("yes"));
         assert_eq!(session.sleep(), Sleep::Off);

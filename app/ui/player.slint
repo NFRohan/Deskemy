@@ -583,19 +583,8 @@ export component PlayerOverlay inherits Rectangle {
                 }
                 root.wake();
             }
-            // The mouse's back button leaves the player (as the browser's did
-            // in the Tauri app) — after closing an open menu or dialog.
-            pointer-event(event) => {
-                if event.button == PointerEventButton.back && event.kind == PointerEventKind.up {
-                    if Playback.open-menu == "bookmark" {
-                        Playback.close-bookmark();
-                    } else if Playback.open-menu != "" {
-                        Playback.open-menu = "";
-                    } else {
-                        Playback.back();
-                    }
-                }
-            }
+            // (The mouse's back button is handled for the whole window, in
+            // main.rs's wire_mouse_back.)
             double-clicked => { Playback.toggle-fullscreen(); }
         }
 

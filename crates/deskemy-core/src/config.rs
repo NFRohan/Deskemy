@@ -33,6 +33,9 @@ pub struct AppConfig {
     /// open them before moving on. Off by default: many courses attach slides
     /// to every lecture.
     pub pause_at_resources: bool,
+    /// Leaving the mini player opens the full window on the monitor the mini
+    /// player is on. Off: back where the window was before it went mini.
+    pub mini_return_here: bool,
     /// Last library root the user registered (convenience).
     pub last_root: Option<String>,
     /// Where the mini player last sat: [x, y, width, height] in physical
@@ -52,6 +55,7 @@ impl Default for AppConfig {
             autohide_controls: false,
             resources_inline: true,
             pause_at_resources: false,
+            mini_return_here: true,
             last_root: None,
             mini_player: None,
         }

@@ -38,16 +38,89 @@ pub fn section_meta(s: &Section) -> String {
     meta
 }
 
+/// Resources keyed by lecture id (or section id), for the curriculum.
+pub type ResourceMap<'a> = HashMap<String, Vec<&'a Attachment>>;
+
+/// The file name of `path`, or `fallback`.
+fn file_name(path: &str, fallback: &str) -> String {
+    std::path::Path::new(path).file_name().map_or_else(|| fallback.to_string(), |n| n.to_string_lossy().into_owned())
+}
+
+/// Where a section resource sits among the lectures by its number: a flat
+/// `003 …` is its own item, so it follows the lecture before it (`Before(3)`);
+/// a dotted `16.1 …` is Udemy's "lecture 16's first resource", so it goes
+/// with lecture 16 (`With(16)`).
+#[derive(Debug, PartialEq)]
+enum Slot {
+    Before(i64),
+    With(i64),
+}
+
+/// The number a file name starts with, and whether `.digit` follows it.
+/// Only a number at the very start counts — the same rule for lectures and
+/// resources (`Python 3 basics.mp4` isn't lecture 3).
+fn leading(path: &str, fallback: &str) -> Option<(i64, bool)> {
+    let name = file_name(path, fallback);
+    let t = name.trim_start();
+    let digits = t.bytes().take_while(u8::is_ascii_digit).count();
+    let n: i64 = t.get(..digits)?.parse().ok()?;
+    let rest = &t.as_bytes()[digits..];
+    Some((n, rest.first() == Some(&b'.') && rest.get(1).is_some_and(u8::is_ascii_digit)))
+}
+
+fn slot(path: &str, fallback: &str) -> Option<Slot> {
+    leading(path, fallback).map(|(n, dotted)| if dotted { Slot::With(n) } else { Slot::Before(n) })
+}
+
+/// How far past a section's last lecture number a resource may be numbered
+/// and still count as one of its items (an article after the last lecture);
+/// beyond that it's some other number — a year, "100 Days of …".
+const SLOT_REACH: i64 = 3;
+
 /// Resources to show inside the curriculum: per lecture, and per section
 /// for the section's resources that belong to no one lecture. Course-wide
 /// resources stay in the Resources list.
-pub fn inline_resources(attachments: &[Attachment]) -> (HashMap<&str, Vec<&Attachment>>, HashMap<&str, Vec<&Attachment>>) {
-    let (mut by_lecture, mut by_section): (HashMap<&str, Vec<&Attachment>>, HashMap<&str, Vec<&Attachment>>) =
-        Default::default();
+///
+/// A section resource numbered like the lectures sits in lecture order rather
+/// than at the end of the section: Udemy's article pages (`003 Configuring
+/// Git.html` between `002` and `004`) under the lecture before them, and its
+/// per-lecture resources (`16.1 Processes and Jobs.html`) under lecture 16.
+/// One numbered before every lecture, or unnumbered, stays at the end.
+pub fn inline_resources<'a>(sections: &[Section], attachments: &'a [Attachment]) -> (ResourceMap<'a>, ResourceMap<'a>) {
+    let (mut by_lecture, mut by_section): (ResourceMap, ResourceMap) = Default::default();
+    let numbered: HashMap<&str, Vec<(i64, &str)>> = sections
+        .iter()
+        .map(|s| {
+            let lectures = s
+                .lectures
+                .iter()
+                .filter_map(|l| Some((leading(&l.file_path, &l.title)?.0, l.id.as_str())))
+                .collect();
+            (s.id.as_str(), lectures)
+        })
+        .collect();
     for a in attachments {
         match (a.lecture_id.as_deref(), a.section_id.as_deref()) {
-            (Some(lecture), _) => by_lecture.entry(lecture).or_default().push(a),
-            (None, Some(section)) => by_section.entry(section).or_default().push(a),
+            (Some(lecture), _) => by_lecture.entry(lecture.to_string()).or_default().push(a),
+            (None, Some(section)) => {
+                let before = slot(&a.file_path, &a.name).and_then(|slot| {
+                    let lectures = numbered.get(section)?;
+                    let last = lectures.iter().map(|(m, _)| *m).max()?;
+                    let (Slot::Before(n) | Slot::With(n)) = slot;
+                    if n > last + SLOT_REACH {
+                        return None;
+                    }
+                    let fits = |m: i64| match slot {
+                        Slot::Before(n) => m < n,
+                        Slot::With(n) => m <= n,
+                    };
+                    lectures.iter().filter(|(m, _)| fits(*m)).max_by_key(|(m, _)| *m).map(|(_, id)| *id)
+                });
+                match before {
+                    Some(lecture) => by_lecture.entry(lecture.to_string()).or_default().push(a),
+                    None => by_section.entry(section.to_string()).or_default().push(a),
+                }
+            }
             (None, None) => {}
         }
     }
@@ -191,7 +264,8 @@ impl CoursePage {
         page.set_next_label(if done > 0 { "Resume Lecture" } else { "Start Course" }.into());
         page.set_resources_summary(resources_summary(&attachments).into());
         let inline = settings::lock(&self.config).resources_inline;
-        let (by_lecture, by_section) = if inline { inline_resources(&attachments) } else { (HashMap::new(), HashMap::new()) };
+        let (by_lecture, by_section) =
+            if inline { inline_resources(&c.sections, &attachments) } else { (HashMap::new(), HashMap::new()) };
         let items = |list: Option<&Vec<&Attachment>>| {
             model(list.map(|l| l.iter().map(|a| resource_item(a)).collect()).unwrap_or_default())
         };
@@ -485,6 +559,48 @@ mod tests {
     }
 
     #[test]
+    fn numbered_section_resources_sit_in_lecture_order() {
+        let lec = |id: &str, file: &str| Lecture { id: id.into(), file_path: format!("C:/c/s1/{file}"), ..lecture(id, false, true, None) };
+        let s1 = Section {
+            id: "s1".into(),
+            title: "Git".into(),
+            position: 1,
+            lectures: vec![lec("l2", "002 What is Git.mp4"), lec("l4", "004 Branches.mp4")],
+        };
+        let att = |name: &str| Attachment {
+            id: name.into(),
+            name: name.into(),
+            file_path: format!("C:/c/s1/{name}"),
+            kind: Some("html".into()),
+            section_id: Some("s1".into()),
+            lecture_id: None,
+            completed: false,
+        };
+        let atts = vec![att("003 Configuring Git.html"), att("005 Cheatsheet.html"), att("001 Welcome.html"), att("notes.pdf")];
+        let (by_lecture, by_section) = inline_resources(std::slice::from_ref(&s1), &atts);
+        let names = |v: Option<&Vec<&Attachment>>| v.map(|v| v.iter().map(|a| a.name.clone()).collect::<Vec<_>>());
+        // Between 002 and 004 -> under 002; after 004 -> under 004.
+        assert_eq!(names(by_lecture.get("l2")), Some(vec!["003 Configuring Git.html".to_string()]));
+        assert_eq!(names(by_lecture.get("l4")), Some(vec!["005 Cheatsheet.html".to_string()]));
+        // Dotted: Udemy's "lecture N's resource" goes with lecture N.
+        let dotted = [att("4.1 Branch cheatsheet.html")];
+        let (by_lecture, _) = inline_resources(std::slice::from_ref(&s1), &dotted);
+        assert_eq!(names(by_lecture.get("l4")), Some(vec!["4.1 Branch cheatsheet.html".to_string()]));
+        assert_eq!(slot("x/1. Intro.html", ""), Some(Slot::Before(1)), "\"1. \" is a flat number");
+        assert_eq!(slot("x/16.1 Jobs.html", ""), Some(Slot::With(16)));
+        assert_eq!(slot("x/notes.pdf", ""), None);
+        // Numbers far past the section's lectures aren't its items.
+        let far = [att("2024 Syllabus.pdf"), att("100 Days of Git.pdf")];
+        let (far_lecture, far_section) = inline_resources(std::slice::from_ref(&s1), &far);
+        assert!(far_lecture.is_empty());
+        assert_eq!(names(far_section.get("s1")).map(|v| v.len()), Some(2));
+        // A number later in a lecture's name isn't its number.
+        assert_eq!(leading("x/Python 3 basics.mp4", ""), None);
+        // Before every lecture, or unnumbered: the end of the section, as before.
+        assert_eq!(names(by_section.get("s1")), Some(vec!["001 Welcome.html".to_string(), "notes.pdf".into()]));
+    }
+
+    #[test]
     fn inline_resources_split_by_lecture_then_section() {
         let att = |name: &str, section: Option<&str>, lecture: Option<&str>, completed: bool| Attachment {
             id: name.into(),
@@ -501,7 +617,7 @@ mod tests {
             att("notes.pdf", Some("s1"), None, false),
             att("syllabus.pdf", None, None, false),
         ];
-        let (by_lecture, by_section) = inline_resources(&atts);
+        let (by_lecture, by_section) = inline_resources(&[], &atts);
         let names = |v: Option<&Vec<&Attachment>>| v.map(|v| v.iter().map(|a| a.name.clone()).collect::<Vec<_>>());
         assert_eq!(names(by_lecture.get("l1")), Some(vec!["ex1.pdf".to_string(), "ex1b.pdf".into()]));
         assert_eq!(names(by_section.get("s1")), Some(vec!["notes.pdf".to_string()]));

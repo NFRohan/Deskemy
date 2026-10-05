@@ -136,8 +136,8 @@ pub enum NativeDisplay {
 }
 
 /// Windows release builds bundle libmpv-2.dll next to the exe (it's too large
-/// to commit to git, so it lives in src-tauri/vendor/ and is copied in as a
-/// bundle resource). Elsewhere libmpv usually comes from the system (a distro
+/// to commit to git, so it lives in app/vendor/ and is copied in at build
+/// time and into the installers). Elsewhere libmpv usually comes from the system (a distro
 /// package, Homebrew). We still discover it robustly at runtime: an explicit
 /// override, next to our exe, on PATH, in common install locations, or by the
 /// OS's own library search.

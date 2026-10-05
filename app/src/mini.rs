@@ -343,9 +343,11 @@ impl MiniPlayer {
             return;
         };
         trace(ui, "exit: before");
-        // Back on the monitor the mini player is on, not the one it left.
+        // Back on the monitor the mini player is on (the default), or where
+        // the window was before it went mini.
         let mut saved = saved;
-        if let (Some(from), Some(to)) = (work_area_at(ui, saved.normal), work_area_at(ui, rect(ui))) {
+        let here = settings::lock(&self.config).mini_return_here;
+        if let (true, Some(from), Some(to)) = (here, work_area_at(ui, saved.normal), work_area_at(ui, rect(ui))) {
             saved.normal = carry_over(saved.normal, from, to);
         }
         tracing::debug!(?saved, back_to_fullscreen, "mini: exit target");
@@ -650,7 +652,7 @@ fn cloak(ui: &AppWindow, on: bool) {
 fn cloak(_: &AppWindow, _: bool) {}
 
 #[cfg(windows)]
-fn hwnd(ui: &AppWindow) -> Option<windows_sys::Win32::Foundation::HWND> {
+pub(crate) fn hwnd(ui: &AppWindow) -> Option<windows_sys::Win32::Foundation::HWND> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     match ui.window().window_handle().window_handle().map(|h| h.as_raw()) {
         Ok(RawWindowHandle::Win32(h)) => Some(h.hwnd.get() as _),

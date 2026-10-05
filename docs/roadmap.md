@@ -17,13 +17,13 @@ checklist live in [slint-port.md](slint-port.md).
    fix what they report first ([Open issues](#open-issues),
    [Windows polish](#windows-polish)).
 2. **2.1** — small, user-requested improvements ([2.1](#21)).
-3. **Retire the Tauri app** (`src-tauri/` + the Svelte frontend).
+3. ~~Retire the Tauri app~~ — done: removed, 1.x docs in `docs/archive/`.
 4. **Linux** (GH #7) — the reason for the port. Then macOS.
 5. **Bigger features** ([Feature ideas](#feature-ideas)).
 
 ## 2.1
 
-- [ ] **Mini player: where the full window comes back** — a setting: "When
+- [x] **Mini player: where the full window comes back** — a setting: "When
       leaving the mini player: open on the monitor it's on (2.0.1's
       behaviour) / go back to where the window was". Both rectangles already
       exist in `mini.rs` (the saved one, and `carry_over`'s); the setting picks.
@@ -32,7 +32,8 @@ checklist live in [slint-port.md](slint-port.md).
       its end, besides the pause at the end. Needs design first: what the
       heads-up looks like (a chip? the card early?), when it's too early to be
       useful, and how it behaves in the mini player and when seeking past it.
-- [ ] **Chapters button (#6)** — reported on 1.2.2: the button vanishes after
+- [x] **Chapters button (#6)** — hardened (an empty read keeps the file's
+      list; logged); reported on 1.2.2: the button vanishes after
       a few minutes of a chaptered MP4. Check whether 2.0 does the same (the
       menus rebuild from mpv's track list; a transient empty chapter list
       would hide it), and keep the last non-empty list for the same file.
@@ -51,16 +52,15 @@ checklist live in [slint-port.md](slint-port.md).
 
 ## Windows polish
 
-- [ ] The first run after installing / updating with the setup ("Run
-      Deskemy") comes up minimized, or behind other windows. Not the
-      launcher's show state: STARTUPINFO carries none (`show=None`). Next:
-      log IsIconic / GetForegroundWindow once the window is up, to tell
-      minimized from foreground-locked.
-- [ ] Mouse back only works over the video, not over the control bar or the
-      title bar.
-- [ ] Numbered article pages (Udemy's `003 Configuring Git.html`) sit at the
-      end of their section; with "keep videos and resources together" they
-      could sit in lecture order, between the lectures around their number.
+- [x] The first run after installing came up behind other windows (not
+      minimized: the log showed visible, `show=1`, not foreground, launched
+      by the already-exited setup — Windows' foreground lock). It's brought
+      forward once at startup unless Explorer launched it; logged.
+- [x] Mouse back works anywhere in the player window (a window-level
+      filter, not per surface).
+- [x] Numbered section resources sit in lecture order with "keep videos and
+      resources together": `003 Configuring Git.html` between `002` and `004`,
+      Udemy's per-lecture `16.1 …` with lecture 16.
 - [ ] Courses imported before the 2.0 scanner fixes (TypeScript `.ts` files
       counted as videos, code projects listed file by file) need adding again
       to pick them up — could offer it once.
@@ -71,15 +71,15 @@ checklist live in [slint-port.md](slint-port.md).
 - [ ] New logo: concepts A (Bookmark D), B (Progress D), C (Folder D) are
       drawn; pick one, then app icon + sidebar logo with clean transparent
       edges (the current icon is a stock "book + play" with a white fringe).
-- [ ] Track status icons (not started / in progress / done) have no tooltip.
+- [x] Track status icons name the status on hover.
 
 ## Retire the Tauri app
 
-- [ ] Remove `src-tauri/`, `src/` (Svelte), `static/` and the Node tooling;
-      move anything the Slint app still borrows (`src-tauri/vendor/` libmpv
-      fallback in `app/build.rs`, icons) into `app/`.
-- [ ] The core crate drops what only the Tauri app used.
-- [ ] README / docs: no "the previous Tauri app still lives in…".
+- [x] Removed `src-tauri/`, `src/` (Svelte), `static/` and the Node tooling;
+      libmpv is staged from `app/vendor/` only.
+- [x] The core crate dropped the queries only the Tauri app used (their
+      columns stay, for older libraries and backups).
+- [x] README / docs updated; 1.x planning docs in `docs/archive/`.
 
 ## Linux
 
@@ -121,7 +121,7 @@ Roughly by value to someone working through a course:
   minutes and shows "today: 2 lectures, 25 min" on the library, building on the
   daily goal and streaks.
 - **A–B loop** — repeat a stretch of a lecture, optionally slower (mpv's
-  `ab-loop-a` / `ab-loop-b`).
+  `ab-loop-a` / `ab-loop-b`). On hold: rarely used — until someone asks.
 - **Command palette** — Ctrl+K to jump to any course or lecture, or run an
   action.
 - [x] **Follow-along mini player** — shipped in 2.0.

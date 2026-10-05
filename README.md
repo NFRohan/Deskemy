@@ -167,8 +167,8 @@ cargo test             # tests (a headless mpv runs the playback ones)
 ```
 
 Releases are packaged with cargo-packager — see [docs/releasing.md](docs/releasing.md).
-The previous Tauri + Svelte app still lives in `src-tauri/` and `src/` until it's
-retired.
+Deskemy 1.x was a Tauri + Svelte app; its planning docs are in
+[docs/archive/](docs/archive/), its code in the git history (up to `v1.2.2`).
 
 ## Tech stack
 

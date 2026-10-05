@@ -662,7 +662,10 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
 
     let (s, m, weak) = (session.clone(), mpv.clone(), ui.as_weak());
     playback.on_back(move || {
-        s.save_now();
+        // Save and let go of the lecture before stopping mpv: a stopped mpv
+        // has no position, and the next periodic save wrote 0 over the
+        // lecture's real one.
+        s.unload();
         run(&m, &["stop"]);
         if let Some(ui) = weak.upgrade() {
             // Back to the full-size window first (it restores its size, but
@@ -854,7 +857,8 @@ fn wire_panel(ui: &AppWindow, session: &Arc<Session>) {
 
 /// What the overlay shows, sampled from mpv on the event thread.
 struct State {
-    position: f64,
+    /// None while mpv has no file (stopped, or the next one opening).
+    position: Option<f64>,
     duration: f64,
     paused: bool,
     volume: f64,
@@ -866,7 +870,7 @@ impl State {
     fn sample(mpv: &Mpv) -> Self {
         let flag = |name| mpv.get_property_string(name).as_deref() == Some("yes");
         State {
-            position: mpv.get_f64("time-pos").unwrap_or(0.0),
+            position: mpv.get_f64("time-pos"),
             duration: mpv.get_f64("duration").unwrap_or(0.0),
             paused: flag("pause"),
             volume: mpv.get_f64("volume").unwrap_or(100.0),
@@ -882,6 +886,7 @@ impl State {
 fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint::Weak<AppWindow>) {
     let mut shown_revision = u64::MAX;
     let mut shown_tracks = None;
+    let mut known_chapters = None;
     let mut awake = false;
     let mut filling = false;
     loop {
@@ -936,11 +941,15 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
         let signature = tracks::signature(mpv);
         let menus = (shown_tracks.as_ref() != Some(&signature)).then(|| {
             shown_tracks = Some(signature);
-            Menus::from(&tracks::read(mpv))
+            let mut t = tracks::read(mpv);
+            let path = mpv.get_property_string("path");
+            t.chapters =
+                tracks::steady_chapters(std::mem::take(&mut t.chapters), t.chapters_known, path.as_deref(), &mut known_chapters);
+            Menus::from(&t)
         });
 
         let now = chrono::Local::now();
-        let remaining = (s.duration - s.position).max(0.0) / s.speed.max(0.01);
+        let remaining = (s.duration - s.position.unwrap_or(0.0)).max(0.0) / s.speed.max(0.01);
         let ends = now + chrono::Duration::milliseconds((remaining * 1000.0) as i64);
         let clock = now.format("%H:%M").to_string();
         let ends_at = if s.duration > 0.0 {
@@ -987,7 +996,7 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
                     playback.invoke_refresh_panel();
                 }
             }
-            playback.set_position(s.position as f32);
+            playback.set_position(s.position.unwrap_or(0.0) as f32);
             playback.set_duration(s.duration as f32);
             playback.set_paused(s.paused);
             playback.set_volume(s.volume as f32);
