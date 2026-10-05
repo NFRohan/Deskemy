@@ -23,6 +23,7 @@ export global Prefs {
     in property <bool> auto-rescan;
     in property <bool> resources-inline;
     in property <bool> pause-at-resources;
+    in property <bool> mini-return-here;
 
     callback set(string, string);
 
@@ -348,6 +349,17 @@ export component SettingsPage inherits Flickable {
                             label: "Auto-hide controls in fullscreen";
                             checked: Prefs.autohide;
                             toggled => { Prefs.set("autohide", Prefs.autohide ? "false" : "true"); }
+                        }
+                    }
+                    Divider { }
+                    Row {
+                        title: "Open the full player where the mini player is";
+                        description: "Leaving the mini player on another monitor opens the full window there. Off brings it back where it was before.";
+                        text-width: root.text-width;
+                        Switch {
+                            label: "Open the full player where the mini player is";
+                            checked: Prefs.mini-return-here;
+                            toggled => { Prefs.set("mini-return-here", Prefs.mini-return-here ? "false" : "true"); }
                         }
                     }
                     Divider { }

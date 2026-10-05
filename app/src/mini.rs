@@ -343,9 +343,11 @@ impl MiniPlayer {
             return;
         };
         trace(ui, "exit: before");
-        // Back on the monitor the mini player is on, not the one it left.
+        // Back on the monitor the mini player is on (the default), or where
+        // the window was before it went mini.
         let mut saved = saved;
-        if let (Some(from), Some(to)) = (work_area_at(ui, saved.normal), work_area_at(ui, rect(ui))) {
+        let here = settings::lock(&self.config).mini_return_here;
+        if let (true, Some(from), Some(to)) = (here, work_area_at(ui, saved.normal), work_area_at(ui, rect(ui))) {
             saved.normal = carry_over(saved.normal, from, to);
         }
         tracing::debug!(?saved, back_to_fullscreen, "mini: exit target");
