@@ -54,14 +54,14 @@ checklist live in [slint-port.md](slint-port.md).
 
 - [ ] The first run after installing / updating with the setup ("Run
       Deskemy") comes up minimized, or behind other windows. Not the
-      launcher's show state: STARTUPINFO carries none (`show=None`). Next:
-      log IsIconic / GetForegroundWindow once the window is up, to tell
-      minimized from foreground-locked.
+      launcher's show state: STARTUPINFO carries none (`show=None`).
+      `deskemy.log` now records the launching process and, at 0.3/1/3s,
+      minimized / visible / foreground — read it after the next install.
 - [x] Mouse back works anywhere in the player window (a window-level
       filter, not per surface).
-- [ ] Numbered article pages (Udemy's `003 Configuring Git.html`) sit at the
-      end of their section; with "keep videos and resources together" they
-      could sit in lecture order, between the lectures around their number.
+- [x] Numbered section resources sit in lecture order with "keep videos and
+      resources together": `003 Configuring Git.html` between `002` and `004`,
+      Udemy's per-lecture `16.1 …` with lecture 16.
 - [ ] Courses imported before the 2.0 scanner fixes (TypeScript `.ts` files
       counted as videos, code projects listed file by file) need adding again
       to pick them up — could offer it once.
@@ -72,7 +72,7 @@ checklist live in [slint-port.md](slint-port.md).
 - [ ] New logo: concepts A (Bookmark D), B (Progress D), C (Folder D) are
       drawn; pick one, then app icon + sidebar logo with clean transparent
       edges (the current icon is a stock "book + play" with a white fringe).
-- [ ] Track status icons (not started / in progress / done) have no tooltip.
+- [x] Track status icons name the status on hover.
 
 ## Retire the Tauri app
 

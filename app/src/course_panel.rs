@@ -40,11 +40,14 @@ pub fn sections(
     current: Option<&str>,
     expanded: &HashSet<String>,
 ) -> Vec<SectionRow> {
+    // The course page's placement: a lecture's own resources, plus numbered
+    // section resources in lecture order.
+    let (by_lecture, _) = crate::course_page::inline_resources(&course.sections, attachments);
     let resources_of = |lecture: &str| -> Vec<ResourceItem> {
         if !inline {
             return Vec::new();
         }
-        attachments.iter().filter(|a| a.lecture_id.as_deref() == Some(lecture)).map(resource_item).collect()
+        by_lecture.get(lecture).map(|list| list.iter().map(|a| resource_item(a)).collect()).unwrap_or_default()
     };
     course
         .sections
