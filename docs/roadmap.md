@@ -68,6 +68,17 @@ Known follow-ups:
   cloaking during the switch) are behind `cfg(windows)` in `mini.rs`.
 - Packaging: AppImage and/or Flatpak.
 
+## Requested by users
+
+- [ ] **Resources prompt timing** (dcsm8): with "Pause on exercises and
+      resources", choose how early a heads-up appears that the lecture has
+      resources (off / 30s / 1 / 2 / 5 min before the end), besides the pause
+      at the end. Planned for 2.1.
+- [ ] **Simple built-in PDF viewer** (dcsm8): read a lecture's PDFs inside
+      Deskemy — pages, scroll, zoom, page number, "Open in your PDF app". No
+      annotation or editing. Likely PDFium via `pdfium-render`; needs a
+      Linux check.
+
 ## Feature ideas
 
 Roughly by value to someone working through a course:
