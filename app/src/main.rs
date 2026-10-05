@@ -133,6 +133,7 @@ fn main() -> Result<(), slint::PlatformError> {
     prefs.show(&ui);
     ui.global::<Prefs>().set_version(settings::VERSION.into());
     wire_window(&ui);
+    wire_mouse_back(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
     let thumbs = paths::data_dir().map(|d| d.join(deskemy_core::courses::THUMBNAILS_DIR));
@@ -603,6 +604,36 @@ fn wire_course(
         if let Err(e) = open::that_detached(path.as_str()) {
             tracing::warn!(error = %e, %path, "open resource");
         }
+    });
+}
+
+/// The mouse's back button, anywhere in the player's window — over the
+/// video, the control bar, the title bar or the mini player (a button under
+/// the pointer would otherwise take the click). As the browser's back did in
+/// the Tauri app: close an open dialog or menu first, then leave the mini
+/// player, then the player.
+fn wire_mouse_back(ui: &AppWindow) {
+    use slint::winit_030::winit::event::{ElementState, MouseButton, WindowEvent};
+    use slint::winit_030::{EventResult, WinitWindowAccessor};
+    let weak = ui.as_weak();
+    ui.window().on_winit_window_event(move |_, event| {
+        let WindowEvent::MouseInput { button: MouseButton::Back, state, .. } = event else {
+            return EventResult::Propagate;
+        };
+        let Some(ui) = weak.upgrade() else { return EventResult::Propagate };
+        if !ui.get_playing() {
+            return EventResult::Propagate;
+        }
+        if *state == ElementState::Released {
+            let playback = ui.global::<Playback>();
+            match playback.get_open_menu().as_str() {
+                "bookmark" => playback.invoke_close_bookmark(),
+                "" if playback.get_mini() => playback.invoke_toggle_mini(),
+                "" => playback.invoke_back(),
+                _ => playback.set_open_menu("".into()),
+            }
+        }
+        EventResult::PreventDefault
     });
 }
 
