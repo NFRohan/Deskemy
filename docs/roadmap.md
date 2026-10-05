@@ -101,6 +101,10 @@ checklist live in [slint-port.md](slint-port.md).
 
 Roughly by value to someone working through a course:
 
+- **Manual resource pairing** — attach a resource (a PDF, a link, a file) to
+  a lecture by hand when the importer guessed wrong or the file has no
+  numbering: pick a lecture from the resource's menu (or drag it onto one);
+  stored per course, kept across re-imports, and "reset to automatic".
 - **Simple built-in PDF viewer** (dcsm8) — read a lecture's PDFs inside
   Deskemy: pages, scroll, zoom, page number, "Open in your PDF app". No
   annotation or editing. Likely PDFium via `pdfium-render` (~5 MB DLL);
