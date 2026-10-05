@@ -52,11 +52,10 @@ checklist live in [slint-port.md](slint-port.md).
 
 ## Windows polish
 
-- [ ] The first run after installing / updating with the setup ("Run
-      Deskemy") comes up minimized, or behind other windows. Not the
-      launcher's show state: STARTUPINFO carries none (`show=None`).
-      `deskemy.log` now records the launching process and, at 0.3/1/3s,
-      minimized / visible / foreground — read it after the next install.
+- [x] The first run after installing came up behind other windows (not
+      minimized: the log showed visible, `show=1`, not foreground, launched
+      by the already-exited setup — Windows' foreground lock). It's brought
+      forward once at startup unless Explorer launched it; logged.
 - [x] Mouse back works anywhere in the player window (a window-level
       filter, not per surface).
 - [x] Numbered section resources sit in lecture order with "keep videos and

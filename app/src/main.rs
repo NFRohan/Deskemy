@@ -608,13 +608,20 @@ fn wire_course(
     });
 }
 
-/// Diagnostics for "the first run after installing comes up minimized / behind
-/// other windows" (roadmap): who launched Deskemy, and the window's state a
-/// moment after it's up — minimized, visible, in front — logged at 0.3s, 1s
-/// and 3s.
+/// The first window after installing came up behind other windows (it looked
+/// minimized): the setup launches Deskemy and exits before the window is up,
+/// and Windows only lets the foreground program — and what it launched while
+/// it still was — take the front. The logs showed it: visible, not
+/// minimized, not in front, launched by an exited process.
+///
+/// So at 0.3s, if the window is visible but not in front and Explorer (the
+/// Start menu, a shortcut) didn't launch it, it's brought forward once. The
+/// launcher and the window's state at 0.3s / 1s / 3s are logged.
 #[cfg(windows)]
 fn log_launch_window(ui: &AppWindow) {
-    tracing::info!(launcher = %parent_process_name().unwrap_or_else(|| "?".into()), "launched by");
+    let launcher = parent_process_name().unwrap_or_else(|| "?".into());
+    tracing::info!(%launcher, "launched by");
+    let from_shell = launcher.eq_ignore_ascii_case("explorer.exe");
     for ms in [300, 1000, 3000] {
         let weak = ui.as_weak();
         slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
@@ -631,7 +638,34 @@ fn log_launch_window(ui: &AppWindow) {
                 (IsIconic(hwnd) != 0, IsWindowVisible(hwnd) != 0, GetForegroundWindow() == hwnd, show)
             };
             tracing::info!(after_ms = ms, minimized, visible, foreground, ?show, "launch window state");
+            if ms == 300 && visible && !minimized && !foreground && !from_shell {
+                let raised = bring_to_front(hwnd);
+                tracing::info!(raised, "brought the first window to the front");
+            }
         });
+    }
+}
+
+/// Bring `hwnd` in front of the foreground window: share input with the
+/// foreground window's thread for the call, which lets SetForegroundWindow
+/// through the foreground lock.
+#[cfg(windows)]
+fn bring_to_front(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+    };
+    // SAFETY: live window handles and thread ids; input is detached again.
+    unsafe {
+        let ours = GetCurrentThreadId();
+        let theirs = GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
+        let attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, 1) != 0;
+        BringWindowToTop(hwnd);
+        let ok = SetForegroundWindow(hwnd) != 0;
+        if attached {
+            AttachThreadInput(ours, theirs, 0);
+        }
+        ok
     }
 }
 
