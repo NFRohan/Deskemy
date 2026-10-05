@@ -11,3 +11,8 @@ vite.config.ts.timestamp-*
 
 # Release signing keys — never commit
 /keys/
+
+# Agent skills installed locally (npx skills add), not part of the app
+/.agents/
+/.claude/
+/skills-lock.json
