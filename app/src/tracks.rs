@@ -22,6 +22,28 @@ pub struct Chapter {
     pub time: f64,
 }
 
+/// The chapters to show for the playing file. mpv can briefly report none
+/// while it's busy (a cache refill, a seek); the menus rebuilt then would
+/// hide the Chapters button until the next rebuild (GH #6). So for the same
+/// file an empty read keeps the last list it had; a new file starts over.
+pub fn steady_chapters(
+    read: Vec<Chapter>,
+    path: Option<&str>,
+    known: &mut Option<(String, Vec<Chapter>)>,
+) -> Vec<Chapter> {
+    let Some(path) = path else { return read };
+    match known {
+        Some((p, list)) if p == path && read.is_empty() && !list.is_empty() => {
+            tracing::debug!(path, kept = list.len(), "chapters read empty for the same file; keeping the list");
+            list.clone()
+        }
+        _ => {
+            *known = Some((path.to_string(), read.clone()));
+            read
+        }
+    }
+}
+
 /// Everything the menus show, read from mpv in one go.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Tracks {
@@ -231,5 +253,20 @@ mod tests {
         assert_eq!(menu.iter().filter(|m| m.selected).count(), 1);
         assert_eq!(menu[3].label.as_str(), "1.25×");
         assert!(menu[3].selected);
+    }
+    #[test]
+    fn an_empty_chapter_read_keeps_the_files_chapters() {
+        let ch = |t: f64| Chapter { title: Some(format!("at {t}")), time: t };
+        let mut known = None;
+        let list = vec![ch(0.0), ch(60.0)];
+        assert_eq!(steady_chapters(list.clone(), Some("a.mp4"), &mut known), list);
+        // mpv busy: none read, same file -> the list stays.
+        assert_eq!(steady_chapters(vec![], Some("a.mp4"), &mut known), list);
+        // A new file without chapters really has none.
+        assert_eq!(steady_chapters(vec![], Some("b.mp4"), &mut known), vec![]);
+        // Back to a.mp4 later: it's read afresh.
+        assert_eq!(steady_chapters(vec![ch(5.0)], Some("a.mp4"), &mut known), vec![ch(5.0)]);
+        // No path (nothing loaded): passed through.
+        assert_eq!(steady_chapters(vec![], None, &mut known), vec![]);
     }
 }

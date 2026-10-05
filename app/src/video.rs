@@ -882,6 +882,7 @@ impl State {
 fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint::Weak<AppWindow>) {
     let mut shown_revision = u64::MAX;
     let mut shown_tracks = None;
+    let mut known_chapters = None;
     let mut awake = false;
     let mut filling = false;
     loop {
@@ -936,7 +937,10 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
         let signature = tracks::signature(mpv);
         let menus = (shown_tracks.as_ref() != Some(&signature)).then(|| {
             shown_tracks = Some(signature);
-            Menus::from(&tracks::read(mpv))
+            let mut t = tracks::read(mpv);
+            let path = mpv.get_property_string("path");
+            t.chapters = tracks::steady_chapters(std::mem::take(&mut t.chapters), path.as_deref(), &mut known_chapters);
+            Menus::from(&t)
         });
 
         let now = chrono::Local::now();
