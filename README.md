@@ -210,7 +210,7 @@ flowchart TB
     imp --> db
     ply --> mpv
     ply --> db
-    mpv -->|renders frames into the UI's GL context| ui
+    mpv -->|"renders into the UI (OpenGL)"| ui
 ```
 
 ## Privacy
