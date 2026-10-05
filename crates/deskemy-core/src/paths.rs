@@ -1,10 +1,9 @@
-//! Where Deskemy keeps its data. Shared so every frontend opens the same
-//! library: the Tauri app resolves the same directory via
-//! `app.path().app_data_dir()` (OS data dir + bundle identifier).
+//! Where Deskemy keeps its data: the OS data dir + the bundle identifier —
+//! the same directory the Tauri 1.x app used, so its library carries over.
 
 use std::path::PathBuf;
 
-/// Bundle identifier from `tauri.conf.json`; names the data directory.
+/// The bundle identifier (the Tauri app's, kept); names the data directory.
 pub const IDENTIFIER: &str = "com.spooksy.deskemy";
 
 pub const DB_FILE: &str = "deskemy.db";

@@ -26,9 +26,9 @@ the updater, and written into the installer and `latest.json`.
 
 ## 2. Build, sign, package
 
-Signing uses the same minisign key as the Tauri releases (the one in
-`TAURI_SIGNING_PRIVATE_KEY`); the app trusts its public key (`updates::PUBKEY`,
-the same as `src-tauri/tauri.conf.json`).
+Signing uses the same minisign key as the Tauri 1.x releases; the app trusts
+its public key (`updates::PUBKEY`, the one 1.x's `tauri.conf.json` carried),
+so 1.x installs accept 2.x updates too.
 
 ```powershell
 $env:CARGO_PACKAGER_SIGN_PRIVATE_KEY = "<the key, or a path to the key file>"

@@ -21,7 +21,7 @@ browser-playable codecs; users' libraries aren't all H.264).
 |---|---|
 | `crates/deskemy-core/` | Platform- and UI-agnostic core: db, import, config, backup, libmpv FFI. Shared by both apps. |
 | `app/` | The Slint app (`deskemy-app`, binary `deskemy`). |
-| `src-tauri/` | The shipping Tauri app, unchanged apart from depending on the core. Retired at the end. |
+| `src-tauri/` | The Tauri 1.x app during the port, depending on the core. Removed after 2.0.1 (in git history up to `v1.2.2`). |
 
 Not a Cargo workspace on purpose: that would move `src-tauri/target` and break
 its `build.rs` and release flow. Each app has its own lockfile and target dir.
@@ -36,7 +36,7 @@ cargo run -- --snapshot-player out.png      # same, player overlay with sample s
 ```
 
 - libmpv: `build.rs` copies `libmpv-2.dll` next to the exe from `app/vendor/`
-  or `src-tauri/vendor/` (both gitignored).
+  (gitignored).
 - `DESKEMY_HWDEC=no` forces software decoding (default `auto-safe`).
 - `DESKEMY_DATA_DIR=<dir>` points at a scratch library instead of the real one.
 - `--snapshot` uses Slint's software renderer, so OpenGL content (video) is
@@ -151,7 +151,7 @@ parent; wrapped `Text` is measured at its unwrapped width, so give it a
    - ☐ Run it on Linux: playback with `hwdec=auto-safe` (vaapi), X11 and Wayland
    - ☐ Keep-awake off Windows (freedesktop ScreenSaver inhibit / IOPMAssertion)
    - ☐ Decide rfd's Linux backend: GTK 3 (default) or the XDG portal
-7. Packaging + updater; retire `src-tauri/`.
+7. Packaging + updater; retire `src-tauri/`. ✓ (2.0.0, 2.0.1; removed after)
 
 ## Known risks
 

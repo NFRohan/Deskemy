@@ -41,15 +41,11 @@ fn main() {
 
     // Stage libmpv next to the built executable (Windows searches the exe's
     // own directory first). The DLL is too large for git; drop a copy in
-    // app/vendor/, or reuse the one the Tauri app keeps in src-tauri/vendor/.
-    // Other platforms use the system's libmpv. (The target's OS, not the
-    // build machine's.)
+    // app/vendor/. Other platforms use the system's libmpv. (The target's OS,
+    // not the build machine's.)
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        let sources = [
-            manifest.join("vendor").join("libmpv-2.dll"),
-            manifest.join("..").join("src-tauri").join("vendor").join("libmpv-2.dll"),
-        ];
+        let sources = [manifest.join("vendor").join("libmpv-2.dll")];
         for src in &sources {
             println!("cargo:rerun-if-changed={}", src.display());
         }

@@ -4,7 +4,7 @@ Forward-looking plan for theming / visual work. **Deferred** — land the core v
 features first, then implement. This document is implementation-ready so a future
 session doesn't have to re-derive anything.
 
-Related: [PLAN.md](../PLAN.md) (baseline), [ROADMAP.md](../ROADMAP.md) (features).
+Related: [PLAN.md](PLAN.md) (baseline), [ROADMAP.md](ROADMAP.md) (features).
 
 Legend: 🔜 next · ⏳ planned · ✅ proven · 🔑 key decision
 
