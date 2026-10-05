@@ -318,18 +318,45 @@ component TrackCourseView inherits Rectangle {
             }
         }
 
-        Image {
-            source: root.course.status == "done" ? @image-url("icons/circle-check.svg")
-                : root.course.status == "started" ? @image-url("icons/circle-dot.svg")
-                : @image-url("icons/circle.svg");
+        // The course's status, named on hover (drawn over the rest of the row).
+        status := Rectangle {
+            property <string> status-name: root.course.status == "done" ? "Completed"
+                : root.course.status == "started" ? "In progress" : "Not started";
             width: 20px;
             height: 20px;
             y: (parent.height - self.height) / 2;
-            colorize: root.course.status == "done" ? Theme.secondary-container
-                : root.course.status == "started" ? Theme.primary : Theme.outline;
-            accessible-role: image;
-            accessible-label: root.course.status == "done" ? "Completed"
-                : root.course.status == "started" ? "In progress" : "Not started";
+            z: 10;
+            Image {
+                source: root.course.status == "done" ? @image-url("icons/circle-check.svg")
+                    : root.course.status == "started" ? @image-url("icons/circle-dot.svg")
+                    : @image-url("icons/circle.svg");
+                width: 20px;
+                height: 20px;
+                colorize: root.course.status == "done" ? Theme.secondary-container
+                    : root.course.status == "started" ? Theme.primary : Theme.outline;
+                accessible-role: image;
+                accessible-label: status.status-name;
+            }
+            status-hover := TouchArea { }
+            if status-hover.has-hover: Rectangle {
+                x: parent.width + 8px;
+                y: (parent.height - self.height) / 2;
+                width: tip-text.preferred-width + 20px;
+                height: 28px;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Theme.outline-variant;
+                background: Theme.surface-container-highest;
+                drop-shadow-blur: 8px;
+                drop-shadow-color: #00000059;
+                tip-text := Text {
+                    text: status.status-name;
+                    color: Theme.on-surface;
+                    font-size: Theme.label-md;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
         }
 
         // The course itself links to its page.

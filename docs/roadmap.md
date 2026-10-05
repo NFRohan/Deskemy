@@ -122,7 +122,7 @@ Roughly by value to someone working through a course:
   minutes and shows "today: 2 lectures, 25 min" on the library, building on the
   daily goal and streaks.
 - **A–B loop** — repeat a stretch of a lecture, optionally slower (mpv's
-  `ab-loop-a` / `ab-loop-b`).
+  `ab-loop-a` / `ab-loop-b`). On hold: rarely used — until someone asks.
 - **Command palette** — Ctrl+K to jump to any course or lecture, or run an
   action.
 - [x] **Follow-along mini player** — shipped in 2.0.
