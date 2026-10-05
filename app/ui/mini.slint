@@ -6,6 +6,31 @@
 
 import { Playback, IconButton, Scrubber } from "player.slint";
 
+/// The picture: double-click (or mouse back) for the full player, a click
+/// takes the keys, and with `native-drag` a drag moves the window.
+component Picture inherits TouchArea {
+    in property <bool> native-drag;
+    callback focus-keys();
+
+    double-clicked => { Playback.toggle-mini(); }
+    pointer-event(event) => {
+        if event.kind == PointerEventKind.down {
+            root.focus-keys();
+            if root.native-drag && event.button == PointerEventButton.left {
+                Playback.mini-drag-start();
+            }
+        }
+        if event.button == PointerEventButton.back && event.kind == PointerEventKind.up {
+            Playback.toggle-mini();
+        }
+    }
+    moved => {
+        if root.native-drag && self.pressed {
+            Playback.mini-drag-move();
+        }
+    }
+}
+
 export component MiniPlayer inherits Rectangle {
     property <bool> shown: hover.has-hover || seek.dragging;
     property <float> progress: Playback.duration > 0 ? Playback.position / Playback.duration : 0;
@@ -58,21 +83,17 @@ export component MiniPlayer inherits Rectangle {
         // Sees the pointer over everything inside, and loses it when the
         // pointer leaves the window.
         hover := TouchArea {
-            // Drag the picture to move the window.
-            WindowMoveArea {
+            // Drag the picture to move the window. On Windows the app moves it
+            // (mini.rs): the system's move loop would snap it to screen edges.
+            if Playback.mini-native-drag: Picture {
+                native-drag: true;
+                focus-keys => { keys.focus(); }
+            }
+            if !Playback.mini-native-drag: WindowMoveArea {
                 width: 100%;
                 height: 100%;
-                TouchArea {
-                    double-clicked => { Playback.toggle-mini(); }
-                    pointer-event(event) => {
-                        // A click on the picture gives it the keys back.
-                        if event.kind == PointerEventKind.down {
-                            keys.focus();
-                        }
-                        if event.button == PointerEventButton.back && event.kind == PointerEventKind.up {
-                            Playback.toggle-mini();
-                        }
-                    }
+                Picture {
+                    focus-keys => { keys.focus(); }
                 }
             }
 

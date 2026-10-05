@@ -109,6 +109,9 @@ export global Playback {
     /// The follow-along mini player: the window small and on top (Rust
     /// resizes it; see mini.rs).
     in-out property <bool> mini;
+    /// The app moves the mini player itself while it's dragged (Windows: no
+    /// Snap); elsewhere the window system's own move does.
+    in property <bool> mini-native-drag;
     /// Settings' "Auto-hide controls in fullscreen".
     in property <bool> autohide-fullscreen;
     in property <bool> has-previous;
@@ -151,6 +154,9 @@ export global Playback {
     callback toggle-mute();
     callback toggle-fullscreen();
     callback toggle-mini();
+    /// Dragging the mini player: pressed on it, then each pointer move.
+    callback mini-drag-start();
+    callback mini-drag-move();
     /// Leave the mini player because the player is closing (not back to
     /// fullscreen).
     callback leave-mini();

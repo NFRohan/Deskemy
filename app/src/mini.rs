@@ -131,6 +131,38 @@ pub fn on_new_monitor(suggested: Rect, dpi: u32, aspect: f64) -> Rect {
     keep_aspect(suggested, 2, aspect, min_at_dpi(dpi))
 }
 
+/// The full window's rectangle `normal`, carried from the monitor work area
+/// `from` to `to`: the same relative place, never larger than `to`. Leaving
+/// the mini player on another monitor brings the full window back there.
+pub fn carry_over(normal: Rect, from: Rect, to: Rect) -> Rect {
+    if from == to {
+        return normal;
+    }
+    let w = normal.w.min(to.w);
+    let h = normal.h.min(to.h);
+    let frac = |offset: i32, room: i32| if room > 0 { offset as f64 / room as f64 } else { 0.5 };
+    let fx = frac(normal.x - from.x, from.w - normal.w).clamp(0.0, 1.0);
+    let fy = frac(normal.y - from.y, from.h - normal.h).clamp(0.0, 1.0);
+    Rect {
+        x: to.x + ((to.w - w) as f64 * fx).round() as i32,
+        y: to.y + ((to.h - h) as f64 * fy).round() as i32,
+        w,
+        h,
+    }
+}
+
+/// Where a dragged window goes: the grabbed spot (`grab`, as fractions of
+/// the window) under the pointer, at the window's current size — so it
+/// follows the pointer even when crossing monitors resizes it.
+pub fn drag_to(pointer: (i32, i32), grab: (f64, f64), w: i32, h: i32) -> Rect {
+    Rect {
+        x: pointer.0 - (grab.0 * w as f64).round() as i32,
+        y: pointer.1 - (grab.1 * h as f64).round() as i32,
+        w,
+        h,
+    }
+}
+
 /// A mini player rectangle reshaped to `aspect`, keeping its width and the
 /// edge nearest the screen's (bottom in the lower half), and kept on screen.
 pub fn fit_aspect(r: Rect, aspect: f64, work: Option<Rect>, min: (i32, i32)) -> Rect {
@@ -182,6 +214,8 @@ pub struct MiniPlayer {
     /// Leaving mini goes back to fullscreen (if it came from there); the
     /// player closing mid-switch turns it off.
     to_fullscreen: Rc<Cell<bool>>,
+    /// The spot the mini player was grabbed at (fractions of its size).
+    grab: Cell<Option<(f64, f64)>>,
 }
 
 impl MiniPlayer {
@@ -195,6 +229,21 @@ impl MiniPlayer {
             settle: slint::Timer::default(),
             switching: Rc::new(Cell::new(false)),
             to_fullscreen: Rc::new(Cell::new(false)),
+            grab: Cell::new(None),
+        });
+        let playback = ui.global::<Playback>();
+        playback.set_mini_native_drag(cfg!(windows));
+        let (m, weak) = (mini.clone(), ui.as_weak());
+        playback.on_mini_drag_start(move || {
+            if let Some(ui) = weak.upgrade() {
+                m.drag_start(&ui);
+            }
+        });
+        let (m, weak) = (mini.clone(), ui.as_weak());
+        playback.on_mini_drag_move(move || {
+            if let Some(ui) = weak.upgrade() {
+                m.drag_move(&ui);
+            }
         });
         let (m, weak) = (mini.clone(), ui.as_weak());
         ui.global::<Playback>().on_toggle_mini(move || {
@@ -294,6 +343,11 @@ impl MiniPlayer {
             return;
         };
         trace(ui, "exit: before");
+        // Back on the monitor the mini player is on, not the one it left.
+        let mut saved = saved;
+        if let (Some(from), Some(to)) = (work_area_at(ui, saved.normal), work_area_at(ui, rect(ui))) {
+            saved.normal = carry_over(saved.normal, from, to);
+        }
         tracing::debug!(?saved, back_to_fullscreen, "mini: exit target");
         cloak(ui, true);
         self.reveal.stop();
@@ -337,6 +391,24 @@ impl MiniPlayer {
                 });
             }
         });
+    }
+
+    /// Pressed on the picture: remember where it was grabbed.
+    fn drag_start(&self, ui: &AppWindow) {
+        let (Some(p), r) = (cursor_pos(), rect(ui)) else { return };
+        if r.w > 0 && r.h > 0 {
+            self.grab.set(Some(((p.0 - r.x) as f64 / r.w as f64, (p.1 - r.y) as f64 / r.h as f64)));
+        }
+    }
+
+    /// The pointer moved while pressed: keep the grabbed spot under it.
+    fn drag_move(&self, ui: &AppWindow) {
+        let (Some(grab), Some(p)) = (self.grab.get(), cursor_pos()) else { return };
+        let r = rect(ui);
+        let to = drag_to(p, grab, r.w, r.h);
+        if (to.x, to.y) != (r.x, r.y) {
+            place(ui, to);
+        }
     }
 
     /// Keep the window at `aspect` while it's resized (the WM_SIZING hook).
@@ -513,6 +585,22 @@ fn set_min_size(ui: &AppWindow, (w, h): (f32, f32)) {
     ui.window().with_winit_window(|window| window.set_min_inner_size(Some(LogicalSize::new(w, h))));
 }
 
+/// The pointer's position on screen (physical pixels).
+#[cfg(windows)]
+fn cursor_pos() -> Option<(i32, i32)> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut p = POINT { x: 0, y: 0 };
+    // SAFETY: a POINT to fill.
+    (unsafe { GetCursorPos(&mut p) } != 0).then_some((p.x, p.y))
+}
+
+/// Elsewhere the window system's own move drags the mini player.
+#[cfg(not(windows))]
+fn cursor_pos() -> Option<(i32, i32)> {
+    None
+}
+
 /// The window's rectangle, outside edges: what `place` sets.
 fn rect(ui: &AppWindow) -> Rect {
     os_rect(ui).unwrap_or_else(|| current(ui))
@@ -686,6 +774,30 @@ mod tests {
         assert_eq!(on_new_monitor(tiny, 96, wide), Rect { x: 0, y: 0, w: 240, h: 135 });
         // The minimum follows the DPI.
         assert_eq!(min_at_dpi(144), (360, 203));
+    }
+
+    #[test]
+    fn the_full_window_comes_back_on_the_mini_players_monitor() {
+        let left = Rect { x: 0, y: 0, w: 1920, h: 1032 };
+        let right = Rect { x: 1920, y: 0, w: 2560, h: 1392 };
+        let normal = Rect { x: 320, y: 116, w: 1280, h: 800 };
+        // Same monitor: unchanged.
+        assert_eq!(carry_over(normal, left, left), normal);
+        // Centred on the left, centred on the right.
+        assert_eq!(carry_over(normal, left, right), Rect { x: 1920 + 640, y: 296, w: 1280, h: 800 });
+        // Never larger than the target screen.
+        let small = Rect { x: -1366, y: 0, w: 1366, h: 728 };
+        let c = carry_over(normal, left, small);
+        assert_eq!((c.w, c.h), (1280, 728));
+        assert!(c.x >= small.x && c.x + c.w <= small.x + small.w);
+    }
+
+    #[test]
+    fn a_drag_keeps_the_grabbed_spot_under_the_pointer() {
+        // Grabbed a quarter in from the left, at the middle.
+        assert_eq!(drag_to((1000, 500), (0.25, 0.5), 480, 270), Rect { x: 880, y: 365, w: 480, h: 270 });
+        // Same spot after crossing to a 150% monitor (the window grew).
+        assert_eq!(drag_to((2000, 500), (0.25, 0.5), 720, 405), Rect { x: 1820, y: 297, w: 720, h: 405 });
     }
 
     #[test]
