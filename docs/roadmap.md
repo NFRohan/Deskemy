@@ -1,98 +1,115 @@
 # Roadmap
 
-What's next after the Slint port reached parity with the Tauri app. The port's
-own history and checklist live in [slint-port.md](slint-port.md).
+Where Deskemy goes after the Slint rebuild. The port's own history and
+checklist live in [slint-port.md](slint-port.md).
+
+## Where things stand
+
+- **2.0.0** (2026-09-29) — the Slint rebuild: no WebView2, mini player,
+  resources with their lectures, signed self-updating setup / MSI / portable.
+- **2.0.1** (2026-10-05) — the library database is created on a fresh install
+  (2.0.0 never wrote one there); mini player across monitors of different
+  scaling (#8), no Snap while dragging it, and leaving it on another monitor.
 
 ## Order of work
 
-1. **Perfect the Windows rebuild first.** A new frontend surfaces bugs users
-   would otherwise find for us: keep testing real use (real libraries, odd
-   course folders, long sessions) and fixing what turns up before anything
-   else. Open items are in [Windows polish](#windows-polish).
-2. **Installer and updater, then retire `src-tauri/`.** Users are still on the
-   Tauri build; they move over once the Slint one installs and updates itself.
-3. **Linux** (GH #7) — the reason for the port. Then macOS.
-4. **New features**, from the [ideas](#feature-ideas) below.
+1. **Keep the Windows build solid.** Real users find what testing doesn't:
+   fix what they report first ([Open issues](#open-issues),
+   [Windows polish](#windows-polish)).
+2. **2.1** — small, user-requested improvements ([2.1](#21)).
+3. **Retire the Tauri app** (`src-tauri/` + the Svelte frontend).
+4. **Linux** (GH #7) — the reason for the port. Then macOS.
+5. **Bigger features** ([Feature ideas](#feature-ideas)).
+
+## 2.1
+
+- [ ] **Mini player: where the full window comes back** — a setting: "When
+      leaving the mini player: open on the monitor it's on (2.0.1's
+      behaviour) / go back to where the window was". Both rectangles already
+      exist in `mini.rs` (the saved one, and `carry_over`'s); the setting picks.
+- [ ] **Resources prompt timing** (dcsm8) — with "Pause on exercises and
+      resources", a heads-up that the lecture has resources some time before
+      its end, besides the pause at the end. Needs design first: what the
+      heads-up looks like (a chip? the card early?), when it's too early to be
+      useful, and how it behaves in the mini player and when seeking past it.
+- [ ] **Chapters button (#6)** — reported on 1.2.2: the button vanishes after
+      a few minutes of a chaptered MP4. Check whether 2.0 does the same (the
+      menus rebuild from mpv's track list; a transient empty chapter list
+      would hide it), and keep the last non-empty list for the same file.
+
+## Open issues
+
+- **#5 Additional features** — per-lecture space for your own resources /
+  links ("like a classroom app"); AI summaries per video (NotebookLM-style).
+  The first overlaps [Timestamped notes](#feature-ideas); the second needs
+  thought (offline-first, no accounts) — reply before committing to either.
+- **#6 Chapters button disappears** — see [2.1](#21). Waiting on the reporter
+  for details; 1.2.2 couldn't be reproduced.
+- **#7 Linux** — see [Linux](#linux).
+- **#8 Mini player across monitors** — fixed in 2.0.1; ask the reporter to
+  confirm, then close.
 
 ## Windows polish
 
-Known follow-ups:
-
+- [ ] The first run after installing / updating with the setup ("Run
+      Deskemy") comes up minimized, or behind other windows. Not the
+      launcher's show state: STARTUPINFO carries none (`show=None`). Next:
+      log IsIconic / GetForegroundWindow once the window is up, to tell
+      minimized from foreground-locked.
+- [ ] Mouse back only works over the video, not over the control bar or the
+      title bar.
+- [ ] Numbered article pages (Udemy's `003 Configuring Git.html`) sit at the
+      end of their section; with "keep videos and resources together" they
+      could sit in lecture order, between the lectures around their number.
+- [ ] Courses imported before the 2.0 scanner fixes (TypeScript `.ts` files
+      counted as videos, code projects listed file by file) need adding again
+      to pick them up — could offer it once.
 - [ ] Real-window checks not yet done: Add Folder (native picker, progress),
       auto-rescan (drop a video into a course folder), track dialogs,
       Settings maintenance buttons, backup export / import with its restart.
-- [ ] Numbered article pages (Udemy's `003 Configuring Git.html`) sit at the end
-      of their section; in "keep videos and resources together" they could sit
-      in lecture order, between the lectures around their number.
-- [ ] Courses imported before the scanner fixes (TypeScript `.ts` files counted
-      as videos, code projects listed file by file) need a re-import to pick
-      them up.
-- [ ] Mouse back only works over the video, not over the control bar or title
-      bar.
-- [ ] The first run after installing / updating with the setup (its "Run
-      Deskemy") comes up minimized, or behind other windows. Not the
-      launcher's show state: STARTUPINFO carries none (`show=None`, logged
-      in a test build). Next: log IsIconic / GetForegroundWindow once the
-      window is up, to tell minimized from foreground-locked.
-- [x] Controls hide when the pointer leaves the window (paused or playing).
+- [ ] Hand-test a real 1.2.2 MSI → 2.x MSI upgrade (per-machine, needs admin).
+- [ ] New logo: concepts A (Bookmark D), B (Progress D), C (Folder D) are
+      drawn; pick one, then app icon + sidebar logo with clean transparent
+      edges (the current icon is a stock "book + play" with a white fringe).
+- [ ] Track status icons (not started / in progress / done) have no tooltip.
 
-## Installer and updater
+## Retire the Tauri app
 
-- [x] Installer (cargo-packager, NSIS, matching the Tauri install so it updates
-      in place) and portable zip — `app/scripts/package.ps1`, see
-      [releasing.md](releasing.md).
-- [x] MSI (per-machine) with the Tauri MSI's upgrade code, so 1.x MSI installs
-      upgrade in place; `latest.json`'s `windows-x86_64-msi` entry, read by the
-      Tauri updater and ours. Verified against the 1.2.2 MSI's tables.
-- [ ] Hand-test a real 1.2.2 MSI → 2.0 MSI upgrade (per-machine, needs admin).
-- [x] In-app updates against the signed `latest.json` (the Tauri updater's, plus
-      `format`), banner + Settings → About, nothing downloads until confirmed.
-- [x] Hand-test 2.0.0, then release: v2.0.0 published 2026-09-29 (main
-      fast-forwarded to the port).
-- [x] Sign with the release key and verify against the app's key (releasing.md §3).
-- [ ] Optional: rehearse a real update (releasing.md §4).
-- [ ] Then remove `src-tauri/` and the Svelte frontend.
+- [ ] Remove `src-tauri/`, `src/` (Svelte), `static/` and the Node tooling;
+      move anything the Slint app still borrows (`src-tauri/vendor/` libmpv
+      fallback in `app/build.rs`, icons) into `app/`.
+- [ ] The core crate drops what only the Tauri app used.
+- [ ] README / docs: no "the previous Tauri app still lives in…".
 
 ## Linux
 
-- Push the branch so `.github/workflows/slint-linux.yml` builds and tests on
-  Ubuntu.
+- Build and test on Ubuntu: `.github/workflows/slint-linux.yml` (CI only — it
+  publishes nothing; releases stay Windows-only until Linux is reviewed).
 - Run it: playback with `hwdec=auto-safe` (VA-API), on X11 and Wayland.
 - Keep-awake during playback (freedesktop ScreenSaver inhibit; macOS:
   IOPMAssertion) — Windows only today.
 - rfd's backend: GTK 3 (default) or the XDG portal.
-- Mini player: the portable path (Slint's position/size, `always-on-top`)
-  should do on X11. Wayland lets neither an app place its window nor keep it
-  on top (the compositor decides), so there it's a small window wherever it
-  lands. The Windows-only parts (work area, one-step SetWindowPos, DWM
-  cloaking during the switch) are behind `cfg(windows)` in `mini.rs`.
-- Packaging: AppImage and/or Flatpak.
-
-## Requested by users
-
-- [ ] **Resources prompt timing** (dcsm8): with "Pause on exercises and
-      resources", choose how early a heads-up appears that the lecture has
-      resources (off / 30s / 1 / 2 / 5 min before the end), besides the pause
-      at the end. Planned for 2.1.
-- [ ] **Simple built-in PDF viewer** (dcsm8): read a lecture's PDFs inside
-      Deskemy — pages, scroll, zoom, page number, "Open in your PDF app". No
-      annotation or editing. Likely PDFium via `pdfium-render`; needs a
-      Linux check.
+- Mini player: the portable path (Slint's position/size, `always-on-top`,
+  the window system's own drag) should do on X11. Wayland lets an app neither
+  place its window nor keep it on top, so there it's a small window wherever
+  it lands. The Windows-only parts (work area, SetWindowPos, DWM cloaking,
+  the app-driven drag, WM_DPICHANGED) are behind `cfg(windows)` in `mini.rs`.
+- Packaging: AppImage and/or Flatpak; the updater's Linux entry in
+  `latest.json`.
 
 ## Feature ideas
 
 Roughly by value to someone working through a course:
 
+- **Simple built-in PDF viewer** (dcsm8) — read a lecture's PDFs inside
+  Deskemy: pages, scroll, zoom, page number, "Open in your PDF app". No
+  annotation or editing. Likely PDFium via `pdfium-render` (~5 MB DLL);
+  needs a Linux check.
 - **Transcript panel** — the lecture's subtitles as a scrolling transcript:
   click a line to jump, the current line highlighted, search within the
   lecture. Subtitle files are already parsed and indexed.
-- [x] **Follow-along mini player** — `T` or the player's picture-in-picture
-  button shrinks the window to a small always-on-top video (bottom-right the
-  first time, then wherever it was left); hover for play/pause, ±10s, next and
-  seek; drag to move; double-click, `T`, `Esc` or mouse back returns. A mode
-  of the one window, not a second one (mpv renders into its GL context).
 - **Timestamped notes** — bookmarks with a body: notes per lecture, jump to the
-  moment, export a course's notes as Markdown.
+  moment, export a course's notes as Markdown. (Covers #5's per-lecture space.)
 - **Drag & drop / batch import** — drop a course folder on the window to import
   it; drop a folder of courses to import them all (the core already has
   library roots).
@@ -103,3 +120,4 @@ Roughly by value to someone working through a course:
   `ab-loop-a` / `ab-loop-b`).
 - **Command palette** — Ctrl+K to jump to any course or lecture, or run an
   action.
+- [x] **Follow-along mini player** — shipped in 2.0.
