@@ -21,9 +21,6 @@ deskemy-core = { path = "../crates/deskemy-core" }
 # unstable-winit-030: hide the pointer with the player's controls (Slint only
 # applies `mouse-cursor` on a mouse event, and they hide while it's still).
 slint = { version = "1.18", features = ["raw-window-handle-06", "renderer-skia-opengl", "unstable-winit-030"] }
-# Slint's Skia renderer (patched, see [patch.crates-io]) — for its
-# set_subpixel_text_paused switch. Must match the slint version exactly.
-i-slint-renderer-skia = "=1.18.1"
 # The window's X11 / Wayland display, for mpv's hardware decoding on Linux
 raw-window-handle = "0.6"
 # OpenGL calls for the texture mpv renders video into

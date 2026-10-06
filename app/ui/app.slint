@@ -64,9 +64,6 @@ export component AppWindow inherits Window {
     // Video: mpv renders into a GL texture that Rust hands us here. Rust reads
     // the element's size back to render at exactly its physical resolution.
     in property <bool> playing;
-    /// The player opened or closed (text antialiasing follows it).
-    callback playing-changed(bool);
-    changed playing => { root.playing-changed(root.playing); }
     in property <image> video-frame;
     // The course panel sits beside the video, which narrows to make room.
     property <length> panel-width: root.playing && Playback.panel-open && !Playback.mini ? 340px : 0px;

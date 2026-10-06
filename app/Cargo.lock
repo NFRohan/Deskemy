@@ -1166,7 +1166,6 @@ dependencies = [
  "chrono",
  "deskemy-core",
  "glow",
- "i-slint-renderer-skia",
  "minisign",
  "minisign-verify",
  "open",

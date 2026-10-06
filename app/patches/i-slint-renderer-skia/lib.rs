@@ -50,21 +50,6 @@ pub(crate) fn subpixel_text() -> bool {
     })
 }
 
-static SUBPIXEL_PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// Deskemy patch: draw text grayscale-antialiased for now (true) or as usual
-/// (false). Subpixel glyphs suit a solid background; over video and
-/// gradients their colour fringes read as pixelation, so the app pauses
-/// them while the player is open.
-pub fn set_subpixel_text_paused(paused: bool) {
-    SUBPIXEL_PAUSED.store(paused, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Subpixel edging for the glyphs being drawn now.
-pub(crate) fn subpixel_glyphs() -> bool {
-    subpixel_text() && !SUBPIXEL_PAUSED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Surface properties for window surfaces: RGB pixel order when subpixel
 /// text is on, else Skia's defaults.
 pub(crate) fn surface_props() -> Option<skia_safe::SurfaceProps> {
