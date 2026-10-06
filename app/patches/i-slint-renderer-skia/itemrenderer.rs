@@ -1100,7 +1100,7 @@ impl GlyphRenderer for SkiaItemRenderer<'_> {
         };
         let mut font = skia_safe::Font::from_typeface(type_face, font_size.get());
         font.set_subpixel(true);
-        if crate::subpixel_text() {
+        if crate::subpixel_glyphs() {
             font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
         }
 

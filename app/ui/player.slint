@@ -195,7 +195,8 @@ export global Playback {
 
 export component IconButton inherits Rectangle {
     in property <image> icon;
-    in property <length> icon-size: 22px;
+    // Material Symbols' 24px grid: their 2px strokes land on whole pixels.
+    in property <length> icon-size: 24px;
     in property <bool> enabled: true;
     /// Highlighted while its menu is open or its feature is on.
     in property <bool> active;
@@ -796,7 +797,6 @@ export component PlayerOverlay inherits Rectangle {
                     }
                     IconButton {
                         icon: Playback.paused ? @image-url("icons/m-play-arrow.svg") : @image-url("icons/m-pause.svg");
-                        icon-size: 26px;
                         clicked => { Playback.toggle-pause(); }
                     }
                     IconButton {

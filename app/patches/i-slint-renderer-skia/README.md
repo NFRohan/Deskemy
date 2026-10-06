@@ -2,7 +2,8 @@
 > `[patch.crates-io]` in `app/Cargo.toml`. The only change: on Windows, text
 > is drawn with subpixel (ClearType-style) antialiasing — see
 > `subpixel_text()` in `lib.rs` and its uses in `opengl_surface.rs`,
-> `software_surface.rs` and `itemrenderer.rs`. Re-apply when upgrading Slint
+> `software_surface.rs` and `itemrenderer.rs` — paused at runtime with
+`set_subpixel_text_paused` (the app does over video). Re-apply when upgrading Slint
 > (the patch must match the `slint` version exactly), or drop it once Slint
 > supports subpixel text itself.
 

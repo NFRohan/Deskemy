@@ -134,6 +134,8 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.global::<Prefs>().set_version(settings::VERSION.into());
     wire_window(&ui);
     wire_mouse_back(&ui);
+    // Subpixel text fringes over video: grayscale while the player is open.
+    ui.on_playing_changed(|playing| i_slint_renderer_skia::set_subpixel_text_paused(playing));
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
     let thumbs = paths::data_dir().map(|d| d.join(deskemy_core::courses::THUMBNAILS_DIR));
