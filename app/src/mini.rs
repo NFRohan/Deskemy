@@ -64,6 +64,9 @@ static LOCKED_ASPECT: AtomicU32 = AtomicU32::new(0);
 /// The window's minimum size in physical pixels (width << 32 | height), for
 /// the resize hook.
 static MIN_PHYSICAL: AtomicU64 = AtomicU64::new(0);
+/// The user is moving or resizing the window (Windows' move / size loop).
+#[cfg(windows)]
+static IN_SIZE_MOVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Called by the event thread with mpv's `video-params/aspect`. None (between
 /// files, or audio) keeps the last one, so the mini player doesn't flip to
@@ -205,7 +208,7 @@ pub struct MiniPlayer {
     /// Reshapes the mini player when the video's aspect changes (the next
     /// lecture).
     follow: slint::Timer,
-    /// The resize hook is in (Windows).
+    /// The resize / DPI hook is in (Windows).
     hooked: Cell<bool>,
     /// Finishes leaving mini once the window has settled (see `exit`).
     settle: slint::Timer,
@@ -230,6 +233,15 @@ impl MiniPlayer {
             switching: Rc::new(Cell::new(false)),
             to_fullscreen: Rc::new(Cell::new(false)),
             grab: Cell::new(None),
+        });
+        // The window's DPI handling from the start, not only once it's been
+        // mini (the window exists once the event loop runs).
+        let (m, weak) = (mini.clone(), ui.as_weak());
+        slint::Timer::single_shot(Duration::ZERO, move || {
+            if let (false, Some(ui)) = (m.hooked.get(), weak.upgrade()) {
+                m.hooked.set(hook_resizing(&ui));
+                tracing::debug!(hooked = m.hooked.get(), "window: DPI hook");
+            }
         });
         let playback = ui.global::<Playback>();
         playback.set_mini_native_drag(cfg!(windows));
@@ -518,8 +530,8 @@ fn set_maximized(ui: &AppWindow, on: bool) {
 }
 
 /// Hook the window's WM_SIZING, where Windows lets a resize be corrected
-/// before it's drawn (winit has no aspect ratio), and WM_DPICHANGED, for
-/// crossing onto a monitor of another scale. Only acts in mini mode.
+/// before it's drawn (winit has no aspect ratio; mini mode only), and
+/// WM_DPICHANGED, for crossing onto a monitor of another scale (any window).
 #[cfg(windows)]
 fn hook_resizing(ui: &AppWindow) -> bool {
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
@@ -546,9 +558,43 @@ unsafe extern "system" fn on_sizing(
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, WM_DPICHANGED, WM_SIZING,
+        SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, WM_DPICHANGED, WM_ENTERSIZEMOVE,
+        WM_EXITSIZEMOVE, WM_SIZING,
     };
     let aspect = f32::from_bits(LOCKED_ASPECT.load(Ordering::Relaxed)) as f64;
+    if msg == WM_ENTERSIZEMOVE || msg == WM_EXITSIZEMOVE {
+        IN_SIZE_MOVE.store(msg == WM_ENTERSIZEMOVE, Ordering::Relaxed);
+    }
+    if msg == WM_DPICHANGED && aspect <= 0.0 && lparam != 0 && IN_SIZE_MOVE.load(Ordering::Relaxed) {
+        // The full window: winit sizes it from its old logical size and, while
+        // it's dragged, shifts it under the cursor; across monitors of
+        // different scaling that throws it about (winit #4600). Windows'
+        // rectangle keeps it where the drag has it. Only while it's dragged
+        // (the app's own moves, like leaving mini, stay as they were tested).
+        // Maximized and fullscreen
+        // windows are left to winit, which keeps them on their monitor.
+        // SAFETY: for WM_DPICHANGED, lparam points at Windows' suggested RECT.
+        let s = unsafe { *(lparam as *const RECT) };
+        let fill = fills_monitor(hwnd);
+        // SAFETY: forwarding the message as received.
+        let result = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
+        if !fill {
+            // SAFETY: a live window handle; no z-order change.
+            unsafe {
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    s.left,
+                    s.top,
+                    s.right - s.left,
+                    s.bottom - s.top,
+                    SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
+        tracing::debug!(dpi = wparam & 0xffff, suggested = ?(s.left, s.top, s.right - s.left, s.bottom - s.top), kept = !fill, "window: onto a monitor of another scale");
+        return result;
+    }
     if msg == WM_DPICHANGED && aspect > 0.0 && lparam != 0 {
         // SAFETY: for WM_DPICHANGED, lparam points at Windows' suggested RECT.
         let s = unsafe { *(lparam as *const RECT) };
@@ -579,6 +625,27 @@ unsafe extern "system" fn on_sizing(
     }
     // SAFETY: forwarding the message as received.
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// Maximized, or fullscreen (covering its whole monitor).
+#[cfg(windows)]
+fn fills_monitor(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsZoomed};
+    // SAFETY: a live window handle; a RECT and a sized MONITORINFO to fill.
+    unsafe {
+        if IsZoomed(hwnd) != 0 {
+            return true;
+        }
+        let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        GetWindowRect(hwnd, &mut r) != 0
+            && GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info) != 0
+            && (r.left, r.top, r.right, r.bottom)
+                == (info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom)
+    }
 }
 
 /// Set the window's minimum size right away (Slint's own follows).
