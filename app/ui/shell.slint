@@ -7,6 +7,10 @@ import { AddFolderButton, Import } from "import.slint";
 /// Window actions (carried out in Rust) and the state their buttons show.
 export global WindowChrome {
     in property <bool> maximized;
+    /// The pointer is on / pressed on the maximize button, as Windows tells
+    /// it (over that button its input goes to Windows, for Snap Layouts).
+    in property <bool> max-hover;
+    in property <bool> max-pressed;
     callback minimize();
     callback toggle-maximize();
     callback close();
@@ -57,14 +61,19 @@ component CaptionButton inherits Rectangle {
     /// The glyph, as path commands on a 10x10 box.
     in property <string> glyph;
     in property <bool> danger;
+    /// Hover / press reported from outside (the maximize button's, by Windows).
+    in property <bool> os-hover;
+    in property <bool> os-pressed;
     callback clicked;
+    property <bool> hover: touch.has-hover || root.os-hover;
+    property <bool> pressed: touch.pressed || root.os-pressed;
 
     width: 46px;
     height: 32px;
-    background: root.danger && touch.pressed ? #f1707a
-        : root.danger && touch.has-hover ? #e81123
-        : touch.pressed ? (Theme.dark ? #ffffff33 : #00000033)
-        : touch.has-hover ? (Theme.dark ? #ffffff1a : #0000001a)
+    background: root.danger && root.pressed ? #f1707a
+        : root.danger && root.hover ? #e81123
+        : root.pressed ? (Theme.dark ? #ffffff33 : #00000033)
+        : root.hover ? (Theme.dark ? #ffffff1a : #0000001a)
         : transparent;
     accessible-role: button;
     accessible-label: root.label;
@@ -77,7 +86,7 @@ component CaptionButton inherits Rectangle {
         viewbox-height: 10;
         commands: root.glyph;
         fill: transparent;
-        stroke: root.danger && touch.has-hover ? #ffffff : Theme.on-surface;
+        stroke: root.danger && root.hover ? #ffffff : Theme.on-surface;
         stroke-width: 1px;
     }
     touch := TouchArea {
@@ -94,6 +103,8 @@ export component WindowButtons inherits HorizontalLayout {
     }
     CaptionButton {
         label: WindowChrome.maximized ? "Restore" : "Maximize";
+        os-hover: WindowChrome.max-hover;
+        os-pressed: WindowChrome.max-pressed;
         // Restore: a square with another behind it, up and to the right.
         glyph: WindowChrome.maximized
             ? "M 0.5 2.5 L 7.5 2.5 L 7.5 9.5 L 0.5 9.5 Z M 2.5 2.5 L 2.5 0.5 L 9.5 0.5 L 9.5 7.5 L 7.5 7.5"

@@ -1,6 +1,7 @@
 // Release builds are GUI-only on Windows (no console window).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod caption;
 mod career;
 mod course_page;
 mod course_panel;
@@ -133,6 +134,7 @@ fn main() -> Result<(), slint::PlatformError> {
     prefs.show(&ui);
     ui.global::<Prefs>().set_version(settings::VERSION.into());
     wire_window(&ui);
+    caption::wire(&ui);
     wire_mouse_back(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);

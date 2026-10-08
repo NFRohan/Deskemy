@@ -54,6 +54,16 @@ export component AppWindow inherits Window {
     // (button, double-click, Win+↑, snapping).
     changed maximized => { WindowChrome.maximized = root.maximized; }
 
+    /// The caption buttons can be used: in sight (not fullscreen or mini)
+    /// and not under a page dialog. Windows hit-tests the maximize button
+    /// for Snap Layouts while they are.
+    property <bool> page-dialog: (Nav.page == "course" && Course.dialog != "") || Import.open
+        || (Nav.page == "settings" && Prefs.import-confirm)
+        || ((Nav.page == "tracks" || Nav.page == "track") && Tracks.dialog != "");
+    out property <bool> caption-buttons: root.playing ? !Playback.fullscreen && !Playback.mini : !root.page-dialog;
+    callback caption-buttons-changed(bool);
+    changed caption-buttons => { root.caption-buttons-changed(root.caption-buttons); }
+
     /// Re-read the library (after watching, progress has changed).
     callback refresh-library();
     /// A page came into view (load its data).

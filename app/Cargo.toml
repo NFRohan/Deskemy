@@ -51,11 +51,14 @@ base64 = "0.22"
 # GetMonitorInfo, SetWindowPos, DWM cloaking — placing the mini player and
 # switching to it out of sight, SetWindowSubclass — keeping its aspect ratio
 # while resized; GetWindowRect — its debug traces. ToolHelp — the launching
-# process, for the minimized-first-launch logs.
+# process, for the minimized-first-launch logs. HiDpi, KeyboardAndMouse —
+# the title bar's maximize button for Snap Layouts (caption.rs).
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Diagnostics_ToolHelp",
