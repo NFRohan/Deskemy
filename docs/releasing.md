@@ -93,6 +93,9 @@ after from Apps & features).
 
 ## 5. Publish
 
+Not before [release-qa.md](release-qa.md) has been run on these exact files
+and signed off: it's the go / no-go for every release.
+
 Create a GitHub release tagged `v<version>` with both installers, the portable
 zip, `SHA256SUMS.txt` and `latest.json` (the `.sig`s are inside `latest.json`;
 attaching them is optional). Keep the file names as built: `latest.json`
