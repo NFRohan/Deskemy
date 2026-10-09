@@ -16,27 +16,37 @@ checklist live in [slint-port.md](slint-port.md).
 1. **Keep the Windows build solid.** Real users find what testing doesn't:
    fix what they report first ([Open issues](#open-issues),
    [Windows polish](#windows-polish)).
-2. **2.1** — small, user-requested improvements ([2.1](#21)).
+2. **2.0.2** — small, user-requested fixes and improvements ([2.0.2](#202)).
+   Versions follow semver: fixes and small touches are patch releases; a
+   new feature, like the PDF viewer, is the next minor (**2.1**).
 3. ~~Retire the Tauri app~~ — done: removed, 1.x docs in `docs/archive/`.
 4. **Linux** (GH #7) — the reason for the port. Then macOS.
 5. **Bigger features** ([Feature ideas](#feature-ideas)).
 
-## 2.1
+## 2.0.2
 
+- [x] **Main window across monitors of different scaling (#8)** — the mini
+      player's WM_DPICHANGED fix (Windows' suggested rectangle) for the full
+      window, while it's dragged.
+- [x] **Snap Layouts** on the drawn maximize button (Windows 11).
 - [x] **Mini player: where the full window comes back** — a setting: "When
       leaving the mini player: open on the monitor it's on (2.0.1's
       behaviour) / go back to where the window was". Both rectangles already
       exist in `mini.rs` (the saved one, and `carry_over`'s); the setting picks.
-- [ ] **Resources prompt timing** (dcsm8) — with "Pause on exercises and
-      resources", a heads-up that the lecture has resources some time before
-      its end, besides the pause at the end. Needs design first: what the
-      heads-up looks like (a chip? the card early?), when it's too early to be
-      useful, and how it behaves in the mini player and when seeking past it.
 - [x] **Chapters button (#6)** — hardened (an empty read keeps the file's
       list; logged); reported on 1.2.2: the button vanishes after
       a few minutes of a chaptered MP4. Check whether 2.0 does the same (the
       menus rebuild from mpv's track list; a transient empty chapter list
       would hide it), and keep the last non-empty list for the same file.
+
+## 2.1
+
+- [ ] **Simple built-in PDF viewer** — see [Feature ideas](#feature-ideas).
+- [ ] **Resources prompt timing** (dcsm8) — with "Pause on exercises and
+      resources", a heads-up that the lecture has resources some time before
+      its end, besides the pause at the end. Needs design first: what the
+      heads-up looks like (a chip? the card early?), when it's too early to be
+      useful, and how it behaves in the mini player and when seeking past it.
 
 ## Open issues
 
@@ -44,11 +54,12 @@ checklist live in [slint-port.md](slint-port.md).
   links ("like a classroom app"); AI summaries per video (NotebookLM-style).
   The first overlaps [Timestamped notes](#feature-ideas); the second needs
   thought (offline-first, no accounts) — reply before committing to either.
-- **#6 Chapters button disappears** — see [2.1](#21). Waiting on the reporter
+- **#6 Chapters button disappears** — hardened in [2.0.2](#202). Waiting on the reporter
   for details; 1.2.2 couldn't be reproduced.
 - **#7 Linux** — see [Linux](#linux).
-- **#8 Mini player across monitors** — fixed in 2.0.1; ask the reporter to
-  confirm, then close.
+- **#8 Mini player across monitors** — the mini player fixed in 2.0.1
+  (confirmed); the main window in 2.0.2. Ask the reporter to confirm, then
+  close.
 
 ## Windows polish
 
