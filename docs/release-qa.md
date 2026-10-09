@@ -66,20 +66,49 @@ Run these from a clean build of the release commit.
 page and compare it with the last release's renders. This catches layout
 regressions, missing text and broken dialogs in a few minutes.
 
+The release build is a Windows GUI program, and PowerShell doesn't wait for
+those to exit. **Keep the `| Out-Null` on every call.** Without it, the
+snapshots all run at once: images are missing when you check, and two imports
+can overlap on one database and lose a course.
+
 ```powershell
 $exe = "app\target\release\deskemy.exe"
+$qa  = "$env:USERPROFILE\Deskemy QA"                     # from make-qa-course.ps1
 $out = "$env:TEMP\deskemy-qa\snaps-$(Get-Date -Format yyyyMMdd)"
 New-Item -ItemType Directory -Force $out | Out-Null
-$env:DESKEMY_DATA_DIR = "$env:TEMP\deskemy-qa\data"   # a scratch library with the QA course imported
+# A fresh scratch library with both QA courses and their subtitles indexed.
+$env:DESKEMY_DATA_DIR = "$env:TEMP\deskemy-qa\data"
+Remove-Item -Recurse -Force $env:DESKEMY_DATA_DIR -ErrorAction SilentlyContinue
+& $exe --snapshot "$out\import-preview-real.png" "import-probe:$qa\Deskemy QA Course" | Out-Null
+& $exe --snapshot "$out\import-1.png" "import-course:$qa\Deskemy QA Course" | Out-Null
+& $exe --snapshot "$out\import-2.png" "import-course:$qa\Deskemy QA Extra" | Out-Null
+& $exe --snapshot "$out\index-subs.png" "settings-run:subs" | Out-Null
+$env:DESKEMY_SNAPSHOT_COURSE = "Deskemy QA Course"
 $pages = "", "favorites", "history", "bookmarks", "stats", "settings", "settings-import",
-         "import-preview", "import-scanning", "search:intro", "tracks", "tracks-create",
-         "track", "track-add", "track-edit", "track-delete",
+         "import-preview", "import-scanning", "search:quokka", "search:ornitorrinco",
+         "tracks", "tracks-create", "track", "track-add", "track-edit", "track-delete",
          "course", "course-cover", "course-delete", "update:library", "update:settings-downloading"
-foreach ($p in $pages) { & $exe --snapshot "$out\page-$($p -replace '[:]','_').png" $p }
+foreach ($p in $pages) { & $exe --snapshot "$out\page-$($p -replace '[:]','_').png" $p | Out-Null }
 $menus = "", "speed", "sub", "audio", "chapters", "sleep", "bookmark", "shortcuts", "stats",
          "content", "resources", "exercise", "speed-saved", "fullscreen", "mini", "mini-exercise", "light"
-foreach ($m in $menus) { & $exe --snapshot-player "$out\player-$m.png" $m }
+foreach ($m in $menus) { & $exe --snapshot-player "$out\player-$m.png" $m | Out-Null }
+$env:DESKEMY_SNAPSHOT_WIDTH = 900; $env:DESKEMY_SNAPSHOT_HEIGHT = 600
+foreach ($p in "", "course", "stats", "settings") { & $exe --snapshot "$out\min-page-$p.png" $p | Out-Null }
+& $exe --snapshot-player "$out\min-player.png" "" | Out-Null
+Remove-Item Env:DESKEMY_SNAPSHOT_WIDTH, Env:DESKEMY_SNAPSHOT_HEIGHT, Env:DESKEMY_SNAPSHOT_COURSE
+"$((Get-ChildItem $out -Filter *.png).Count) images (expect 48)"
 ```
+
+Check what the real import gave:
+
+- [ ] `import-preview-real.png` reads 3 sections, 11 lectures, 5 resources, 3 subtitles, about 7 min.
+  - It should warn about **1** video that couldn't be opened, the corrupt one.
+  - More than one means a real file failed to probe. See the long-path known issue in the watchlist.
+- [ ] `page-course.png`: `003 Configuring Git` sits between lectures 2 and 4, and the corrupt lecture is marked.
+- [ ] Both searches find their cue, under "IN LECTURE SUBTITLES".
+- [ ] The library (`page-.png`) shows both courses.
+
+Then check every image:
 
 - [ ] Every file was written. A missing one means the page crashed; look in `<data>\logs\deskemy.log`.
 - [ ] Look through each image:
@@ -89,13 +118,15 @@ foreach ($m in $menus) { & $exe --snapshot-player "$out\player-$m.png" $m }
   - icons present, not boxes
   - light theme readable (`player-light.png`, and `settings` with Theme set to Light)
 - [ ] Compare against the previous release's sweep, kept in the same folder layout. Anything that changed should be explained by a commit in §0.
-- [ ] For pages with a fixed width, also render at the minimum window size:
-  - `$env:DESKEMY_SNAPSHOT_WIDTH=900; $env:DESKEMY_SNAPSHOT_HEIGHT=600` (pages)
-  - `$env:DESKEMY_SNAPSHOT_WIDTH=1920; $env:DESKEMY_SNAPSHOT_HEIGHT=1080` (pages and player)
+- [ ] The `min-*` images (900×600, the minimum window size) have nothing cut off or overlapping.
 
 Snapshots use Slint's software renderer, not the Skia/OpenGL renderer of the
 real window. Text sharpness, video and window behaviour are not covered here;
 §6 and §7 cover them.
+
+The player snapshots show a made-up lecture over a black frame. The `content`
+and `resources` panels fill from the most recently *watched* course, so in a
+scratch library nobody has watched anything in, they're empty. That's expected.
 
 ## 3. Artifacts
 
@@ -156,10 +187,10 @@ Unusual words in the subtitles make search checks quick:
 
 - `quokka` (001, English sidecar)
 - `ornitorrinco` (002, Spanish sidecar)
-- `axolotl` (006, embedded track)
+- `axolotl` is in 006's *embedded* subtitle track. Search doesn't find it, because only separate subtitle files are indexed (1.x worked the same way). Use it to check that the embedded track shows in the player.
 
 The two audio tracks of 006 play different tones (440 and 880 Hz), so switching
-between them is audible. **Deskemy QA Course 2** has two plain lectures, for
+between them is audible. **Deskemy QA Extra** has two plain lectures, for
 career tracks and library filters.
 
 Also keep a **big library**: your real one, or a copy of its data folder. Use it
@@ -345,7 +376,9 @@ one users get.
 - [ ] Caption buttons do nothing under a dialog's dimmed backdrop.
 - [ ] **Keep-awake**: with the display sleep set to 1 min, playing keeps the screen on; paused, it sleeps.
 - [ ] Sleep/resume the PC mid-lecture. Playback recovers, and Stats doesn't count the time asleep.
-- [ ] Two copies launched at once don't corrupt the library. There's no single-instance lock, so this is worth a look after database changes.
+- [ ] Two copies launched at once don't corrupt the library. There's no single-instance lock.
+  - Overlapping snapshot imports have lost a course without any error.
+  - Worth a look after any database change.
 
 ## 8. Update rehearsal (minor and major releases, and any change to `updates.rs`)
 
@@ -398,6 +431,18 @@ caught it.
 | A course with long names overflowed its layout (2.0 UAT) | §2 sweep + the QA course's long names |
 | Grayscale player text looked worse than subpixel (2.0.2 dev) | Player → text sharpness |
 | Packaging deleted the previous installers (2.0 dev) | §3 files present |
+| `--verify-update` in PowerShell printed nothing, which looked like a pass (2.0.2 QA) | §3, `\| Write-Output` |
+
+### Known issues (not fixed yet)
+
+Check that each one is no worse than before, and remove it from this list once it's fixed.
+
+| Issue | Since | Notes |
+|---|---|---|
+| A video whose full path is over 260 characters can't be opened: it's flagged unplayable on import | 1.x | Found by the QA course in a deep folder. Fix: long-path-aware paths for mpv |
+| At the minimum width (900px) the course header's "N resources done" runs into "7m total" | 2.0 | `min-page-course.png` |
+| Subtitle search needs Settings → Index subtitle text after an import, and doesn't cover embedded subtitle tracks | 1.x | By design so far |
+| Two copies at once can lose a write (seen with overlapping snapshot imports) | 2.0 | No single-instance lock |
 
 ## Sign-off
 

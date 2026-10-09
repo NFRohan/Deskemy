@@ -66,12 +66,15 @@ trusts (a wrong or re-generated key would strand every user):
 
 ```powershell
 $env:DESKEMY_DATA_DIR = "$env:TEMP\deskemy-scratch"   # never touches your library
-app\target\release\deskemy.exe --verify-update app\target\packages\deskemy_<v>_x64-setup.exe app\target\packages\deskemy_<v>_x64-setup.exe.sig
-app\target\release\deskemy.exe --verify-update app\target\packages\deskemy_<v>_x64_en-US.msi app\target\packages\deskemy_<v>_x64_en-US.msi.sig
+# "| Write-Output": deskemy.exe is a GUI program, so PowerShell would neither
+# wait for it nor show what it prints.
+app\target\release\deskemy.exe --verify-update app\target\packages\deskemy_<v>_x64-setup.exe app\target\packages\deskemy_<v>_x64-setup.exe.sig | Write-Output
+app\target\release\deskemy.exe --verify-update app\target\packages\deskemy_<v>_x64_en-US.msi app\target\packages\deskemy_<v>_x64_en-US.msi.sig | Write-Output
 ```
 
 It prints `OK: … is signed with the release key.`, or `NOT VERIFIED: …` and
-exits 1.
+exits 1. No output at all means the `| Write-Output` was left off. That's not
+a pass.
 
 ## 4. Optional: rehearse the update
 

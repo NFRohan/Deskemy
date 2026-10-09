@@ -7,10 +7,11 @@
 #                         and Udemy-style resources, a course-wide PDF, a cover,
 #                         non-ASCII and very long names, a nested folder, a
 #                         TypeScript file and a code project (not videos)
-#   Deskemy QA Course 2   2 plain lectures (for career tracks, library filters)
+#   Deskemy QA Extra   2 plain lectures (for career tracks, library filters)
 #
 # Subtitle cues contain unusual words to search for: "quokka" (English),
-# "ornitorrinco" (Spanish), "axolotl" (embedded MKV track).
+# "ornitorrinco" (Spanish); "axolotl" is in the MKV's embedded track (shown
+# in the player; search only indexes sidecar files).
 #
 # Needs ffmpeg on PATH (scoop install ffmpeg). Takes a minute or two; ~25 MB.
 #
@@ -143,7 +144,8 @@ Invoke-Ffmpeg @(
     "-c:a", "aac", "-b:a", "48k", "-c:s", "srt",
     "-metadata:s:a:0", "language=eng", "-metadata:s:a:0", "title=English (440 Hz)",
     "-metadata:s:a:1", "language=spa", "-metadata:s:a:1", "title=Spanish (880 Hz)",
-    "-metadata:s:s:0", "language=eng", "-shortest", $mkv
+    # No -shortest: the subtitle stream ends at its last cue (6 s).
+    "-metadata:s:s:0", "language=eng", "-t", "20", $mkv
 )
 Move-Item $mkv (Join-Path $s2 "006 Two Audio Tracks.mkv")
 New-Video (Join-Path $s2 "007 Classic 4x3.mp4") 15 -size "640x480" -pattern "smptebars"
@@ -167,7 +169,7 @@ Write-Text (Join-Path $code "src\index.ts") "import { answer } from `"../../util
 Write-Text (Join-Path $code "src\app.ts") "export function app(): void {}`n"
 
 Write-Host "Course 2: two plain lectures"
-$course2 = Join-Path $Out "Deskemy QA Course 2"
+$course2 = Join-Path $Out "Deskemy QA Extra"
 New-Video (Join-Path $course2 "01 First Lecture.mp4") 10 -pattern "rgbtestsrc" -tone 349
 New-Video (Join-Path $course2 "02 Second Lecture.mp4") 10 -pattern "rgbtestsrc" -tone 440
 
