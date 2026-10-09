@@ -83,6 +83,15 @@ checklist live in [slint-port.md](slint-port.md).
       drawn; pick one, then app icon + sidebar logo with clean transparent
       edges (the current icon is a stock "book + play" with a white fringe).
 - [x] Track status icons name the status on hover.
+- [ ] **Paths over 260 characters** can't be opened (flagged unplayable on
+      import; found by the QA course in a deep folder). Long-path-aware
+      paths for mpv (`\\?\` prefix) and the exe manifest's `longPathAware`.
+- [ ] Course header at the minimum width (900px): "N resources done" runs
+      into the total duration.
+- [ ] Index subtitle text on import (today: Settings → Index subtitle text,
+      sidecar files only).
+- [ ] A single-instance lock: two copies at once can lose a write (seen
+      with overlapping snapshot imports).
 
 ## Retire the Tauri app
 
