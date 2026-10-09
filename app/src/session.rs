@@ -677,6 +677,9 @@ mod tests {
     }
 
     #[test]
+    // Resuming loads with `loadfile <url> replace 0 start=…`: the index
+    // argument is mpv 0.38+, and Ubuntu 24.04 has 0.37 (roadmap, Linux).
+    #[cfg_attr(not(windows), ignore = "resume needs mpv 0.38's loadfile; see the roadmap's Linux list")]
     fn no_position_or_leaving_the_player_never_wipes_progress() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();

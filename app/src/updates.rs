@@ -421,6 +421,8 @@ Connection: close
         .into_bytes()
     }
 
+    // latest.json has Windows entries only: no update is offered elsewhere.
+    #[cfg(windows)]
     #[test]
     fn checks_downloads_and_verifies_an_update() {
         let installer = b"MZ pretend installer".to_vec();
@@ -491,6 +493,8 @@ Connection: close
         assert!(!installed_by_msi());
     }
 
+    // latest.json has Windows entries only: no update is offered elsewhere.
+    #[cfg(windows)]
     #[test]
     fn a_tampered_installer_is_refused() {
         let installer = b"MZ pretend installer".to_vec();
