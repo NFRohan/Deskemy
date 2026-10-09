@@ -81,9 +81,14 @@ winresource = "0.1"
 tempfile = "3"
 # updates.rs tests: the release manifest
 serde_json = "1"
-# examples/text_aa.rs — the same skia-safe build Slint uses (no Skia rebuild)
-skia-safe = { version = "0.153.3", features = ["gl", "d3d"] }
+# examples/text_aa.rs — the same skia-safe build Slint uses (no Skia rebuild).
+# d3d on Windows only: elsewhere it pulls in the windows crates, which don't
+# build there (Linux CI).
+skia-safe = { version = "0.153.3", features = ["gl"] }
 minisign = "0.7"
+
+[target."cfg(windows)".dev-dependencies]
+skia-safe = { version = "0.153.3", features = ["gl", "d3d"] }
 
 # The Windows installers (cargo-packager): `cargo packager --release` from app/.
 # Both match the Tauri app's, so they update an existing install in place: the
