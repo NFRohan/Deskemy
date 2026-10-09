@@ -10,6 +10,10 @@ checklist live in [slint-port.md](slint-port.md).
 - **2.0.1** (2026-10-05) — the library database is created on a fresh install
   (2.0.0 never wrote one there); mini player across monitors of different
   scaling (#8), no Snap while dragging it, and leaving it on another monitor.
+- **2.0.2** (2026-10-10) — progress always kept, the main window across
+  mixed-DPI monitors (#8), Snap Layouts, resources in lecture order, mouse
+  back anywhere in the player, chapters kept (#6). First release run through
+  [release-qa.md](release-qa.md); Windows 11 checks still to do.
 
 ## Order of work
 
