@@ -595,16 +595,35 @@ mod tests {
     }
 
     /// A real mpv core with no video/audio output, or None without libmpv.
+    /// With DESKEMY_REQUIRE_LIBMPV set (CI, release QA) a missing or broken
+    /// libmpv fails the test instead of skipping it.
     fn headless_mpv() -> Option<Arc<Mpv>> {
+        let required = std::env::var_os("DESKEMY_REQUIRE_LIBMPV").is_some();
+        let skip = |why: &str| {
+            assert!(!required, "{why} (DESKEMY_REQUIRE_LIBMPV is set)");
+            eprintln!("{why} — skipping");
+        };
         if !deskemy_core::mpv::is_available() {
-            eprintln!("libmpv not found — skipping");
+            skip("libmpv not found");
             return None;
         }
-        let mpv = Mpv::new().ok()?;
+        let mpv = match Mpv::new() {
+            Ok(mpv) => mpv,
+            Err(e) => {
+                skip(&format!("libmpv didn't start: {e}"));
+                return None;
+            }
+        };
         for (name, value) in [("vo", "null"), ("ao", "null"), ("idle", "yes"), ("config", "no")] {
-            mpv.set_option(name, value).ok()?;
+            if let Err(e) = mpv.set_option(name, value) {
+                skip(&format!("mpv option {name}: {e}"));
+                return None;
+            }
         }
-        mpv.initialize().ok()?;
+        if let Err(e) = mpv.initialize() {
+            skip(&format!("mpv didn't initialize: {e}"));
+            return None;
+        }
         Some(Arc::new(mpv))
     }
 

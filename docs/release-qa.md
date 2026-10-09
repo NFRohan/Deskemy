@@ -43,7 +43,7 @@ another release.
 - [ ] Have these ready:
   - the previous release's setup, MSI and portable zip (from GitHub)
   - the 1.2.2 setup (the last Tauri build)
-  - the QA course (see *Test fixtures*)
+  - the QA courses: `powershell -File app/scripts/make-qa-course.ps1` (see *Test fixtures*)
 - [ ] Use a scratch data folder for anything that doesn't need your real library: `$env:DESKEMY_DATA_DIR = "$env:TEMP\deskemy-qa"`. Never test destructive actions (delete, backup import, compact) on your real library.
 
 ## 1. Automated gate
@@ -51,14 +51,13 @@ another release.
 Run these from a clean build of the release commit.
 
 - [ ] Core tests: `cd crates/deskemy-core; cargo test`. All pass.
-- [ ] App tests: `cd app; cargo test --release`. All pass.
-  - **Check the output for `libmpv not found — skipping`.**
-  - If you see it, 11 of the 12 player session tests didn't run. Put `libmpv-2.dll` (from `app/vendor/`) where the tests can find it, and run them again.
-  - A green run that skipped them doesn't count.
+- [ ] App tests: `cd app; $env:DESKEMY_REQUIRE_LIBMPV = 1; cargo test --release`. All pass.
+  - Without `DESKEMY_REQUIRE_LIBMPV`, 11 of the 12 player session tests skip themselves when libmpv can't be found, and the run still shows green.
+  - With it set, a missing libmpv fails them instead. Fix that by putting `libmpv-2.dll` (from `app/vendor/`) where the tests can find it.
 - [ ] Clippy: `cd app; cargo clippy --release`. No warnings.
 - [ ] Linux CI is green for the release commit.
-  - The workflow only triggers on pushes to `slint-port` and on pull requests.
-  - **A push to `main` doesn't run it.** Run it by hand: `gh workflow run slint-linux.yml --ref main`, then `gh run watch`.
+  - It runs on every push to `main` that touches `app/` or `crates/`: `gh run list --workflow slint-linux.yml --branch main -L 3`.
+  - To run it by hand: `gh workflow run slint-linux.yml --ref main`, then `gh run watch`.
   - Linux doesn't ship, but a red Linux build usually means a `cfg(windows)` mistake that will bite later.
 
 ## 2. Snapshot sweep (offscreen UI check)
@@ -133,20 +132,35 @@ In `app/target/packages/`:
 
 ## 4. Test fixtures
 
-Build a **QA course** folder once, keep it outside the repo, and grow it every
-time a bug comes from a particular kind of folder. It should have:
+Generate the QA courses with `powershell -File app/scripts/make-qa-course.ps1`.
+It needs ffmpeg, writes to `%USERPROFILE%\Deskemy QA` (`-Out` to change,
+`-Force` to regenerate), and takes about a minute for ~30 MB. When a bug comes
+from a particular kind of folder, add that case to the script, so every later
+release is tested against it.
 
-- 3+ sections with numbered folders (`01 Intro`, `02 Basics`, …) and numbered lectures (`001 …`, `002 …`)
+**Deskemy QA Course** has:
+
+- 3 numbered sections (`01 Getting Started`, `02 Formats`, `03 Edge Cases`) with numbered lectures (`001 …` to `012 …`)
 - a lecture with a sidecar `.srt` subtitle (and one with two languages)
 - an MKV with two audio tracks and an embedded subtitle
-- an MP4 with chapters
+- a 6-minute MP4 with 4 chapters
 - a 4:3 video and a vertical (9:16) video, which exercise the mini player's aspect handling
-- section resources numbered between lectures (`003 Configuring Git.html`) and Udemy-style ones (`16.1 slides.pdf`)
+- section resources numbered between lectures (`003 Configuring Git.html`) and Udemy-style ones (`8.1 Slides.pdf`, which belongs with lecture 8)
 - a course-wide resource at the root, and a `cover.jpg`
-- one corrupt or zero-byte `.mp4` (it should be flagged "Corrupted", not crash anything)
+- one corrupt `.mp4` of random bytes (it should be flagged "Corrupted", not crash anything)
 - a TypeScript `.ts` file and a small code project folder (neither should be counted as videos)
-- non-ASCII and long names: `Über Café – 第1章 (final).mp4`, deep folder paths
+- non-ASCII and long names (`010 Über Café – 第1章 (final).mp4`, a ~130-character title), and a lecture two folders deep (`Extras\Even deeper\012 Nested Lecture.mp4`)
 - a lecture shorter than 10 s, which tests completion and autoplay edge cases
+
+Unusual words in the subtitles make search checks quick:
+
+- `quokka` (001, English sidecar)
+- `ornitorrinco` (002, Spanish sidecar)
+- `axolotl` (006, embedded track)
+
+The two audio tracks of 006 play different tones (440 and 880 Hz), so switching
+between them is audible. **Deskemy QA Course 2** has two plain lectures, for
+career tracks and library filters.
 
 Also keep a **big library**: your real one, or a copy of its data folder. Use it
 to check that launch, search and Stats stay quick.
@@ -231,7 +245,7 @@ one users get.
   - section expand/collapse
   - the "Next up" badge is on the right lecture
 - [ ] "Keep videos and resources together" on and off:
-  - On: resources sit in lecture order (`003 …` between lectures 2 and 4; `16.1 …` with lecture 16).
+  - On: resources sit in lecture order (`003 Configuring Git` between lectures 2 and 4; `8.1 Slides` with lecture 8).
   - Off: they're listed separately.
 - [ ] Missing folder: rename the course folder.
   - Settings → Check for missing files flags it, and the course shows a missing-folder banner.
@@ -286,7 +300,7 @@ one users get.
 
 - [ ] Search:
   - title hits play or open the right thing
-  - after Settings → Index subtitle text, subtitle hits play at the cue
+  - after Settings → Index subtitle text, searching `quokka` / `ornitorrinco` finds the cue and plays at it
   - non-ASCII queries work
 - [ ] History groups by Today / Yesterday / date. Resume plays from the saved spot.
 - [ ] Favourites lists starred courses.

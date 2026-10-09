@@ -8,7 +8,7 @@ name: Slint app on Linux
 
 on:
   push:
-    branches: [slint-port]
+    branches: [main]
     paths: ["app/**", "crates/**", ".github/workflows/slint-linux.yml"]
   pull_request:
     paths: ["app/**", "crates/**", ".github/workflows/slint-linux.yml"]
@@ -43,6 +43,10 @@ jobs:
 
       - name: App build and tests
         working-directory: app
+        # The session tests skip without libmpv; here it's installed, so a
+        # skip means it broke — fail instead.
+        env:
+          DESKEMY_REQUIRE_LIBMPV: "1"
         run: |
           cargo build
           cargo test
