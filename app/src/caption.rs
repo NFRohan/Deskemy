@@ -24,18 +24,18 @@ static PRESSED: AtomicBool = AtomicBool::new(false);
 
 /// Install the hook once the window exists, and follow the buttons' state.
 pub fn wire(ui: &AppWindow) {
-    ui.on_caption_buttons_changed(|shown| {
+    SHOWN.store(ui.get_caption_buttons(), Ordering::Relaxed);
+    let weak = ui.as_weak();
+    ui.on_caption_buttons_changed(move |shown| {
         SHOWN.store(shown, Ordering::Relaxed);
+        // Hidden (fullscreen, mini, a dialog): no hover left behind for when
+        // they're back.
+        if !shown && (HOVER.swap(false, Ordering::Relaxed) | PRESSED.swap(false, Ordering::Relaxed)) {
+            show_state(weak.clone());
+        }
     });
     #[cfg(windows)]
-    {
-        let weak = ui.as_weak();
-        slint::Timer::single_shot(std::time::Duration::ZERO, move || {
-            let Some(ui) = weak.upgrade() else { return };
-            let hooked = hook(&ui);
-            tracing::debug!(hooked, "window: maximize button hook");
-        });
-    }
+    crate::mini::once_window_exists(ui, "maximize button", hook);
 }
 
 /// Show the button's hover and press on the Slint side, after the message
@@ -97,8 +97,6 @@ unsafe extern "system" fn on_message(
     let on_button = wparam == HTMAXBUTTON as usize;
     match msg {
         WM_NCHITTEST if SHOWN.load(Ordering::Relaxed) => {
-            // SAFETY: forwarding the message as received.
-            let hit = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
             let mut p = POINT { x: (lparam & 0xffff) as i16 as i32, y: ((lparam >> 16) & 0xffff) as i16 as i32 };
             let mut client = RECT { left: 0, top: 0, right: 0, bottom: 0 };
             // SAFETY: a live window handle; a POINT and a RECT to fill.
@@ -113,7 +111,8 @@ unsafe extern "system" fn on_message(
             if ok && on_maximize(p.x as f64, p.y as f64, client.right as f64, scale, maximized) {
                 return HTMAXBUTTON as isize;
             }
-            hit
+            // SAFETY: forwarding the message as received.
+            unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
         }
         WM_NCMOUSEMOVE => {
             if on_button != HOVER.load(Ordering::Relaxed) {

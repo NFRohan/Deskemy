@@ -57,9 +57,12 @@ export component AppWindow inherits Window {
     /// The caption buttons can be used: in sight (not fullscreen or mini)
     /// and not under a page dialog. Windows hit-tests the maximize button
     /// for Snap Layouts while they are.
-    property <bool> page-dialog: (Nav.page == "course" && Course.dialog != "") || Import.open
-        || (Nav.page == "settings" && Prefs.import-confirm)
-        || ((Nav.page == "tracks" || Nav.page == "track") && Tracks.dialog != "");
+    property <bool> course-dialog: !root.playing && Nav.page == "course" && Course.dialog != "";
+    property <bool> import-dialog: !root.playing && Import.open;
+    property <bool> import-confirm: !root.playing && Nav.page == "settings" && Prefs.import-confirm;
+    property <bool> track-dialog: !root.playing && (Nav.page == "tracks" || Nav.page == "track") && Tracks.dialog != "";
+    /// Any of the page dialogs below (a new one goes here too).
+    property <bool> page-dialog: root.course-dialog || root.import-dialog || root.import-confirm || root.track-dialog;
     out property <bool> caption-buttons: root.playing ? !Playback.fullscreen && !Playback.mini : !root.page-dialog;
     callback caption-buttons-changed(bool);
     changed caption-buttons => { root.caption-buttons-changed(root.caption-buttons); }
@@ -153,19 +156,19 @@ export component AppWindow inherits Window {
     }
 
     // Page dialogs dim the whole window, sidebar included.
-    if !root.playing && Nav.page == "course" && Course.dialog != "": CourseDialogs {
+    if root.course-dialog: CourseDialogs {
         width: parent.width;
         height: parent.height;
     }
-    if !root.playing && Import.open: ImportDialog {
+    if root.import-dialog: ImportDialog {
         width: parent.width;
         height: parent.height;
     }
-    if !root.playing && Nav.page == "settings" && Prefs.import-confirm: ImportConfirm {
+    if root.import-confirm: ImportConfirm {
         width: parent.width;
         height: parent.height;
     }
-    if !root.playing && (Nav.page == "tracks" || Nav.page == "track") && Tracks.dialog != "": TrackDialogs {
+    if root.track-dialog: TrackDialogs {
         width: parent.width;
         height: parent.height;
     }

@@ -67,6 +67,9 @@ static MIN_PHYSICAL: AtomicU64 = AtomicU64::new(0);
 /// The user is moving or resizing the window (Windows' move / size loop).
 #[cfg(windows)]
 static IN_SIZE_MOVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// ... and it's a resize (WM_SIZING came), not a move.
+#[cfg(windows)]
+static SIZING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Called by the event thread with mpv's `video-params/aspect`. None (between
 /// files, or audio) keeps the last one, so the mini player doesn't flip to
@@ -236,12 +239,12 @@ impl MiniPlayer {
         });
         // The window's DPI handling from the start, not only once it's been
         // mini (the window exists once the event loop runs).
-        let (m, weak) = (mini.clone(), ui.as_weak());
-        slint::Timer::single_shot(Duration::ZERO, move || {
-            if let (false, Some(ui)) = (m.hooked.get(), weak.upgrade()) {
-                m.hooked.set(hook_resizing(&ui));
-                tracing::debug!(hooked = m.hooked.get(), "window: DPI hook");
+        let m = mini.clone();
+        once_window_exists(ui, "DPI hook", move |ui| {
+            if !m.hooked.get() {
+                m.hooked.set(hook_resizing(ui));
             }
+            m.hooked.get()
         });
         let playback = ui.global::<Playback>();
         playback.set_mini_native_drag(cfg!(windows));
@@ -484,6 +487,24 @@ impl MiniPlayer {
     }
 }
 
+/// Run `f` once the native window exists (Slint creates it once the event
+/// loop runs), retrying until it reports success, for up to ~5 s.
+pub(crate) fn once_window_exists(ui: &AppWindow, what: &'static str, f: impl FnMut(&AppWindow) -> bool + 'static) {
+    fn attempt(ui: slint::Weak<AppWindow>, what: &'static str, mut f: impl FnMut(&AppWindow) -> bool + 'static, left: u32) {
+        slint::Timer::single_shot(Duration::from_millis(if left == 100 { 0 } else { 50 }), move || {
+            let Some(window) = ui.upgrade() else { return };
+            if f(&window) {
+                tracing::debug!(what, "window: hooked");
+            } else if left > 0 {
+                attempt(ui, what, f, left - 1);
+            } else {
+                tracing::warn!(what, "window: couldn't hook");
+            }
+        });
+    }
+    attempt(ui.as_weak(), what, f, 100);
+}
+
 /// One debug line on the window's state at a step of a switch: the rectangle
 /// Windows reports and what Slint thinks (they differ mid-switch).
 fn trace(ui: &AppWindow, step: &str) {
@@ -564,13 +585,19 @@ unsafe extern "system" fn on_sizing(
     let aspect = f32::from_bits(LOCKED_ASPECT.load(Ordering::Relaxed)) as f64;
     if msg == WM_ENTERSIZEMOVE || msg == WM_EXITSIZEMOVE {
         IN_SIZE_MOVE.store(msg == WM_ENTERSIZEMOVE, Ordering::Relaxed);
+        SIZING.store(false, Ordering::Relaxed);
     }
-    if msg == WM_DPICHANGED && aspect <= 0.0 && lparam != 0 && IN_SIZE_MOVE.load(Ordering::Relaxed) {
+    if msg == WM_SIZING {
+        SIZING.store(true, Ordering::Relaxed);
+    }
+    let dragged = IN_SIZE_MOVE.load(Ordering::Relaxed) && !SIZING.load(Ordering::Relaxed);
+    if msg == WM_DPICHANGED && aspect <= 0.0 && lparam != 0 && dragged {
         // The full window: winit sizes it from its old logical size and, while
         // it's dragged, shifts it under the cursor; across monitors of
         // different scaling that throws it about (winit #4600). Windows'
-        // rectangle keeps it where the drag has it. Only while it's dragged
-        // (the app's own moves, like leaving mini, stay as they were tested).
+        // rectangle keeps it where the drag has it. Only while it's dragged,
+        // not resized (Windows' sizing loop has its own rectangle), and not
+        // for the app's own moves, like leaving mini (as they were tested).
         // Maximized and fullscreen
         // windows are left to winit, which keeps them on their monitor.
         // SAFETY: for WM_DPICHANGED, lparam points at Windows' suggested RECT.
