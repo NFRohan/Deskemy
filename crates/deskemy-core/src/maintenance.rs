@@ -66,33 +66,19 @@ pub fn reindex_search(conn: &Connection) -> Result<i64> {
 /// import or re-import, so its subtitles are searchable straight away);
 /// returns the number of cues. Files are read without the lock.
 pub fn index_course_subtitles(db: &Mutex<Connection>, course_id: &str) -> Result<i64> {
-    let files = queries::course_subtitle_files(&lock(db), course_id)?;
-    let parsed: Vec<(String, Vec<(i64, String)>)> = files
-        .into_iter()
-        .filter_map(|(lecture, path)| {
-            let bytes = std::fs::read(&path).ok()?;
-            Some((lecture, crate::subtitles::parse(&String::from_utf8_lossy(&bytes))))
-        })
-        .collect();
-
-    let mut conn = lock(db);
-    let tx = conn.transaction()?;
-    queries::clear_course_subtitle_index(&tx, course_id)?;
-    let mut total = 0i64;
-    for (lecture, cues) in parsed {
-        for (start_ms, text) in cues {
-            queries::insert_subtitle_cue(&tx, &lecture, course_id, start_ms, &text)?;
-            total += 1;
-        }
-    }
-    tx.commit()?;
-    Ok(total)
+    index_subtitles(db, Some(course_id))
 }
 
 /// (Re)build the subtitle text index by parsing every sidecar subtitle file;
 /// returns the number of cues indexed. Files are read without the lock.
 pub fn reindex_subtitles(db: &Mutex<Connection>) -> Result<i64> {
-    let files = queries::all_subtitle_files(&lock(db))?;
+    index_subtitles(db, None)
+}
+
+/// Index one course's subtitles (`Some`) or everyone's (`None`), replacing
+/// what was there.
+fn index_subtitles(db: &Mutex<Connection>, course_id: Option<&str>) -> Result<i64> {
+    let files = queries::subtitle_files(&lock(db), course_id)?;
     let parsed: Vec<(String, String, Vec<(i64, String)>)> = files
         .into_iter()
         .filter_map(|(lecture, course, path)| {
@@ -104,7 +90,10 @@ pub fn reindex_subtitles(db: &Mutex<Connection>) -> Result<i64> {
 
     let mut conn = lock(db);
     let tx = conn.transaction()?;
-    queries::clear_subtitle_index(&tx)?;
+    match course_id {
+        Some(id) => queries::clear_course_subtitle_index(&tx, id)?,
+        None => queries::clear_subtitle_index(&tx)?,
+    }
     let mut total = 0i64;
     for (lecture, course, cues) in parsed {
         for (start_ms, text) in cues {

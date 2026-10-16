@@ -137,7 +137,10 @@ pub fn rescan(host: &dyn RescanHost, paths: &[PathBuf]) -> bool {
                 continue;
             }
         };
-        match importer.persist(&mut lock(host.db()), root_id.as_deref(), &snap, &plan) {
+        // Bound first: a lock taken in the match's scrutinee would be held
+        // through its arms, and indexing below locks again (a deadlock).
+        let persisted = importer.persist(&mut lock(host.db()), root_id.as_deref(), &snap, &plan);
+        match persisted {
             Ok(id) => {
                 changed = true;
                 tracing::info!(folder = %folder.display(), "auto-rescan re-imported course");

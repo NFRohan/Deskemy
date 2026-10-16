@@ -917,32 +917,21 @@ pub fn search_index_count(conn: &Connection) -> Result<i64> {
 
 // --- Subtitle full-text index ---
 
-/// (lecture_id, course_id, file_path) for every sidecar subtitle.
-pub fn all_subtitle_files(conn: &Connection) -> Result<Vec<(String, String, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT s.lecture_id, l.course_id, s.file_path
-           FROM subtitles s JOIN lectures l ON l.id = s.lecture_id",
-    )?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
-}
 
 pub fn clear_subtitle_index(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM subtitle_index", [])?;
     Ok(())
 }
 
-/// One course's sidecar subtitles: (lecture_id, file_path).
-pub fn course_subtitle_files(conn: &Connection, course_id: &str) -> Result<Vec<(String, String)>> {
+/// Sidecar subtitles, of one course or all: (lecture_id, course_id, file_path).
+pub fn subtitle_files(conn: &Connection, course_id: Option<&str>) -> Result<Vec<(String, String, String)>> {
     let mut stmt = conn.prepare(
-        "SELECT s.lecture_id, s.file_path
+        "SELECT s.lecture_id, l.course_id, s.file_path
            FROM subtitles s JOIN lectures l ON l.id = s.lecture_id
-          WHERE l.course_id = ?1",
+          WHERE ?1 IS NULL OR l.course_id = ?1",
     )?;
     let rows = stmt
-        .query_map(params![course_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map(params![course_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
