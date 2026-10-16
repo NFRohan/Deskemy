@@ -7,6 +7,7 @@ mod course_page;
 mod course_panel;
 mod dialogs;
 mod importing;
+mod instance;
 mod library;
 mod mini;
 mod pages;
@@ -91,6 +92,21 @@ fn log_file() -> Option<std::fs::File> {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    let mode = parse_args();
+    // One copy per data folder: a second launch shows the running one and
+    // exits — before it rotates the log or touches the library. Snapshots
+    // (QA, with their own scratch folder) don't take part.
+    let instance = match (&mode, paths::data_dir()) {
+        (Mode::Snapshot { .. }, _) | (_, None) => None,
+        (_, Some(dir)) => match instance::claim(&dir) {
+            instance::Claim::Ours(claim) => Some(claim),
+            instance::Claim::Running(pid) => {
+                instance::show_running(pid);
+                return Ok(());
+            }
+        },
+    };
+
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("deskemy=debug,deskemy_core=debug,info"));
     match log_file() {
@@ -108,7 +124,6 @@ fn main() -> Result<(), slint::PlatformError> {
         default_hook(info);
     }));
 
-    let mode = parse_args();
     let offscreen = match &mode {
         // DESKEMY_SNAPSHOT_HEIGHT renders a taller frame, to see a long page
         // whole; DESKEMY_SNAPSHOT_WIDTH a narrower one (the mini player).
@@ -386,6 +401,8 @@ fn main() -> Result<(), slint::PlatformError> {
         return result;
     }
     if restart {
+        // Let go of the data folder first: the new run claims it.
+        drop(instance);
         match std::env::current_exe().and_then(|exe| std::process::Command::new(exe).spawn()) {
             Ok(_) => tracing::info!("relaunching to apply the imported backup"),
             Err(e) => tracing::error!(error = %e, "relaunch after import"),
@@ -659,7 +676,7 @@ fn log_launch_window(ui: &AppWindow) {
 /// foreground window's thread for the call, which lets SetForegroundWindow
 /// through the foreground lock.
 #[cfg(windows)]
-fn bring_to_front(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
+pub(crate) fn bring_to_front(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
     use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,

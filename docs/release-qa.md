@@ -378,9 +378,7 @@ one users get.
 - [ ] Caption buttons do nothing under a dialog's dimmed backdrop.
 - [ ] **Keep-awake**: with the display sleep set to 1 min, playing keeps the screen on; paused, it sleeps.
 - [ ] Sleep/resume the PC mid-lecture. Playback recovers, and Stats doesn't count the time asleep.
-- [ ] Two copies launched at once don't corrupt the library. There's no single-instance lock.
-  - Overlapping snapshot imports have lost a course without any error.
-  - Worth a look after any database change.
+- [ ] **Single copy**: with Deskemy open (minimized, too), launch it again from the Start menu. No second window: the open one comes to the front, restored. After Settings → Import backup → Import & restart, the app does come back (the relaunch isn't mistaken for a second copy).
 
 ## 8. Update rehearsal (minor and major releases, and any change to `updates.rs`)
 
@@ -435,6 +433,7 @@ caught it.
 | Packaging deleted the previous installers (2.0 dev) | §3 files present |
 | A video whose path is over 260 characters imported as unplayable (1.x–2.0.2) | §2 import preview (1 unplayable, not 2); Player → lecture 013 |
 | Add Folder did nothing when the dialog couldn't open (Linux, #10) | Linux only: no session bus and no zenity shows a message above Add Folder |
+| Two copies on one library could lose each other's writes (2.0–2.0.2) | §7 single copy |
 | `--verify-update` in PowerShell printed nothing, which looked like a pass (2.0.2 QA) | §3, `\| Write-Output` |
 
 ### Known issues (not fixed yet)
@@ -444,7 +443,6 @@ Check that each one is no worse than before, and remove it from this list once i
 | Issue | Since | Notes |
 |---|---|---|
 | Subtitle search doesn't cover subtitle tracks embedded in the video, only separate subtitle files | 1.x | By design so far |
-| Two copies at once can lose a write (seen with overlapping snapshot imports) | 2.0 | No single-instance lock |
 
 ## Sign-off
 
