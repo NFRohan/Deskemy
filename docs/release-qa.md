@@ -100,7 +100,7 @@ Remove-Item Env:DESKEMY_SNAPSHOT_WIDTH, Env:DESKEMY_SNAPSHOT_HEIGHT, Env:DESKEMY
 
 Check what the real import gave:
 
-- [ ] `import-preview-real.png` reads 3 sections, 12 lectures, 5 resources, 4 subtitles, about 7 min.
+- [ ] `import-preview-real.png` reads 3 sections, 12 lectures, 6 resources, 4 subtitles, about 7 min.
   - It should warn about **1** video that couldn't be opened, the corrupt one.
   - More than one means a real file failed to probe. See the long-path known issue in the watchlist.
 - [ ] `page-course.png`: `003 Configuring Git` sits between lectures 2 and 4, and the corrupt lecture is marked.
@@ -296,7 +296,7 @@ one users get.
   - subtitles: external ones labelled `lang · filename`
   - audio (the two-track MKV)
   - chapters (the chaptered MP4; the button stays for the whole video)
-- [ ] Lecture 013 (its path is over 260 characters) plays, and its English subtitle is offered and shows.
+- [ ] Lecture 013 (its path is over 260 characters) plays, its English subtitle is offered and shows, and its resource `13.1 Notes.pdf` opens in your PDF app (from the course page and the player's Resources tab).
 - [ ] Sleep timer:
   - 15m and Custom (1 and 600) count down in the chip.
   - "End of lecture" stops autoplay once.

@@ -622,11 +622,50 @@ fn wire_course(
             p.set_resource_done(&ui, &id, done);
         }
     });
-    course.on_open_resource(|path| {
-        if let Err(e) = open::that_detached(path.as_str()) {
-            tracing::warn!(error = %e, %path, "open resource");
-        }
-    });
+    course.on_open_resource(|path| open_resource(&path));
+}
+
+/// Open a resource in its default app. The shell can't take a path of 260+
+/// characters, nor the `\\?\` form mpv gets, so a long one goes by its short
+/// (8.3) name, on drives that have them.
+pub(crate) fn open_resource(path: &str) {
+    let target = shell_path(path);
+    if let Err(e) = open::that_detached(target.as_ref()) {
+        tracing::warn!(error = %e, %path, "open resource");
+    }
+}
+
+#[cfg(windows)]
+fn shell_path(path: &str) -> std::borrow::Cow<'_, str> {
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let long = deskemy_core::mpv::file_arg(path);
+    if !long.starts_with(r"\\?\") {
+        return path.into();
+    }
+    let wide: Vec<u16> = long.encode_utf16().chain([0]).collect();
+    let mut buf = vec![0u16; 2048];
+    // SAFETY: a NUL-terminated path and a buffer of the length given.
+    let n = unsafe { GetShortPathNameW(wide.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) } as usize;
+    if n == 0 || n >= buf.len() {
+        tracing::warn!(path, "no short name for a long path");
+        return path.into();
+    }
+    let short = String::from_utf16_lossy(&buf[..n]);
+    let short = match short.strip_prefix(r"\\?\UNC\") {
+        Some(share) => format!(r"\\{share}"),
+        None => short.strip_prefix(r"\\?\").unwrap_or(&short).to_string(),
+    };
+    if short.encode_utf16().count() < 260 {
+        short.into()
+    } else {
+        tracing::warn!(path, %short, "short name still too long");
+        path.into()
+    }
+}
+
+#[cfg(not(windows))]
+fn shell_path(path: &str) -> std::borrow::Cow<'_, str> {
+    path.into()
 }
 
 /// The first window after installing came up behind other windows (it looked
@@ -847,4 +886,29 @@ fn open_library(ui: &AppWindow) -> (Db, settings::Config) {
     };
     let conn = conn.unwrap_or_else(|| db::open_in_memory().expect("in-memory database"));
     (Arc::new(Mutex::new(conn)), settings::shared(config))
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::shell_path;
+
+    #[test]
+    fn a_long_resource_path_opens_by_its_short_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("a folder name long enough to matter ".repeat(7).trim());
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("13.1 Notes.pdf");
+        std::fs::write(&file, b"%PDF").unwrap();
+        let full = file.to_string_lossy().into_owned();
+        assert!(full.encode_utf16().count() >= 260);
+
+        let short = shell_path(&full);
+        // Drives without 8.3 names can't help; the path is passed as it is.
+        if short != full {
+            assert!(short.encode_utf16().count() < 260, "{short}");
+            assert!(std::path::Path::new(short.as_ref()).exists(), "{short}");
+        }
+        // Short paths pass through untouched.
+        assert_eq!(shell_path(r"C:\Courses\a.pdf"), r"C:\Courses\a.pdf");
+    }
 }

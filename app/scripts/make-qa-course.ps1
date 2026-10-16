@@ -180,6 +180,7 @@ Invoke-Ffmpeg @(
 $srt = Join-Path $work "long.en.srt"
 New-Srt $srt @("This lecture's path is over 260 characters.", "Search for the word pangolin.")
 [System.IO.File]::Move($srt, "\\?\" + [System.IO.Path]::ChangeExtension($longVideo, ".en.srt"))
+New-Pdf "\\?\$(Join-Path $deep '13.1 Notes.pdf')" "Lecture 13 notes - opened through a path over 260 characters"
 Write-Host "  long path: $($longVideo.Length) characters"
 Write-Text (Join-Path $s3 "utils.ts") "export const answer = 42;`n"
 $code = Join-Path $s3 "code-project"

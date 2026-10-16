@@ -304,17 +304,37 @@ fn long_path_prefixed(path: &str) -> std::borrow::Cow<'_, str> {
     if path.encode_utf16().count() < LONG_PATH || path.starts_with(r"\\?\") || path.starts_with(r"\\.\") {
         return path.into();
     }
-    // The prefix turns off Windows' path normalisation: backslashes only.
+    // The prefix turns off Windows' path normalisation: backslashes only, and
+    // `.` / `..` resolved here.
     let slashed = path.replace('/', r"\");
     if let Some(unc) = slashed.strip_prefix(r"\\") {
-        return format!(r"\\?\UNC\{unc}").into();
+        // \\server\share is the root that `..` can't climb above.
+        let mut parts = unc.splitn(3, '\\');
+        let (Some(server), Some(share)) = (parts.next(), parts.next()) else { return path.into() };
+        let rest = resolve_dots(parts.next().unwrap_or_default());
+        return format!(r"\\?\UNC\{server}\{share}\{rest}").into();
     }
     let b = slashed.as_bytes();
     if b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
-        return format!(r"\\?\{slashed}").into();
+        return format!(r"\\?\{}\{}", &slashed[..2], resolve_dots(&slashed[3..])).into();
     }
     // Relative paths can't take the prefix.
     path.into()
+}
+
+/// Drop `.` and empty parts and apply `..` (never above the root).
+fn resolve_dots(rest: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for part in rest.split('\\') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            p => parts.push(p),
+        }
+    }
+    parts.join(r"\")
 }
 
 #[cfg(test)]
@@ -338,6 +358,18 @@ mod tests {
         // Network shares use the UNC form.
         let unc = format!(r"\\nas\courses\{}\a.mp4", "y".repeat(250));
         assert_eq!(long_path_prefixed(&unc), format!(r"\\?\UNC\nas\courses\{}\a.mp4", "y".repeat(250)));
+    }
+
+    #[test]
+    fn dots_are_resolved_before_the_prefix() {
+        let name = "n".repeat(250);
+        let messy = format!(r"C:\Courses\X\..\Y\.\{name}\\a.mp4");
+        assert_eq!(long_path_prefixed(&messy), format!(r"\\?\C:\Courses\Y\{name}\a.mp4"));
+        // `..` stops at the root: the drive, or a share's \\server\share.
+        let above = format!(r"C:\..\..\{name}\a.mp4");
+        assert_eq!(long_path_prefixed(&above), format!(r"\\?\C:\{name}\a.mp4"));
+        let unc = format!(r"\\nas\courses\..\{name}\a.mp4");
+        assert_eq!(long_path_prefixed(&unc), format!(r"\\?\UNC\nas\courses\{name}\a.mp4"));
     }
 
     #[test]
