@@ -38,7 +38,7 @@ checklist live in [slint-port.md](slint-port.md).
 - [x] **Paths over 260 characters** can't be opened (flagged unplayable on
       import; found by the QA course in a deep folder). Long-path-aware
       paths for mpv (`\\?\` prefix) and the exe manifest's `longPathAware`.
-- [ ] **Course header at the minimum width (900px)**: "N resources done"
+- [x] **Course header at the minimum width (900px)**: "N resources done"
       runs into the total duration.
 - [ ] **Index subtitle text on import** (today: Settings → Index subtitle
       text, by hand).

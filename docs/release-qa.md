@@ -444,7 +444,6 @@ Check that each one is no worse than before, and remove it from this list once i
 
 | Issue | Since | Notes |
 |---|---|---|
-| At the minimum width (900px) the course header's "N resources done" runs into "7m total" | 2.0 | `min-page-course.png` |
 | Subtitle search needs Settings → Index subtitle text after an import, and doesn't cover embedded subtitle tracks | 1.x | By design so far |
 | Two copies at once can lose a write (seen with overlapping snapshot imports) | 2.0 | No single-instance lock |
 

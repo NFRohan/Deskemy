@@ -610,18 +610,23 @@ export component CoursePage inherits Flickable {
                     Rectangle { vertical-stretch: 1; }
 
                     HorizontalLayout {
+                        spacing: 12px;
+                        // Wraps when the header is narrow (the minimum window
+                        // width) instead of running into the duration.
                         Text {
                             text: Course.done + " / " + Course.total + " lectures completed"
                                 + (Course.resources-summary == "" ? "" : "  ·  " + Course.resources-summary);
                             color: Theme.on-surface;
                             font-size: Theme.label-md;
                             font-weight: 600;
+                            wrap: word-wrap;
                             horizontal-stretch: 1;
                         }
                         Text {
                             text: Course.duration;
                             color: Theme.on-surface-variant;
                             font-size: Theme.label-sm;
+                            vertical-alignment: top;
                         }
                     }
                     ProgressBar {
