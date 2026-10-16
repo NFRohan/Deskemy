@@ -20,14 +20,33 @@ checklist live in [slint-port.md](slint-port.md).
 1. **Keep the Windows build solid.** Real users find what testing doesn't:
    fix what they report first ([Open issues](#open-issues),
    [Windows polish](#windows-polish)).
-2. **2.0.2** — small, user-requested fixes and improvements ([2.0.2](#202)).
-   Versions follow semver: fixes and small touches are patch releases; a
-   new feature, like the PDF viewer, is the next minor (**2.1**).
-3. ~~Retire the Tauri app~~ — done: removed, 1.x docs in `docs/archive/`.
-4. **Linux** (GH #7) — the reason for the port. Then macOS.
-5. **Bigger features** ([Feature ideas](#feature-ideas)).
+2. **2.0.3** — fixes found by 2.0.2's QA run and #10 ([2.0.3](#203)).
+3. **2.1** — drag & drop import, manual resource pairing, the PDF viewer
+   ([2.1](#21)). Versions follow semver: fixes and small touches are patch
+   releases; new features are the next minor.
+4. ~~Retire the Tauri app~~ — done: removed, 1.x docs in `docs/archive/`.
+5. **Linux** (GH #7) — the reason for the port. Then macOS.
+6. **Bigger features** ([Feature ideas](#feature-ideas)).
 
-## 2.0.2
+## 2.0.3
+
+- [ ] **Add Folder does nothing when the folder dialog can't open (#10)** —
+      rfd returns `None` for both "cancelled" and "never opened". Log every
+      `None`; on Linux, check the XDG desktop portal is reachable first and
+      show an error when it isn't. Same for the other pickers (locate folder,
+      cover, backup export / import).
+- [ ] **Paths over 260 characters** can't be opened (flagged unplayable on
+      import; found by the QA course in a deep folder). Long-path-aware
+      paths for mpv (`\\?\` prefix) and the exe manifest's `longPathAware`.
+- [ ] **Course header at the minimum width (900px)**: "N resources done"
+      runs into the total duration.
+- [ ] **Index subtitle text on import** (today: Settings → Index subtitle
+      text, by hand).
+- [ ] **A single-instance lock**: two copies at once can lose a write (seen
+      with overlapping snapshot imports). A second launch brings the first
+      window forward instead.
+
+## 2.0.2 (released)
 
 - [x] **Main window across monitors of different scaling (#8)** — the mini
       player's WM_DPICHANGED fix (Windows' suggested rectangle) for the full
@@ -45,8 +64,15 @@ checklist live in [slint-port.md](slint-port.md).
 
 ## 2.1
 
+In this order: the smallest first; pairing before the viewer, which opens
+what's paired with the lecture.
+
+- [ ] **Drag & drop import** — see [Feature ideas](#feature-ideas).
+- [ ] **Manual resource pairing** — see [Feature ideas](#feature-ideas).
+      A new table (schema v9); needs a short design pass on re-imports.
 - [ ] **Simple built-in PDF viewer** — see [Feature ideas](#feature-ideas).
-- [ ] **Resources prompt timing** (dcsm8) — with "Pause on exercises and
+- [ ] **Resources prompt timing** (dcsm8) — to discuss once the above are
+      done. With "Pause on exercises and
       resources", a heads-up that the lecture has resources some time before
       its end, besides the pause at the end. Needs design first: what the
       heads-up looks like (a chip? the card early?), when it's too early to be
@@ -62,8 +88,10 @@ checklist live in [slint-port.md](slint-port.md).
   for details; 1.2.2 couldn't be reproduced.
 - **#7 Linux** — see [Linux](#linux).
 - **#8 Mini player across monitors** — the mini player fixed in 2.0.1
-  (confirmed); the main window in 2.0.2. Ask the reporter to confirm, then
-  close.
+  (confirmed); the main window in 2.0.2. The reporter will say when they've
+  tried it; close then.
+- **#10 Add Folder silent when the dialog can't open** (Linux) — see
+  [2.0.3](#203).
 
 ## Windows polish
 
@@ -76,26 +104,14 @@ checklist live in [slint-port.md](slint-port.md).
 - [x] Numbered section resources sit in lecture order with "keep videos and
       resources together": `003 Configuring Git.html` between `002` and `004`,
       Udemy's per-lecture `16.1 …` with lecture 16.
-- [ ] Courses imported before the 2.0 scanner fixes (TypeScript `.ts` files
-      counted as videos, code projects listed file by file) need adding again
-      to pick them up — could offer it once.
-- [ ] Real-window checks not yet done: Add Folder (native picker, progress),
-      auto-rescan (drop a video into a course folder), track dialogs,
-      Settings maintenance buttons, backup export / import with its restart.
-- [ ] Hand-test a real 1.2.2 MSI → 2.x MSI upgrade (per-machine, needs admin).
-- [ ] New logo: concepts A (Bookmark D), B (Progress D), C (Folder D) are
-      drawn; pick one, then app icon + sidebar logo with clean transparent
-      edges (the current icon is a stock "book + play" with a white fringe).
 - [x] Track status icons name the status on hover.
-- [ ] **Paths over 260 characters** can't be opened (flagged unplayable on
-      import; found by the QA course in a deep folder). Long-path-aware
-      paths for mpv (`\\?\` prefix) and the exe manifest's `longPathAware`.
-- [ ] Course header at the minimum width (900px): "N resources done" runs
-      into the total duration.
-- [ ] Index subtitle text on import (today: Settings → Index subtitle text,
-      sidecar files only).
-- [ ] A single-instance lock: two copies at once can lose a write (seen
-      with overlapping snapshot imports).
+- [x] Real-window checks: Add Folder, auto-rescan, track dialogs, Settings
+      maintenance buttons, backup export / import (hand-tested on 2.0.2).
+- [x] A real 1.2.2 MSI → 2.x MSI upgrade (hand-tested).
+- Dropped: offering to re-import courses added before the 2.0 scanner fixes
+  (Add Folder on the same folder already re-imports and keeps progress);
+  the work-in-progress logos (a designer will make one).
+- The rest moved to [2.0.3](#203).
 
 ## Retire the Tauri app
 
@@ -129,7 +145,9 @@ checklist live in [slint-port.md](slint-port.md).
 
 ## Feature ideas
 
-Roughly by value to someone working through a course:
+Priority (2.1): manual resource pairing, the PDF viewer, drag & drop import.
+Later: the transcript panel (needs a lot of design). Held: study plan,
+command palette, A–B loop.
 
 - **Manual resource pairing** — attach a resource (a PDF, a link, a file) to
   a lecture by hand when the importer guessed wrong or the file has no
@@ -139,19 +157,22 @@ Roughly by value to someone working through a course:
   Deskemy: pages, scroll, zoom, page number, "Open in your PDF app". No
   annotation or editing. Likely PDFium via `pdfium-render` (~5 MB DLL);
   needs a Linux check.
-- **Transcript panel** — the lecture's subtitles as a scrolling transcript:
-  click a line to jump, the current line highlighted, search within the
-  lecture. Subtitle files are already parsed and indexed.
-- **Timestamped notes** — bookmarks with a body: notes per lecture, jump to the
-  moment, export a course's notes as Markdown. (Covers #5's per-lecture space.)
+- **Transcript panel** (later: needs a lot of design) — the lecture's
+  subtitles as a scrolling transcript: click a line to jump, the current line
+  highlighted, search within the lecture. Subtitle files are already parsed
+  and indexed.
+- **Notes on bookmarks** — bookmarks are already a moment plus a short label;
+  give them an optional longer note, show it in the Bookmarks page and the
+  player's list, and export a course's bookmarks and notes as Markdown.
+  (Covers #5's per-lecture space.)
 - **Drag & drop / batch import** — drop a course folder on the window to import
   it; drop a folder of courses to import them all (the core already has
   library roots).
-- **Study plan** — pick a finish date for a course; it works out the daily
+- **Study plan** (held) — pick a finish date for a course; it works out the daily
   minutes and shows "today: 2 lectures, 25 min" on the library, building on the
   daily goal and streaks.
 - **A–B loop** — repeat a stretch of a lecture, optionally slower (mpv's
   `ab-loop-a` / `ab-loop-b`). On hold: rarely used — until someone asks.
-- **Command palette** — Ctrl+K to jump to any course or lecture, or run an
+- **Command palette** (held) — Ctrl+K to jump to any course or lecture, or run an
   action.
 - [x] **Follow-along mini player** — shipped in 2.0.
