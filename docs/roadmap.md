@@ -20,7 +20,7 @@ checklist live in [slint-port.md](slint-port.md).
 1. **Keep the Windows build solid.** Real users find what testing doesn't:
    fix what they report first ([Open issues](#open-issues),
    [Windows polish](#windows-polish)).
-2. **2.0.3** — fixes found by 2.0.2's QA run and #10 ([2.0.3](#203)).
+2. **2.0.3 fixes** — found by 2.0.2's QA run and #10 ([2.0.3](#203)); done, and shipping with 2.1 rather than on their own.
 3. **2.1** — drag & drop import, manual resource pairing, the PDF viewer
    ([2.1](#21)). Versions follow semver: fixes and small touches are patch
    releases; new features are the next minor.
