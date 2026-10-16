@@ -3,6 +3,7 @@
 //! sidebar's Add Folder. Also hosts the folder watcher (auto-rescan), which
 //! shares the importer.
 
+use crate::dialogs::{self, Picked};
 use crate::library::format_duration;
 use crate::session::{Db, Session};
 use crate::settings::{self, Config};
@@ -167,12 +168,18 @@ impl Importing {
         if import.get_scanning() || import.get_importing() {
             return;
         }
-        let Some(folder) = rfd::FileDialog::new()
-            .set_title("Add a course folder")
-            .set_parent(&ui.window().window_handle())
-            .pick_folder()
-        else {
-            return;
+        let folder = match dialogs::pick("add folder", || {
+            rfd::FileDialog::new()
+                .set_title("Add a course folder")
+                .set_parent(&ui.window().window_handle())
+                .pick_folder()
+        }) {
+            Picked::Chosen(folder) => folder,
+            Picked::Cancelled => return,
+            Picked::Unavailable(why) => {
+                import.set_error(why.into());
+                return;
+            }
         };
         import.set_error("".into());
         import.set_scanning(true);

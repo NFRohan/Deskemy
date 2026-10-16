@@ -5,6 +5,7 @@ mod caption;
 mod career;
 mod course_page;
 mod course_panel;
+mod dialogs;
 mod importing;
 mod library;
 mod mini;

@@ -2,6 +2,7 @@
 //! routes/settings.
 
 use crate::course_panel::model;
+use crate::dialogs::{self, Picked};
 use crate::session::Db;
 use crate::{AppWindow, Playback, Prefs, SelectOption, Theme};
 use deskemy_core::config::AppConfig;
@@ -250,14 +251,20 @@ impl SettingsPage {
             ui.global::<Prefs>().invoke_set_result("export".into(), "Not available without a data folder.".into());
             return;
         }
-        let Some(dest) = rfd::FileDialog::new()
-            .set_title("Export backup")
-            .set_file_name("deskemy-backup.zip")
-            .add_filter("Deskemy backup", &["zip"])
-            .set_parent(&ui.window().window_handle())
-            .save_file()
-        else {
-            return;
+        let dest = match dialogs::pick("export backup", || {
+            rfd::FileDialog::new()
+                .set_title("Export backup")
+                .set_file_name("deskemy-backup.zip")
+                .add_filter("Deskemy backup", &["zip"])
+                .set_parent(&ui.window().window_handle())
+                .save_file()
+        }) {
+            Picked::Chosen(dest) => dest,
+            Picked::Cancelled => return,
+            Picked::Unavailable(why) => {
+                ui.global::<Prefs>().invoke_set_result("export".into(), why.into());
+                return;
+            }
         };
         self.spawn(ui, "export".into(), move |db, dir| match dir {
             Some(dir) => export(db, dir, &dest),
@@ -267,13 +274,19 @@ impl SettingsPage {
 
     /// Pick a backup, then ask before replacing the library with it.
     fn choose_import(&self, ui: &AppWindow) {
-        let Some(src) = rfd::FileDialog::new()
-            .set_title("Import backup")
-            .add_filter("Deskemy backup", &["zip"])
-            .set_parent(&ui.window().window_handle())
-            .pick_file()
-        else {
-            return;
+        let src = match dialogs::pick("import backup", || {
+            rfd::FileDialog::new()
+                .set_title("Import backup")
+                .add_filter("Deskemy backup", &["zip"])
+                .set_parent(&ui.window().window_handle())
+                .pick_file()
+        }) {
+            Picked::Chosen(src) => src,
+            Picked::Cancelled => return,
+            Picked::Unavailable(why) => {
+                ui.global::<Prefs>().set_result_import(why.into());
+                return;
+            }
         };
         *self.import_from.borrow_mut() = Some(src);
         let prefs = ui.global::<Prefs>();

@@ -2,6 +2,7 @@
 //! `routes/course/[id]/+page.svelte`.
 
 use crate::course_panel::model;
+use crate::dialogs::{self, Picked};
 use crate::library::{format_duration, pct};
 use crate::session::Db;
 use crate::settings::{self, Config};
@@ -366,13 +367,19 @@ impl CoursePage {
 
     /// Upload a cover from an image file.
     pub fn pick_cover(&self, ui: &AppWindow) {
-        let Some(file) = rfd::FileDialog::new()
-            .set_title("Choose a course cover")
-            .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif", "bmp"])
-            .set_parent(&ui.window().window_handle())
-            .pick_file()
-        else {
-            return;
+        let file = match dialogs::pick("cover", || {
+            rfd::FileDialog::new()
+                .set_title("Choose a course cover")
+                .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif", "bmp"])
+                .set_parent(&ui.window().window_handle())
+                .pick_file()
+        }) {
+            Picked::Chosen(file) => file,
+            Picked::Cancelled => return,
+            Picked::Unavailable(why) => {
+                ui.global::<Course>().set_cover_error(why.into());
+                return;
+            }
         };
         let ext = file.extension().and_then(|e| e.to_str()).map(str::to_owned);
         let stored = std::fs::read(&file)
@@ -416,12 +423,18 @@ impl CoursePage {
     /// Point a Missing course at the folder it moved to.
     pub fn relocate(&self, ui: &AppWindow) {
         let Some(id) = self.id() else { return };
-        let Some(folder) = rfd::FileDialog::new()
-            .set_title("Where is this course now?")
-            .set_parent(&ui.window().window_handle())
-            .pick_folder()
-        else {
-            return;
+        let folder = match dialogs::pick("locate folder", || {
+            rfd::FileDialog::new()
+                .set_title("Where is this course now?")
+                .set_parent(&ui.window().window_handle())
+                .pick_folder()
+        }) {
+            Picked::Chosen(folder) => folder,
+            Picked::Cancelled => return,
+            Picked::Unavailable(why) => {
+                ui.global::<Course>().set_relocate_error(why.into());
+                return;
+            }
         };
         let result = courses::relocate(&self.conn(), &id, &folder.to_string_lossy());
         let page = ui.global::<Course>();
