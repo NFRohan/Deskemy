@@ -25,9 +25,46 @@ pub fn pick<T>(what: &str, show: impl FnOnce() -> Option<T>) -> Picked<T> {
         None => {
             // rfd logs its own failures (portal, zenity) just before this.
             tracing::debug!(dialog = what, "file dialog closed without a choice");
-            Picked::Cancelled
+            // A bus but nothing on it to show a file chooser (a bare window
+            // manager): checked only now, so a wrong guess costs a message
+            // after a real cancel, never a dialog that would have worked.
+            match no_file_chooser() {
+                Some(why) => {
+                    tracing::warn!(dialog = what, why, "file dialog likely never opened");
+                    Picked::Unavailable(why)
+                }
+                None => Picked::Cancelled,
+            }
         }
     }
+}
+
+/// Linux: no FileChooser portal backend installed and no zenity, so rfd had
+/// nothing to show a dialog with.
+#[cfg(target_os = "linux")]
+fn no_file_chooser() -> Option<String> {
+    // Inside a sandbox the host's portals aren't visible from here.
+    if std::env::var_os("FLATPAK_ID").is_some() || std::env::var_os("SNAP").is_some() || on_path("zenity") {
+        return None;
+    }
+    let data_dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_default();
+    let dirs = if data_dirs.is_empty() { "/usr/local/share:/usr/share".to_string() } else { data_dirs };
+    let has_backend = std::env::split_paths(&dirs).any(|dir| {
+        let Ok(entries) = std::fs::read_dir(dir.join("xdg-desktop-portal/portals")) else { return false };
+        entries.flatten().any(|e| {
+            e.path().extension().is_some_and(|x| x == "portal")
+                && std::fs::read_to_string(e.path()).is_ok_and(|s| s.contains("org.freedesktop.impl.portal.FileChooser"))
+        })
+    });
+    if has_backend {
+        return None;
+    }
+    Some("No file dialog here: install xdg-desktop-portal-gtk (or -kde), or zenity.".into())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn no_file_chooser() -> Option<String> {
+    None
 }
 
 /// Why no file dialog can open here, if we can tell. Linux: rfd asks the
