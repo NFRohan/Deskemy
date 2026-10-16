@@ -39,7 +39,9 @@ enum Mode {
     /// overlay, filled with sample state and optionally a menu open ("sleep",
     /// "speed", …); no mpv, so the video area stays blank.
     Snapshot { path: PathBuf, player: Option<String>, page: Option<String> },
-    /// `--play <lecture id | video file>`: open straight into playback.
+    /// `--play <lecture id | video file>`: open straight into playback. With
+    /// a copy already running it only shows that copy: nothing registers
+    /// Deskemy as a video handler yet; handing the file over can come then.
     Play(String),
 }
 
@@ -124,6 +126,9 @@ fn main() -> Result<(), slint::PlatformError> {
         default_hook(info);
     }));
 
+    if let Some(why) = instance.as_ref().and_then(|i| i.problem.as_deref()) {
+        tracing::warn!(why, "running without the single-instance lock");
+    }
     let offscreen = match &mode {
         // DESKEMY_SNAPSHOT_HEIGHT renders a taller frame, to see a long page
         // whole; DESKEMY_SNAPSHOT_WIDTH a narrower one (the mini player).
