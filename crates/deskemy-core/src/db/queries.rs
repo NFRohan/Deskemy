@@ -934,6 +934,24 @@ pub fn clear_subtitle_index(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// One course's sidecar subtitles: (lecture_id, file_path).
+pub fn course_subtitle_files(conn: &Connection, course_id: &str) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.lecture_id, s.file_path
+           FROM subtitles s JOIN lectures l ON l.id = s.lecture_id
+          WHERE l.course_id = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![course_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn clear_course_subtitle_index(conn: &Connection, course_id: &str) -> Result<()> {
+    conn.execute("DELETE FROM subtitle_index WHERE course_id = ?1", params![course_id])?;
+    Ok(())
+}
+
 pub fn insert_subtitle_cue(
     conn: &Connection,
     lecture_id: &str,

@@ -227,10 +227,11 @@ impl Importing {
             let result = importer
                 .persist(&mut db.lock().unwrap_or_else(|e| e.into_inner()), None, &snap, &plan)
                 .map_err(|e| e.to_string());
-            if result.is_ok() {
+            if let Ok(id) = &result {
                 if let Some(w) = watcher.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
                     w.watch(&folder);
                 }
+                index_subtitles(&db, id);
             }
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(ui) = weak.upgrade() else { return };
@@ -267,6 +268,16 @@ pub fn show_preview(import: &Import<'_>, p: &ImportPreview) {
     import.set_runtime(p.total_duration.map(|d| format!("Total runtime · {}", format_duration(Some(d)))).unwrap_or_default().into());
     import.set_unplayable(unplayable_note(p.unplayable).into());
     import.set_open(true);
+}
+
+
+/// Make a just-imported course's subtitles searchable (they were only indexed
+/// from Settings before).
+pub fn index_subtitles(db: &Db, course_id: &str) {
+    match deskemy_core::maintenance::index_course_subtitles(db, course_id) {
+        Ok(cues) => tracing::debug!(course = course_id, cues, "indexed subtitles"),
+        Err(e) => tracing::warn!(course = course_id, error = %e, "index subtitles"),
+    }
 }
 
 #[cfg(test)]

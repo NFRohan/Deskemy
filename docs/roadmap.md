@@ -40,7 +40,7 @@ checklist live in [slint-port.md](slint-port.md).
       paths for mpv (`\\?\` prefix) and the exe manifest's `longPathAware`.
 - [x] **Course header at the minimum width (900px)**: "N resources done"
       runs into the total duration.
-- [ ] **Index subtitle text on import** (today: Settings → Index subtitle
+- [x] **Index subtitle text on import** (today: Settings → Index subtitle
       text, by hand).
 - [ ] **A single-instance lock**: two copies at once can lose a write (seen
       with overlapping snapshot imports). A second launch brings the first

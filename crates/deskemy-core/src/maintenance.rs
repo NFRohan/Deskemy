@@ -62,6 +62,33 @@ pub fn reindex_search(conn: &Connection) -> Result<i64> {
     queries::search_index_count(conn)
 }
 
+/// Index one course's sidecar subtitle text, replacing what it had (after an
+/// import or re-import, so its subtitles are searchable straight away);
+/// returns the number of cues. Files are read without the lock.
+pub fn index_course_subtitles(db: &Mutex<Connection>, course_id: &str) -> Result<i64> {
+    let files = queries::course_subtitle_files(&lock(db), course_id)?;
+    let parsed: Vec<(String, Vec<(i64, String)>)> = files
+        .into_iter()
+        .filter_map(|(lecture, path)| {
+            let bytes = std::fs::read(&path).ok()?;
+            Some((lecture, crate::subtitles::parse(&String::from_utf8_lossy(&bytes))))
+        })
+        .collect();
+
+    let mut conn = lock(db);
+    let tx = conn.transaction()?;
+    queries::clear_course_subtitle_index(&tx, course_id)?;
+    let mut total = 0i64;
+    for (lecture, cues) in parsed {
+        for (start_ms, text) in cues {
+            queries::insert_subtitle_cue(&tx, &lecture, course_id, start_ms, &text)?;
+            total += 1;
+        }
+    }
+    tx.commit()?;
+    Ok(total)
+}
+
 /// (Re)build the subtitle text index by parsing every sidecar subtitle file;
 /// returns the number of cues indexed. Files are read without the lock.
 pub fn reindex_subtitles(db: &Mutex<Connection>) -> Result<i64> {

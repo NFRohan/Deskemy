@@ -138,9 +138,12 @@ pub fn rescan(host: &dyn RescanHost, paths: &[PathBuf]) -> bool {
             }
         };
         match importer.persist(&mut lock(host.db()), root_id.as_deref(), &snap, &plan) {
-            Ok(_) => {
+            Ok(id) => {
                 changed = true;
                 tracing::info!(folder = %folder.display(), "auto-rescan re-imported course");
+                if let Err(e) = crate::maintenance::index_course_subtitles(host.db(), &id) {
+                    tracing::warn!(folder = %folder.display(), error = %e, "auto-rescan subtitle index");
+                }
             }
             Err(e) => tracing::warn!(folder = %folder.display(), error = %e, "auto-rescan re-import failed"),
         }

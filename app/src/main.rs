@@ -191,6 +191,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     match importer.importer().persist(&mut conn, None, &snap, &plan) {
                         Ok(id) => {
                             drop(conn);
+                            importing::index_subtitles(&db, &id);
                             course.show(&ui, &id);
                         }
                         Err(e) => tracing::error!(error = %e, "import"),

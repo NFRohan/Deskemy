@@ -452,6 +452,35 @@ fn subtitle_search_marks_matched_words() {
 }
 
 #[test]
+fn a_course_s_subtitles_index_on_their_own() {
+    let tmp = tempfile::tempdir().unwrap();
+    let srt = |text: &str| format!("1\n00:00:02,000 --> 00:00:04,000\n{text}\n");
+    let k8s = tmp.path().join("K8s");
+    let git = tmp.path().join("Git");
+    for (dir, word) in [(&k8s, "kubelet"), (&git, "rebase")] {
+        fs::create_dir_all(dir).unwrap();
+        touch(&dir.join("001 Intro.mp4"));
+        fs::write(dir.join("001 Intro.srt"), srt(&format!("Today: {word}."))).unwrap();
+    }
+    let mut conn = db::open_in_memory().unwrap();
+    let importer = Importer::new(Box::new(StubProber));
+    let k8s_id = importer.import_course(&mut conn, None, &k8s).unwrap();
+    let git_id = importer.import_course(&mut conn, None, &git).unwrap();
+    let db = std::sync::Mutex::new(conn);
+    let hits = |q: &str| db::queries::subtitle_search(&db.lock().unwrap(), q, 10).unwrap().len();
+
+    assert_eq!(deskemy_core::maintenance::index_course_subtitles(&db, &k8s_id).unwrap(), 1);
+    assert_eq!((hits("kubelet"), hits("rebase")), (1, 0), "only that course");
+    assert_eq!(deskemy_core::maintenance::index_course_subtitles(&db, &git_id).unwrap(), 1);
+    assert_eq!((hits("kubelet"), hits("rebase")), (1, 1));
+
+    // Indexing again replaces the course's cues rather than adding to them.
+    fs::write(k8s.join("001 Intro.srt"), srt("Today: etcd.")).unwrap();
+    assert_eq!(deskemy_core::maintenance::index_course_subtitles(&db, &k8s_id).unwrap(), 1);
+    assert_eq!((hits("kubelet"), hits("etcd"), hits("rebase")), (0, 1, 1));
+}
+
+#[test]
 fn exercise_pdfs_pair_with_their_lessons() {
     // A real course layout (from a user): numbered lessons, some with a PDF of
     // exercises sharing the lesson's name.

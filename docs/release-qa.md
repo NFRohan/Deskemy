@@ -76,13 +76,12 @@ $exe = "app\target\release\deskemy.exe"
 $qa  = "$env:USERPROFILE\Deskemy QA"                     # from make-qa-course.ps1
 $out = "$env:TEMP\deskemy-qa\snaps-$(Get-Date -Format yyyyMMdd)"
 New-Item -ItemType Directory -Force $out | Out-Null
-# A fresh scratch library with both QA courses and their subtitles indexed.
+# A fresh scratch library with both QA courses (importing indexes their subtitles).
 $env:DESKEMY_DATA_DIR = "$env:TEMP\deskemy-qa\data"
 Remove-Item -Recurse -Force $env:DESKEMY_DATA_DIR -ErrorAction SilentlyContinue
 & $exe --snapshot "$out\import-preview-real.png" "import-probe:$qa\Deskemy QA Course" | Out-Null
 & $exe --snapshot "$out\import-1.png" "import-course:$qa\Deskemy QA Course" | Out-Null
 & $exe --snapshot "$out\import-2.png" "import-course:$qa\Deskemy QA Extra" | Out-Null
-& $exe --snapshot "$out\index-subs.png" "settings-run:subs" | Out-Null
 $env:DESKEMY_SNAPSHOT_COURSE = "Deskemy QA Course"
 $pages = "", "favorites", "history", "bookmarks", "stats", "settings", "settings-import",
          "import-preview", "import-scanning", "search:quokka", "search:ornitorrinco", "search:pangolin",
@@ -96,7 +95,7 @@ $env:DESKEMY_SNAPSHOT_WIDTH = 900; $env:DESKEMY_SNAPSHOT_HEIGHT = 600
 foreach ($p in "", "course", "stats", "settings") { & $exe --snapshot "$out\min-page-$p.png" $p | Out-Null }
 & $exe --snapshot-player "$out\min-player.png" "" | Out-Null
 Remove-Item Env:DESKEMY_SNAPSHOT_WIDTH, Env:DESKEMY_SNAPSHOT_HEIGHT, Env:DESKEMY_SNAPSHOT_COURSE
-"$((Get-ChildItem $out -Filter *.png).Count) images (expect 49)"
+"$((Get-ChildItem $out -Filter *.png).Count) images (expect 48)"
 ```
 
 Check what the real import gave:
@@ -334,7 +333,7 @@ one users get.
 
 - [ ] Search:
   - title hits play or open the right thing
-  - after Settings → Index subtitle text, searching `quokka` / `ornitorrinco` finds the cue and plays at it
+  - right after importing (no Settings → Index subtitle text needed), searching `quokka` / `ornitorrinco` finds the cue and plays at it
   - non-ASCII queries work
 - [ ] History groups by Today / Yesterday / date. Resume plays from the saved spot.
 - [ ] Favourites lists starred courses.
@@ -444,7 +443,7 @@ Check that each one is no worse than before, and remove it from this list once i
 
 | Issue | Since | Notes |
 |---|---|---|
-| Subtitle search needs Settings → Index subtitle text after an import, and doesn't cover embedded subtitle tracks | 1.x | By design so far |
+| Subtitle search doesn't cover subtitle tracks embedded in the video, only separate subtitle files | 1.x | By design so far |
 | Two copies at once can lose a write (seen with overlapping snapshot imports) | 2.0 | No single-instance lock |
 
 ## Sign-off
