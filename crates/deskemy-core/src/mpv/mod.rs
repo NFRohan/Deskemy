@@ -284,6 +284,79 @@ pub fn is_available() -> bool {
     fns().is_ok()
 }
 
+/// A local file's path as `loadfile` should get it. On Windows a path of
+/// MAX_PATH (260) or more can't be opened by a program that isn't long-path
+/// aware (or anywhere long paths are off, the default), so long ones get the
+/// `\\?\` prefix, which lifts the limit. Shorter paths are passed unchanged.
+pub fn file_arg(path: &str) -> std::borrow::Cow<'_, str> {
+    if cfg!(windows) {
+        long_path_prefixed(path)
+    } else {
+        path.into()
+    }
+}
+
+/// Below this many UTF-16 units a path is left alone: under MAX_PATH with room
+/// to spare for a sidecar's longer name in the same folder.
+const LONG_PATH: usize = 240;
+
+fn long_path_prefixed(path: &str) -> std::borrow::Cow<'_, str> {
+    if path.encode_utf16().count() < LONG_PATH || path.starts_with(r"\\?\") || path.starts_with(r"\\.\") {
+        return path.into();
+    }
+    // The prefix turns off Windows' path normalisation: backslashes only.
+    let slashed = path.replace('/', r"\");
+    if let Some(unc) = slashed.strip_prefix(r"\\") {
+        return format!(r"\\?\UNC\{unc}").into();
+    }
+    let b = slashed.as_bytes();
+    if b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+        return format!(r"\\?\{slashed}").into();
+    }
+    // Relative paths can't take the prefix.
+    path.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::long_path_prefixed;
+
+    #[test]
+    fn short_paths_are_left_alone() {
+        let p = r"C:\Courses\AWS\01 Intro\001 Welcome.mp4";
+        assert_eq!(long_path_prefixed(p), p);
+        assert_eq!(long_path_prefixed("C:/Courses/a.mp4"), "C:/Courses/a.mp4");
+    }
+
+    #[test]
+    fn long_paths_get_the_prefix() {
+        let long = format!(r"C:\Users\me\Downloads\{}\001 Welcome.mp4", "x".repeat(250));
+        assert_eq!(long_path_prefixed(&long), format!(r"\\?\{long}"));
+        // Forward slashes become backslashes (the prefix doesn't normalise).
+        let slashed = long.replace('\\', "/");
+        assert_eq!(long_path_prefixed(&slashed), format!(r"\\?\{long}"));
+        // Network shares use the UNC form.
+        let unc = format!(r"\\nas\courses\{}\a.mp4", "y".repeat(250));
+        assert_eq!(long_path_prefixed(&unc), format!(r"\\?\UNC\nas\courses\{}\a.mp4", "y".repeat(250)));
+    }
+
+    #[test]
+    fn prefixed_and_relative_paths_pass_through() {
+        let already = format!(r"\\?\C:\{}\a.mp4", "z".repeat(250));
+        assert_eq!(long_path_prefixed(&already), already);
+        let relative = format!(r"{}\a.mp4", "r".repeat(250));
+        assert_eq!(long_path_prefixed(&relative), relative);
+    }
+
+    #[test]
+    fn the_limit_counts_utf16_units() {
+        // 239 units: one below the limit, though more bytes in UTF-8.
+        let p = format!(r"C:\{}", "é".repeat(236));
+        assert_eq!(p.encode_utf16().count(), 239);
+        assert_eq!(long_path_prefixed(&p), p);
+    }
+}
+
 fn check(rc: c_int) -> Result<()> {
     if rc < 0 {
         Err(DeskemyError::Player(format!("mpv error code {rc}")))

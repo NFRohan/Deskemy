@@ -30,12 +30,12 @@ checklist live in [slint-port.md](slint-port.md).
 
 ## 2.0.3
 
-- [ ] **Add Folder does nothing when the folder dialog can't open (#10)** —
+- [x] **Add Folder does nothing when the folder dialog can't open (#10)** —
       rfd returns `None` for both "cancelled" and "never opened". Log every
       `None`; on Linux, check the XDG desktop portal is reachable first and
       show an error when it isn't. Same for the other pickers (locate folder,
       cover, backup export / import).
-- [ ] **Paths over 260 characters** can't be opened (flagged unplayable on
+- [x] **Paths over 260 characters** can't be opened (flagged unplayable on
       import; found by the QA course in a deep folder). Long-path-aware
       paths for mpv (`\\?\` prefix) and the exe manifest's `longPathAware`.
 - [ ] **Course header at the minimum width (900px)**: "N resources done"

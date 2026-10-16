@@ -85,7 +85,7 @@ Remove-Item -Recurse -Force $env:DESKEMY_DATA_DIR -ErrorAction SilentlyContinue
 & $exe --snapshot "$out\index-subs.png" "settings-run:subs" | Out-Null
 $env:DESKEMY_SNAPSHOT_COURSE = "Deskemy QA Course"
 $pages = "", "favorites", "history", "bookmarks", "stats", "settings", "settings-import",
-         "import-preview", "import-scanning", "search:quokka", "search:ornitorrinco",
+         "import-preview", "import-scanning", "search:quokka", "search:ornitorrinco", "search:pangolin",
          "tracks", "tracks-create", "track", "track-add", "track-edit", "track-delete",
          "course", "course-cover", "course-delete", "update:library", "update:settings-downloading"
 foreach ($p in $pages) { & $exe --snapshot "$out\page-$($p -replace '[:]','_').png" $p | Out-Null }
@@ -96,16 +96,16 @@ $env:DESKEMY_SNAPSHOT_WIDTH = 900; $env:DESKEMY_SNAPSHOT_HEIGHT = 600
 foreach ($p in "", "course", "stats", "settings") { & $exe --snapshot "$out\min-page-$p.png" $p | Out-Null }
 & $exe --snapshot-player "$out\min-player.png" "" | Out-Null
 Remove-Item Env:DESKEMY_SNAPSHOT_WIDTH, Env:DESKEMY_SNAPSHOT_HEIGHT, Env:DESKEMY_SNAPSHOT_COURSE
-"$((Get-ChildItem $out -Filter *.png).Count) images (expect 48)"
+"$((Get-ChildItem $out -Filter *.png).Count) images (expect 49)"
 ```
 
 Check what the real import gave:
 
-- [ ] `import-preview-real.png` reads 3 sections, 11 lectures, 5 resources, 3 subtitles, about 7 min.
+- [ ] `import-preview-real.png` reads 3 sections, 12 lectures, 5 resources, 4 subtitles, about 7 min.
   - It should warn about **1** video that couldn't be opened, the corrupt one.
   - More than one means a real file failed to probe. See the long-path known issue in the watchlist.
 - [ ] `page-course.png`: `003 Configuring Git` sits between lectures 2 and 4, and the corrupt lecture is marked.
-- [ ] Both searches find their cue, under "IN LECTURE SUBTITLES".
+- [ ] All three searches find their cue, under "IN LECTURE SUBTITLES" (`pangolin` is the long-path lecture's).
 - [ ] The library (`page-.png`) shows both courses.
 
 Then check every image:
@@ -181,11 +181,13 @@ release is tested against it.
 - one corrupt `.mp4` of random bytes (it should be flagged "Corrupted", not crash anything)
 - a TypeScript `.ts` file and a small code project folder (neither should be counted as videos)
 - non-ASCII and long names (`010 Über Café – 第1章 (final).mp4`, a ~130-character title), and a lecture two folders deep (`Extras\Even deeper\012 Nested Lecture.mp4`)
+- a lecture whose full path is over 260 characters (`013 Past the Path Limit.mp4`, with a subtitle beside it), wherever the courses are generated. 2.0.2 and earlier couldn't open it.
 - a lecture shorter than 10 s, which tests completion and autoplay edge cases
 
 Unusual words in the subtitles make search checks quick:
 
 - `quokka` (001, English sidecar)
+- `pangolin` (013, the long-path lecture's sidecar)
 - `ornitorrinco` (002, Spanish sidecar)
 - `axolotl` is in 006's *embedded* subtitle track. Search doesn't find it, because only separate subtitle files are indexed (1.x worked the same way). Use it to check that the embedded track shows in the player.
 
@@ -295,6 +297,7 @@ one users get.
   - subtitles: external ones labelled `lang · filename`
   - audio (the two-track MKV)
   - chapters (the chaptered MP4; the button stays for the whole video)
+- [ ] Lecture 013 (its path is over 260 characters) plays, and its English subtitle is offered and shows.
 - [ ] Sleep timer:
   - 15m and Custom (1 and 600) count down in the chip.
   - "End of lecture" stops autoplay once.
@@ -431,6 +434,8 @@ caught it.
 | A course with long names overflowed its layout (2.0 UAT) | §2 sweep + the QA course's long names |
 | Grayscale player text looked worse than subpixel (2.0.2 dev) | Player → text sharpness |
 | Packaging deleted the previous installers (2.0 dev) | §3 files present |
+| A video whose path is over 260 characters imported as unplayable (1.x–2.0.2) | §2 import preview (1 unplayable, not 2); Player → lecture 013 |
+| Add Folder did nothing when the dialog couldn't open (Linux, #10) | Linux only: no session bus and no zenity shows a message above Add Folder |
 | `--verify-update` in PowerShell printed nothing, which looked like a pass (2.0.2 QA) | §3, `\| Write-Output` |
 
 ### Known issues (not fixed yet)
@@ -439,7 +444,6 @@ Check that each one is no worse than before, and remove it from this list once i
 
 | Issue | Since | Notes |
 |---|---|---|
-| A video whose full path is over 260 characters can't be opened: it's flagged unplayable on import | 1.x | Found by the QA course in a deep folder. Fix: long-path-aware paths for mpv |
 | At the minimum width (900px) the course header's "N resources done" runs into "7m total" | 2.0 | `min-page-course.png` |
 | Subtitle search needs Settings → Index subtitle text after an import, and doesn't cover embedded subtitle tracks | 1.x | By design so far |
 | Two copies at once can lose a write (seen with overlapping snapshot imports) | 2.0 | No single-instance lock |

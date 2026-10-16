@@ -7,7 +7,7 @@ use crate::settings::{self, Config};
 use deskemy_core::db::{queries, Connection};
 use deskemy_core::domain::{Attachment, Bookmark, CourseDetail};
 use deskemy_core::importer::structure::clean_title;
-use deskemy_core::mpv::Mpv;
+use deskemy_core::mpv::{self, Mpv};
 use deskemy_core::playback::{resume_start, watched_enough};
 use std::collections::HashSet;
 use std::path::Path;
@@ -166,7 +166,7 @@ impl Session {
     pub fn open_file(&self, path: &Path) -> Result<(), String> {
         self.save_now();
         let path = path.to_string_lossy().into_owned();
-        self.mpv.command(&["loadfile", &path]).map_err(|e| e.to_string())?;
+        self.mpv.command(&["loadfile", &mpv::file_arg(&path)]).map_err(|e| e.to_string())?;
         let mut inner = self.inner();
         *inner = Inner {
             completed: std::mem::take(&mut inner.completed),
@@ -232,11 +232,11 @@ impl Session {
         drop(db);
 
         // loadfile <url> [<flags> [<index> [<options>]]] — options is the 4th arg.
+        let file = mpv::file_arg(&item.path);
         let loaded = if start > 1.0 {
-            self.mpv
-                .command(&["loadfile", &item.path, "replace", "0", &format!("start={start}")])
+            self.mpv.command(&["loadfile", &file, "replace", "0", &format!("start={start}")])
         } else {
-            self.mpv.command(&["loadfile", &item.path])
+            self.mpv.command(&["loadfile", &file])
         };
         loaded.map_err(|e| e.to_string())?;
         let _ = self.mpv.set_property("pause", "no");

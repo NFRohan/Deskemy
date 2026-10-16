@@ -28,7 +28,7 @@ impl MediaProber for MpvProber {
         mpv.set_option("ytdl", "no")?;
         mpv.initialize()?;
 
-        mpv.command(&["loadfile", &path.to_string_lossy()])?;
+        mpv.command(&["loadfile", &crate::mpv::file_arg(&path.to_string_lossy())])?;
 
         if !wait_loaded(&mpv, Duration::from_secs(15)) {
             return Ok(unplayable(path));

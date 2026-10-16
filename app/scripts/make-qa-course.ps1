@@ -35,7 +35,9 @@ if (Test-Path $Out) {
     if (-not (Test-Path (Join-Path $Out $marker))) {
         throw "$Out wasn't made by this script (no $marker); not touching it."
     }
-    Remove-Item -Recurse -Force $Out
+    # rd, with the \\?\ prefix: Remove-Item stops at the long-path lecture.
+    cmd /c rd /s /q "\\?\$Out"
+    if (Test-Path $Out) { throw "Couldn't remove $Out." }
 }
 New-Item -ItemType Directory -Force $Out | Out-Null
 Set-Content -Path (Join-Path $Out $marker) -Value "Made by app/scripts/make-qa-course.ps1"
@@ -161,6 +163,24 @@ $intl = "010 " + [char]0x00DC + "ber Caf" + [char]0x00E9 + " " + [char]0x2013 + 
 New-Video (Join-Path $s3 $intl) 10 -tone 330
 New-Video (Join-Path $s3 "011 A very long lecture title that goes on and on to test eliding in the curriculum, the player title bar and the mini player.mp4") 10 -tone 392
 New-Video (Join-Path $s3 "Extras\Even deeper\012 Nested Lecture.mp4") 8 -tone 494
+# Past Windows' 260-character path limit wherever this runs (2.0.2 couldn't
+# open such a file: it imported as unplayable). Made with the \\?\ prefix,
+# which lifts the limit for .NET too; a subtitle sits beside it.
+$deep = Join-Path $s3 ("Long path " + ("folder name to push past the limit " * 6).Trim())
+$longVideo = Join-Path $deep "013 Past the Path Limit.mp4"
+[System.IO.Directory]::CreateDirectory("\\?\$deep") | Out-Null
+$tmp = Join-Path $work "long.mp4"
+Invoke-Ffmpeg @(
+    "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24:duration=10",
+    "-f", "lavfi", "-i", "sine=frequency=587:duration=10",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "32", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "48k", "-shortest", $tmp
+)
+[System.IO.File]::Move($tmp, "\\?\$longVideo")
+$srt = Join-Path $work "long.en.srt"
+New-Srt $srt @("This lecture's path is over 260 characters.", "Search for the word pangolin.")
+[System.IO.File]::Move($srt, "\\?\" + [System.IO.Path]::ChangeExtension($longVideo, ".en.srt"))
+Write-Host "  long path: $($longVideo.Length) characters"
 Write-Text (Join-Path $s3 "utils.ts") "export const answer = 42;`n"
 $code = Join-Path $s3 "code-project"
 New-Item -ItemType Directory -Force (Join-Path $code "src") | Out-Null
@@ -174,5 +194,6 @@ New-Video (Join-Path $course2 "01 First Lecture.mp4") 10 -pattern "rgbtestsrc" -
 New-Video (Join-Path $course2 "02 Second Lecture.mp4") 10 -pattern "rgbtestsrc" -tone 440
 
 Remove-Item -Recurse -Force $work
-$mb = [math]::Round(((Get-ChildItem $Out -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB, 1)
+# (Skips the long-path lecture, which Get-ChildItem can't reach: ~0.1 MB.)
+$mb = [math]::Round(((Get-ChildItem $Out -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum) / 1MB, 1)
 Write-Host "Done: $Out ($mb MB). Add each course with Add Folder, or the folder itself as a library root."
