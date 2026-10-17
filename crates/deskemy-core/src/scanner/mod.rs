@@ -52,8 +52,14 @@ fn read_head(path: &Path, n: usize) -> Vec<u8> {
     buf
 }
 
+/// A video by its extension, and a `.ts` by its content too.
+pub(crate) fn is_video(path: &Path) -> bool {
+    classify(path) == FileKind::Video
+        && (!path.extension().is_some_and(|e| e.eq_ignore_ascii_case("ts")) || looks_like_mpeg_ts(&read_head(path, 189)))
+}
+
 /// Folders never worth listing: dependencies, VCS data, caches.
-const SKIPPED_DIRS: &[&str] = &[
+pub(crate) const SKIPPED_DIRS: &[&str] = &[
     "node_modules", ".git", ".svn", ".hg", "__pycache__", ".venv", "venv", ".idea", ".vscode", ".next",
     ".gradle", "target", "bower_components",
 ];
@@ -149,11 +155,10 @@ impl Scanner for FilesystemScanner {
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
-            let mut kind = classify(&path);
-            let is_ts = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("ts"));
-            if kind == FileKind::Video && is_ts && !looks_like_mpeg_ts(&read_head(&path, 189)) {
-                kind = FileKind::Attachment;
-            }
+            let kind = match classify(&path) {
+                FileKind::Video if !is_video(&path) => FileKind::Attachment,
+                kind => kind,
+            };
             files.push(ScannedFile { kind, path, name, size, mtime, rel_dir, is_dir: false });
         }
 

@@ -67,7 +67,13 @@ checklist live in [slint-port.md](slint-port.md).
 In this order: the smallest first; pairing before the viewer, which opens
 what's paired with the lecture.
 
-- [ ] **Drag & drop import** — see [Feature ideas](#feature-ideas).
+- [x] **Drag & drop import** — drop a course folder, a folder of courses or
+      several on the library. One course goes to the usual preview; several to
+      a list to tick, imported one after another (hide / stop). Add Folder
+      tells a folder of courses apart the same way. Each course is watched on
+      its own: a dropped folder of courses isn't kept as a library root (no
+      UI to list or remove roots yet), so new courses added to it later aren't
+      picked up. No drops on Wayland (winit has none there).
 - [ ] **Manual resource pairing** — see [Feature ideas](#feature-ideas).
       A new table (schema v9); needs a short design pass on re-imports.
 - [ ] **Simple built-in PDF viewer** — see [Feature ideas](#feature-ideas).
@@ -165,9 +171,9 @@ command palette, A–B loop.
   give them an optional longer note, show it in the Bookmarks page and the
   player's list, and export a course's bookmarks and notes as Markdown.
   (Covers #5's per-lecture space.)
-- **Drag & drop / batch import** — drop a course folder on the window to import
-  it; drop a folder of courses to import them all (the core already has
-  library roots).
+- [x] **Drag & drop / batch import** — in [2.1](#21). Later, maybe: keep a
+  dropped folder of courses as a library root, so courses added to it import
+  themselves (needs a place in Settings to list and remove roots).
 - **Study plan** (held) — pick a finish date for a course; it works out the daily
   minutes and shows "today: 2 lectures, 25 min" on the library, building on the
   daily goal and streaks.

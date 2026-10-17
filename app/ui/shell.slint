@@ -354,7 +354,7 @@ export component Sidebar inherits Rectangle {
             padding-left: Nav.sidebar-collapsed ? 8px : 16px;
             padding-right: self.padding-left;
             spacing: 8px;
-            if Import.error != "" && !Import.open && !Nav.sidebar-collapsed: Text {
+            if Import.error != "" && !Import.open && !Import.batch-open && !Nav.sidebar-collapsed: Text {
                 text: Import.error;
                 color: Theme.error;
                 font-size: Theme.label-sm;

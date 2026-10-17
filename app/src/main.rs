@@ -156,7 +156,6 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.global::<Prefs>().set_version(settings::VERSION.into());
     wire_window(&ui);
     caption::wire(&ui);
-    wire_mouse_back(&ui);
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
     let thumbs = paths::data_dir().map(|d| d.join(deskemy_core::courses::THUMBNAILS_DIR));
@@ -223,6 +222,28 @@ fn main() -> Result<(), slint::PlatformError> {
         if page.as_deref() == Some("import-scanning") {
             ui.global::<Import>().set_scanning(true);
             ui.global::<Import>().set_progress(importing::progress_label(7, 42).into());
+        }
+        // "import-batch" / "import-batch-running": several courses at once,
+        // before and while they import (sample rows).
+        if let Some(stage) = page.as_deref().and_then(|p| p.strip_prefix("import-batch")) {
+            snapshot::sample_batch(&ui, stage == "-running");
+        }
+        // "import-find:<folder>": what adding a real folder finds (reading it
+        // only): a folder of courses shows the batch, one course its preview.
+        if let Some(folder) = page.as_deref().and_then(|p| p.strip_prefix("import-find:")) {
+            match importing::find_courses(&[PathBuf::from(folder)]) {
+                Ok(found) if found.folders.len() > 1 => {
+                    let rows = importing::batch_rows(&db, &found.folders);
+                    let name = found.parent.as_deref().and_then(|p| p.file_name()).unwrap_or_default();
+                    importing::show_batch(&ui.global::<Import>(), name.to_string_lossy().into(), found.parent.is_some(), rows);
+                }
+                Ok(found) => tracing::info!(course = %found.folders[0].display(), "one course"),
+                Err(e) => ui.global::<Import>().set_error(e.into()),
+            }
+        }
+        // "drop": the library with folders dragged over it.
+        if page.as_deref() == Some("drop") {
+            ui.global::<Import>().set_drop_hover(true);
         }
         // "update:<page>": that page with an update on offer (banner, Settings).
         if let Some(rest) = page.as_deref().and_then(|p| p.strip_prefix("update:")) {
@@ -336,6 +357,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let importing = std::rc::Rc::new(importing::Importing::new(db.clone(), config.clone()));
     importing.start_watching(&ui, player.session().clone());
     wire_import(&ui, &importing);
+    wire_window_events(&ui, &importing);
     let mini = mini::MiniPlayer::new(&ui, config.clone());
 
     // Updates: a quiet check shortly after launch (the Tauri app's), and
@@ -505,6 +527,36 @@ fn wire_import(ui: &AppWindow, importing: &std::rc::Rc<importing::Importing>) {
     import.on_cancel(move || {
         if let Some(ui) = weak.upgrade() {
             i.cancel(&ui);
+        }
+    });
+    let (i, weak) = (importing.clone(), ui.as_weak());
+    import.on_batch_toggle(move |row| {
+        if let Some(ui) = weak.upgrade() {
+            i.batch_toggle(&ui, row as usize);
+        }
+    });
+    let (i, weak) = (importing.clone(), ui.as_weak());
+    import.on_batch_confirm(move || {
+        if let Some(ui) = weak.upgrade() {
+            i.batch_confirm(&ui);
+        }
+    });
+    let (i, weak) = (importing.clone(), ui.as_weak());
+    import.on_batch_as_one(move || {
+        if let Some(ui) = weak.upgrade() {
+            i.batch_as_one(&ui);
+        }
+    });
+    let (i, weak) = (importing.clone(), ui.as_weak());
+    import.on_batch_stop(move || {
+        if let Some(ui) = weak.upgrade() {
+            i.batch_stop(&ui);
+        }
+    });
+    let (i, weak) = (importing.clone(), ui.as_weak());
+    import.on_batch_close(move || {
+        if let Some(ui) = weak.upgrade() {
+            i.batch_close(&ui);
         }
     });
 }
@@ -784,33 +836,68 @@ fn parent_process_name() -> Option<String> {
     }
 }
 
+/// Window events Slint doesn't handle (one filter for all: winit takes one).
+///
 /// The mouse's back button, anywhere in the player's window — over the
 /// video, the control bar, the title bar or the mini player (a button under
 /// the pointer would otherwise take the click). As the browser's back did in
 /// the Tauri app: close an open dialog or menu first, then leave the mini
 /// player, then the player.
-fn wire_mouse_back(ui: &AppWindow) {
+///
+/// Folders dropped on the window (not the player, nor over a dialog) are
+/// added as Add Folder's are. winit reports a drop of several one by one, all
+/// in the same turn of the event loop; they're added together after it.
+fn wire_window_events(ui: &AppWindow, importing: &std::rc::Rc<importing::Importing>) {
     use slint::winit_030::winit::event::{ElementState, MouseButton, WindowEvent};
     use slint::winit_030::{EventResult, WinitWindowAccessor};
     let weak = ui.as_weak();
+    let importing = importing.clone();
+    let dropped: std::rc::Rc<std::cell::RefCell<Vec<PathBuf>>> = Default::default();
     ui.window().on_winit_window_event(move |_, event| {
-        let WindowEvent::MouseInput { button: MouseButton::Back, state, .. } = event else {
-            return EventResult::Propagate;
-        };
         let Some(ui) = weak.upgrade() else { return EventResult::Propagate };
-        if !ui.get_playing() {
-            return EventResult::Propagate;
-        }
-        if *state == ElementState::Released {
-            let playback = ui.global::<Playback>();
-            match playback.get_open_menu().as_str() {
-                "bookmark" => playback.invoke_close_bookmark(),
-                "" if playback.get_mini() => playback.invoke_toggle_mini(),
-                "" => playback.invoke_back(),
-                _ => playback.set_open_menu("".into()),
+        let accepts_drop = |ui: &AppWindow| !ui.get_playing() && !ui.get_page_dialog() && importing.ready(ui);
+        match event {
+            WindowEvent::MouseInput { button: MouseButton::Back, state, .. } if ui.get_playing() => {
+                if *state == ElementState::Released {
+                    let playback = ui.global::<Playback>();
+                    match playback.get_open_menu().as_str() {
+                        "bookmark" => playback.invoke_close_bookmark(),
+                        "" if playback.get_mini() => playback.invoke_toggle_mini(),
+                        "" => playback.invoke_back(),
+                        _ => playback.set_open_menu("".into()),
+                    }
+                }
+                EventResult::PreventDefault
             }
+            WindowEvent::HoveredFile(_) => {
+                ui.global::<Import>().set_drop_hover(accepts_drop(&ui));
+                EventResult::Propagate
+            }
+            WindowEvent::HoveredFileCancelled => {
+                ui.global::<Import>().set_drop_hover(false);
+                EventResult::Propagate
+            }
+            WindowEvent::DroppedFile(path) => {
+                ui.global::<Import>().set_drop_hover(false);
+                let first = dropped.borrow().is_empty();
+                dropped.borrow_mut().push(path.clone());
+                if first {
+                    let (weak, importing, dropped) = (ui.as_weak(), importing.clone(), dropped.clone());
+                    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+                        let paths = std::mem::take(&mut *dropped.borrow_mut());
+                        let Some(ui) = weak.upgrade() else { return };
+                        if !ui.get_playing() && !ui.get_page_dialog() && importing.ready(&ui) {
+                            tracing::info!(?paths, "dropped on the window");
+                            importing.add(&ui, paths);
+                        } else {
+                            tracing::info!(?paths, "dropped while busy; ignored");
+                        }
+                    });
+                }
+                EventResult::Propagate
+            }
+            _ => EventResult::Propagate,
         }
-        EventResult::PreventDefault
     });
 }
 

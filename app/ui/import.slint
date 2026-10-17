@@ -1,7 +1,20 @@
 // Adding a course — the sidebar's Add Folder, its progress and the import
-// preview — as the Tauri app's Sidebar.svelte.
+// preview — as the Tauri app's Sidebar.svelte. Folders dropped on the window
+// come here too; several courses at once get a list (the batch).
 
 import { Theme } from "theme.slint";
+
+/// A course in the batch.
+export struct BatchCourse {
+    name: string,
+    /// Already in the library: re-importing keeps its progress.
+    in-library: bool,
+    selected: bool,
+    /// 0 waiting, 1 importing, 2 imported, 3 failed.
+    state: int,
+    /// "Probing 3/12", "Imported · 12 lectures", or why it failed.
+    status: string,
+}
 
 export global Import {
     /// A picked folder is being probed.
@@ -28,20 +41,45 @@ export global Import {
     callback add-folder();
     callback confirm();
     callback cancel();
+
+    /// Something is dragged over the window.
+    in property <bool> drop-hover;
+
+    // The batch: a folder of courses, or several folders.
+    in property <bool> batch-open;
+    /// The folder they're in, or "3 folders".
+    in property <string> batch-source;
+    in property <[BatchCourse]> batch;
+    in property <int> batch-selected;
+    /// They came from one folder, which can be imported as one course instead.
+    in property <bool> batch-one-folder;
+    /// Importing them; the sidebar button shows `progress` meanwhile.
+    in property <bool> batch-running;
+    in property <bool> batch-stopping;
+    /// The run ended: Done closes.
+    in property <bool> batch-done;
+    callback batch-toggle(int);
+    callback batch-confirm();
+    callback batch-as-one();
+    callback batch-stop();
+    /// Close, or hide while it runs (the sidebar button brings it back).
+    callback batch-close();
 }
 
 /// The sidebar's Add Folder button (icon only when collapsed).
 export component AddFolderButton inherits Rectangle {
     in property <bool> collapsed;
-    property <bool> busy: Import.scanning || Import.importing;
+    property <bool> busy: Import.scanning || Import.importing || Import.batch-running;
+    // During a batch it shows the batch again.
+    property <bool> active: !root.busy || Import.batch-running;
 
     height: 36px;
     border-radius: 4px;
-    background: !root.busy && touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
-    opacity: root.busy ? 0.6 : 1;
+    background: root.active && touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
+    opacity: root.active ? 1 : 0.6;
     accessible-role: button;
-    accessible-label: "Add Folder";
-    accessible-enabled: !root.busy;
+    accessible-label: Import.batch-running ? "Show the import" : "Add Folder";
+    accessible-enabled: root.active;
     accessible-action-default => { Import.add-folder(); }
 
     HorizontalLayout {
@@ -56,7 +94,7 @@ export component AddFolderButton inherits Rectangle {
             transform-rotation: root.busy ? animation-tick() / 1s * 360deg : 0deg;
         }
         if !root.collapsed: Text {
-            text: Import.scanning ? Import.progress : Import.importing ? "Importing…" : "Add Folder";
+            text: Import.scanning || Import.batch-running ? Import.progress : Import.importing ? "Importing…" : "Add Folder";
             color: Theme.on-primary-container;
             font-size: Theme.label-md;
             font-weight: 600;
@@ -64,7 +102,7 @@ export component AddFolderButton inherits Rectangle {
         }
     }
     touch := TouchArea {
-        enabled: !root.busy;
+        enabled: root.active;
         mouse-cursor: pointer;
         clicked => { Import.add-folder(); }
     }
@@ -322,6 +360,276 @@ export component ImportDialog inherits Rectangle {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// A course in the batch: a checkbox until it runs, then how it went.
+component BatchRow inherits Rectangle {
+    in property <BatchCourse> course;
+    in property <int> index;
+    property <bool> editable: !Import.batch-running && !Import.batch-done;
+    // Left out of this run.
+    property <bool> dimmed: !root.editable && !root.course.selected;
+    property <string> detail: root.course.status != "" ? root.course.status
+        : root.course.in-library && !root.dimmed ? "In your library — re-importing keeps your progress" : "";
+
+    height: 44px;
+    border-radius: 8px;
+    background: root.editable && touch.has-hover ? Theme.surface-container-high : transparent;
+    accessible-role: checkbox;
+    accessible-checked: root.course.selected;
+    accessible-label: root.course.name;
+    accessible-description: root.detail;
+    accessible-enabled: root.editable;
+    accessible-action-default => { Import.batch-toggle(root.index); }
+    touch := TouchArea {
+        enabled: root.editable;
+        mouse-cursor: pointer;
+        clicked => { Import.batch-toggle(root.index); }
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 12px;
+        if root.editable: Rectangle {
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            border-width: root.course.selected ? 0px : 2px;
+            border-color: Theme.on-surface-variant;
+            background: root.course.selected ? Theme.primary-container : transparent;
+            if root.course.selected: Image {
+                source: @image-url("icons/check.svg");
+                width: 14px;
+                height: 14px;
+                colorize: Theme.on-primary-container;
+            }
+        }
+        if !root.editable: Image {
+            source: root.course.state == 1 ? @image-url("icons/loader-circle.svg")
+                : root.course.state == 2 ? @image-url("icons/circle-check.svg")
+                : root.course.state == 3 ? @image-url("icons/triangle-alert.svg")
+                : @image-url("icons/circle.svg");
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            colorize: root.course.state == 2 ? Theme.primary : root.course.state == 3 ? Theme.error : Theme.on-surface-variant;
+            opacity: root.dimmed ? 0.4 : 1;
+            transform-rotation: root.course.state == 1 ? animation-tick() / 1s * 360deg : 0deg;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.course.name;
+                color: Theme.on-surface;
+                opacity: root.dimmed ? 0.5 : 1;
+                font-size: Theme.body-md;
+                overflow: elide;
+            }
+            if root.detail != "": Text {
+                text: root.detail;
+                color: root.course.state == 3 ? Theme.error : Theme.on-surface-variant;
+                font-size: Theme.label-sm;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+/// Several courses at once — a dropped folder of courses, or several
+/// folders: pick which, then import them one after another. Esc or the X
+/// cancels; while they import it only hides (the sidebar button shows it
+/// again), and Stop finishes the current course and stops.
+export component BatchDialog inherits Rectangle {
+    background: #00000099;
+    property <length> card-width: min(520px, root.width - 32px);
+    property <length> text-width: root.card-width - 40px;
+    property <bool> editable: !Import.batch-running && !Import.batch-done;
+
+    keys := FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                Import.batch-close();
+                return accept;
+            }
+            return reject;
+        }
+        TouchArea { }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: root.card-width;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: Theme.outline-variant;
+                    background: Theme.surface-container;
+
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 16px;
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text {
+                                    text: Import.batch-done ? "Import finished"
+                                        : Import.batch-running ? "Importing \{Import.batch-selected} courses"
+                                        : "\{Import.batch.length} courses found in";
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                }
+                                Text {
+                                    text: Import.batch-source;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.headline-sm;
+                                    font-weight: 600;
+                                    overflow: elide;
+                                }
+                            }
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: 6px;
+                                background: close.has-hover ? Theme.surface-container-highest : transparent;
+                                accessible-role: button;
+                                accessible-label: Import.batch-running ? "Hide" : "Close";
+                                accessible-action-default => { Import.batch-close(); }
+                                Image {
+                                    source: @image-url("icons/x.svg");
+                                    width: 18px;
+                                    height: 18px;
+                                    colorize: Theme.on-surface-variant;
+                                }
+                                close := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { Import.batch-close(); }
+                                }
+                            }
+                        }
+
+                        // Up to 80% of the window, then it scrolls.
+                        Flickable {
+                            height: min(rows.preferred-height, root.height * 0.8 - 190px);
+                            content-width: self.width;
+                            content-height: rows.preferred-height;
+                            rows := VerticalLayout {
+                                width: parent.width;
+                                spacing: 2px;
+                                for course[i] in Import.batch: BatchRow {
+                                    course: course;
+                                    index: i;
+                                }
+                            }
+                        }
+
+                        if Import.batch-one-folder && root.editable: HorizontalLayout {
+                            alignment: start;
+                            Text {
+                                text: "Or import “\{Import.batch-source}” as one course";
+                                color: as-one.has-hover ? Theme.on-surface : Theme.primary;
+                                font-size: Theme.label-md;
+                                font-weight: 600;
+                                overflow: elide;
+                                max-width: root.text-width;
+                                accessible-role: button;
+                                accessible-action-default => { Import.batch-as-one(); }
+                                as-one := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { Import.batch-as-one(); }
+                                }
+                            }
+                        }
+
+                        if Import.error != "": Text {
+                            text: Import.error;
+                            color: Theme.error;
+                            font-size: Theme.label-sm;
+                            wrap: word-wrap;
+                            max-width: root.text-width;
+                        }
+
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            if root.editable: Button {
+                                text: "Cancel";
+                                clicked => { Import.batch-close(); }
+                            }
+                            if root.editable: Button {
+                                text: Import.batch-selected == 1 ? "Import 1 course" : "Import \{Import.batch-selected} courses";
+                                primary: true;
+                                active: Import.batch-selected > 0;
+                                clicked => { Import.batch-confirm(); }
+                            }
+                            if Import.batch-running: Button {
+                                text: "Hide";
+                                clicked => { Import.batch-close(); }
+                            }
+                            if Import.batch-running: Button {
+                                text: Import.batch-stopping ? "Stopping…" : "Stop";
+                                active: !Import.batch-stopping;
+                                spinning: Import.batch-stopping;
+                                clicked => { Import.batch-stop(); }
+                            }
+                            if Import.batch-done: Button {
+                                text: "Done";
+                                primary: true;
+                                clicked => { Import.batch-close(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Over the window while folders are dragged over it.
+export component DropOverlay inherits Rectangle {
+    background: Theme.background.transparentize(0.12);
+    Rectangle {
+        x: 16px;
+        y: 16px;
+        width: parent.width - 32px;
+        height: parent.height - 32px;
+        border-radius: 16px;
+        border-width: 2px;
+        border-color: Theme.primary-container;
+        background: Theme.primary-container.transparentize(0.92);
+        VerticalLayout {
+            alignment: center;
+            spacing: 8px;
+            HorizontalLayout {
+                alignment: center;
+                Image {
+                    source: @image-url("icons/folder-plus.svg");
+                    width: 48px;
+                    height: 48px;
+                    colorize: Theme.primary-container;
+                }
+            }
+            Text {
+                text: "Drop to import";
+                color: Theme.on-surface;
+                font-size: Theme.headline-md;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "A course folder, a folder of courses, or several at once";
+                color: Theme.on-surface-variant;
+                font-size: Theme.body-md;
+                horizontal-alignment: center;
             }
         }
     }

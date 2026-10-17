@@ -221,6 +221,31 @@ pub fn sample_import_preview(ui: &crate::AppWindow) {
     crate::importing::show_preview(&ui.global::<crate::Import>(), &preview);
 }
 
+/// The batch (a dropped folder of courses), before or while it imports.
+pub fn sample_batch(ui: &crate::AppWindow, running: bool) {
+    use slint::ComponentHandle;
+    let row = |name: &str, in_library: bool, state: i32, status: &str| crate::BatchCourse {
+        name: name.into(),
+        in_library,
+        selected: !in_library,
+        state: if running { state } else { 0 },
+        status: if running { status.into() } else { "".into() },
+    };
+    let rows = vec![
+        row("01 Rust Programming The Complete Developer's Guide", false, 2, "Imported · 212 lectures"),
+        row("02 Docker and Kubernetes", true, 0, ""),
+        row("03 The Complete SQL Bootcamp", false, 3, "No playable video files found in D:\\Courses\\03 The Complete SQL Bootcamp."),
+        row("04 Linux Command Line Basics", false, 1, "Probing 7/42"),
+        row("05 Go - The Complete Guide", false, 0, ""),
+    ];
+    let import = ui.global::<crate::Import>();
+    crate::importing::show_batch(&import, "Courses".into(), true, rows);
+    if running {
+        import.set_batch_running(true);
+        import.set_progress(crate::importing::batch_label(4, 4).into());
+    }
+}
+
 fn sample_panel(playback: &crate::Playback, db: &crate::session::Db) {
     use crate::course_panel;
     use deskemy_core::db::queries;

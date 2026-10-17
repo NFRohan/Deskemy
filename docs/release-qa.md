@@ -82,9 +82,11 @@ Remove-Item -Recurse -Force $env:DESKEMY_DATA_DIR -ErrorAction SilentlyContinue
 & $exe --snapshot "$out\import-preview-real.png" "import-probe:$qa\Deskemy QA Course" | Out-Null
 & $exe --snapshot "$out\import-1.png" "import-course:$qa\Deskemy QA Course" | Out-Null
 & $exe --snapshot "$out\import-2.png" "import-course:$qa\Deskemy QA Extra" | Out-Null
+& $exe --snapshot "$out\import-find.png" "import-find:$qa" | Out-Null
 $env:DESKEMY_SNAPSHOT_COURSE = "Deskemy QA Course"
 $pages = "", "favorites", "history", "bookmarks", "stats", "settings", "settings-import",
-         "import-preview", "import-scanning", "search:quokka", "search:ornitorrinco", "search:pangolin",
+         "import-preview", "import-scanning", "import-batch", "import-batch-running", "drop",
+         "search:quokka", "search:ornitorrinco", "search:pangolin",
          "tracks", "tracks-create", "track", "track-add", "track-edit", "track-delete",
          "course", "course-cover", "course-delete", "update:library", "update:settings-downloading"
 foreach ($p in $pages) { & $exe --snapshot "$out\page-$($p -replace '[:]','_').png" $p | Out-Null }
@@ -95,7 +97,7 @@ $env:DESKEMY_SNAPSHOT_WIDTH = 900; $env:DESKEMY_SNAPSHOT_HEIGHT = 600
 foreach ($p in "", "course", "stats", "settings") { & $exe --snapshot "$out\min-page-$p.png" $p | Out-Null }
 & $exe --snapshot-player "$out\min-player.png" "" | Out-Null
 Remove-Item Env:DESKEMY_SNAPSHOT_WIDTH, Env:DESKEMY_SNAPSHOT_HEIGHT, Env:DESKEMY_SNAPSHOT_COURSE
-"$((Get-ChildItem $out -Filter *.png).Count) images (expect 48)"
+"$((Get-ChildItem $out -Filter *.png).Count) images (expect 52)"
 ```
 
 Check what the real import gave:
@@ -106,6 +108,7 @@ Check what the real import gave:
 - [ ] `page-course.png`: `003 Configuring Git` sits between lectures 2 and 4, and the corrupt lecture is marked.
 - [ ] All three searches find their cue, under "IN LECTURE SUBTITLES" (`pangolin` is the long-path lecture's).
 - [ ] The library (`page-.png`) shows both courses.
+- [ ] `import-find.png` (the `Deskemy QA` folder, as if dropped) lists both courses as found, each "In your library" and unticked, with "Or import “Deskemy QA” as one course".
 
 Then check every image:
 
@@ -284,6 +287,14 @@ one users get.
   - **Locate folder** with the wrong folder is refused; with the renamed one it works.
 - [ ] Remove from library: the course is gone, and the files are still on disk.
 - [ ] Re-import the same folder: the preview says Re-import, and progress is kept.
+- [ ] Drag and drop, from Explorer onto the library (on a scratch library: `DESKEMY_DATA_DIR`):
+  - Dragging over the window shows "Drop to import"; dragging back out clears it.
+  - `Deskemy QA Course` alone opens its preview, as Add Folder does.
+  - The `Deskemy QA` folder opens the list of both courses. Import them: each row shows its progress, the sidebar button shows "Importing 1/2", and the cards appear as each finishes.
+  - Start it again, **Hide** it while it runs: the sidebar button brings it back. **Stop** finishes the current course and leaves the rest "Not imported: stopped".
+  - "Or import “Deskemy QA” as one course" opens a single preview with the two courses as sections.
+  - Dropping both course folders at once lists both; a file (not a folder) says only folders can be imported.
+  - Dropping while a video plays, or over an open dialog, does nothing.
 
 ### Player
 

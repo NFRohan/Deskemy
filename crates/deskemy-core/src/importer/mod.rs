@@ -7,6 +7,7 @@
 //!   section (Udemy names code files `011 foo.sql` next to `011 Lecture.mp4`)
 //! - subtitles attach to the video whose stem prefixes the subtitle name
 
+pub mod folders;
 pub mod structure;
 
 use crate::db::queries::{self, LectureInsert};
