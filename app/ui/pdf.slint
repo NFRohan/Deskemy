@@ -1,0 +1,269 @@
+// The PDF viewer: a course's PDFs read inside Deskemy, over the whole window
+// (the library, or the paused player). Pages, scroll, zoom, the page number,
+// and "Open in your PDF app" for anything more.
+
+import { Theme } from "theme.slint";
+import { TitleBar } from "shell.slint";
+
+export struct PdfPage {
+    image: image,
+    /// Rendered (pages out of view have no pixels).
+    has-image: bool,
+    /// Height over width.
+    aspect: float,
+}
+
+export global Pdf {
+    in property <bool> open;
+    in property <string> name;
+    in property <bool> loading;
+    in property <string> error;
+    in property <[PdfPage]> pages;
+    /// The page in view, from 1.
+    in property <int> current: 1;
+    /// Over the fitted width: 1 fits the page to the window (up to a
+    /// readable width).
+    in property <float> zoom: 1;
+    /// The view's scroll position (a Flickable's content-y: 0 or less).
+    in-out property <length> scroll-y;
+
+    callback close();
+    callback open-outside();
+    /// Zoom in (1) or out (-1); 0 fits the width again.
+    callback zoom-by(int);
+    /// Go to the previous (-1) or next (1) page.
+    callback step(int);
+    /// The view scrolled or resized: its top (scrolled past), height, and the
+    /// width pages are shown at.
+    callback viewport(length, length, length);
+}
+
+/// A toolbar button: an icon, or text, or both.
+component ToolButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> has-icon: true;
+    in property <string> text;
+    in property <string> label;
+    in property <bool> active: true;
+    callback clicked;
+    height: 32px;
+    width: row.preferred-width;
+    border-radius: 6px;
+    background: root.active && touch.has-hover ? Theme.surface-container-highest : transparent;
+    opacity: root.active ? 1 : 0.4;
+    accessible-role: button;
+    accessible-label: root.label != "" ? root.label : root.text;
+    accessible-enabled: root.active;
+    accessible-action-default => { root.clicked(); }
+    row := HorizontalLayout {
+        padding-left: root.text == "" ? 7px : 10px;
+        padding-right: self.padding-left;
+        spacing: 6px;
+        if root.has-icon: Image {
+            source: root.icon;
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.on-surface-variant;
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: Theme.on-surface;
+            font-size: Theme.label-md;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.active;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PdfViewer inherits Rectangle {
+    background: Theme.surface-container-lowest;
+
+    // Pages fit the view's width, but no wider than reads comfortably; zoom
+    // scales that.
+    property <length> fit-width: max(120px, min(root.width - 48px, 880px));
+    property <length> page-width: root.fit-width * Pdf.zoom;
+    changed page-width => { root.report(); }
+
+    function report() {
+        Pdf.viewport(-view.content-y, view.height, root.page-width);
+    }
+    // Scroll by `dy` (down when positive), within the pages.
+    function scroll(dy: length) {
+        view.content-y = max(min(view.height - view.content-height, 0px), min(0px, view.content-y - dy));
+    }
+
+    keys := FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                Pdf.close();
+            } else if event.modifiers.control && (event.text == "+" || event.text == "=") {
+                Pdf.zoom-by(1);
+            } else if event.modifiers.control && event.text == "-" {
+                Pdf.zoom-by(-1);
+            } else if event.modifiers.control && event.text == "0" {
+                Pdf.zoom-by(0);
+            } else if event.text == Key.PageDown || event.text == " " {
+                root.scroll(view.height * 0.9);
+            } else if event.text == Key.PageUp {
+                root.scroll(-view.height * 0.9);
+            } else if event.text == Key.DownArrow {
+                root.scroll(60px);
+            } else if event.text == Key.UpArrow {
+                root.scroll(-60px);
+            } else if event.text == Key.Home {
+                view.content-y = 0px;
+            } else if event.text == Key.End {
+                view.content-y = min(view.height - view.content-height, 0px);
+            } else if event.text == Key.RightArrow || event.text == "n" {
+                Pdf.step(1);
+            } else if event.text == Key.LeftArrow || event.text == "p" {
+                Pdf.step(-1);
+            } else {
+                return reject;
+            }
+            return accept;
+        }
+
+        VerticalLayout {
+            TitleBar {
+                crumbs: [Pdf.name];
+                targets: [""];
+                back-button: true;
+                back => { Pdf.close(); }
+            }
+
+            // Page, zoom, and the way out to a real PDF app.
+            Rectangle {
+                height: 44px;
+                background: Theme.surface;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 4px;
+                    ToolButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: @image-url("icons/chevron-up.svg");
+                        label: "Previous page";
+                        active: Pdf.current > 1;
+                        clicked => { Pdf.step(-1); }
+                    }
+                    ToolButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: @image-url("icons/chevron-down.svg");
+                        label: "Next page";
+                        active: Pdf.current < Pdf.pages.length;
+                        clicked => { Pdf.step(1); }
+                    }
+                    Text {
+                        text: Pdf.pages.length == 0 ? "" : "Page \{Pdf.current} of \{Pdf.pages.length}";
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.label-md;
+                        vertical-alignment: center;
+                        accessible-role: text;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    ToolButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: @image-url("icons/minus.svg");
+                        label: "Zoom out";
+                        clicked => { Pdf.zoom-by(-1); }
+                    }
+                    ToolButton {
+                        y: (parent.height - self.height) / 2;
+                        has-icon: false;
+                        text: Math.round(Pdf.zoom * 100) + "%";
+                        label: "Fit to width";
+                        clicked => { Pdf.zoom-by(0); }
+                    }
+                    ToolButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: @image-url("icons/plus.svg");
+                        label: "Zoom in";
+                        clicked => { Pdf.zoom-by(1); }
+                    }
+                    Rectangle {
+                        width: 1px;
+                        height: 20px;
+                        y: (parent.height - self.height) / 2;
+                        background: Theme.outline-variant;
+                    }
+                    ToolButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: @image-url("icons/file-text.svg");
+                        text: "Open in your PDF app";
+                        clicked => { Pdf.open-outside(); }
+                    }
+                }
+                Rectangle {
+                    y: parent.height - 1px;
+                    height: 1px;
+                    background: Theme.outline-variant;
+                }
+            }
+
+            view := Flickable {
+                content-y <=> Pdf.scroll-y;
+                content-width: max(self.width, root.page-width + 48px);
+                content-height: pages.preferred-height;
+                changed content-y => { root.report(); }
+                changed height => { root.report(); }
+                init => { root.report(); }
+
+                pages := VerticalLayout {
+                    width: parent.width;
+                    padding: 24px;
+                    spacing: 12px;
+                    alignment: start;
+                    for page in Pdf.pages: HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: root.page-width;
+                            height: root.page-width * page.aspect;
+                            background: #ffffff;
+                            drop-shadow-blur: 8px;
+                            drop-shadow-offset-y: 1px;
+                            drop-shadow-color: #00000040;
+                            if page.has-image: Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: page.image;
+                                image-fit: fill;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if Pdf.loading || Pdf.error != "": VerticalLayout {
+            y: 92px;
+            height: parent.height - 92px;
+            alignment: center;
+            spacing: 12px;
+            HorizontalLayout {
+                alignment: center;
+                Image {
+                    source: Pdf.error != "" ? @image-url("icons/triangle-alert.svg") : @image-url("icons/loader-circle.svg");
+                    width: 32px;
+                    height: 32px;
+                    colorize: Pdf.error != "" ? Theme.error : Theme.on-surface-variant;
+                    transform-rotation: Pdf.error != "" ? 0deg : animation-tick() / 1s * 360deg;
+                }
+            }
+            Text {
+                text: Pdf.error != "" ? Pdf.error : "Opening…";
+                color: Pdf.error != "" ? Theme.on-surface : Theme.on-surface-variant;
+                font-size: Theme.body-md;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

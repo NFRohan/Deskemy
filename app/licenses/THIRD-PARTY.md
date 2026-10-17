@@ -6,6 +6,7 @@ the following:
 | Component | What for | License | Text |
 |---|---|---|---|
 | [libmpv](https://mpv.io) (with FFmpeg), `libmpv-2.dll` | Playback | LGPL-2.1+ with GPL-2.0+ parts | `libmpv-NOTICE.txt`, `GPL-2.0.txt` |
+| [PDFium](https://pdfium.googlesource.com/pdfium/) ([pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) build), `pdfium.dll` | The PDF viewer | BSD-3-Clause, with the licenses of the libraries built into it | `LICENSE-pdfium.txt` |
 | [Slint](https://slint.dev) | User interface | Slint Royalty-free License 2.0 (attribution in Settings → About) | <https://slint.dev/terms-and-conditions#royalty-free> |
 | [Skia](https://skia.org) (via rust-skia) | Rendering | BSD-3-Clause | <https://skia.org/docs/dev/contrib/license/> |
 | [Inter](https://rsms.me/inter/) | Font | SIL Open Font License 1.1 | `LICENSE-inter.txt` |

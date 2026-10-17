@@ -19,6 +19,7 @@ import { PickRow, TrackCard, TrackCourseRow, TrackDialogs, TrackPage, Tracks, Tr
 import { HeatCell, LearningStats, StatsPage, WeekBar } from "stats_page.slint";
 import { ImportConfirm, Prefs, SettingsPage } from "settings.slint";
 import { BatchCourse, BatchDialog, DropOverlay, Import, ImportDialog } from "import.slint";
+import { Pdf, PdfPage, PdfViewer } from "pdf.slint";
 import { UpdateBanner, Updates } from "updates.slint";
 import { Theme } from "theme.slint";
 
@@ -26,7 +27,7 @@ export {
     BookmarkEntry, BookmarkGroup, HistoryGroup, HistoryRow, Lists, Search, SearchRow, SubtitleRow,
     PickRow, TrackCard, TrackCourseRow, Tracks, LearningStats, HeatCell, WeekBar, Prefs, BatchCourse, Import, Updates,
     BookmarkRow, Course, CourseCard, CurriculumLecture, CurriculumSection, Hero, LectureRow, Library, MenuItem,
-    Nav, PairRow, Playback, ResourceGroup, ResourceItem, SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme,
+    Nav, PairRow, Pdf, PdfPage, Playback, ResourceGroup, ResourceItem, SectionRow, SelectOption, StatGroup, StatLine, StatRow, Theme,
     WindowChrome,
 }
 
@@ -180,7 +181,13 @@ export component AppWindow inherits Window {
         height: parent.height;
     }
 
-    if !root.playing && !root.page-dialog && Import.drop-hover: DropOverlay {
+    if !root.playing && !root.page-dialog && !Pdf.open && Import.drop-hover: DropOverlay {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    // Over everything: the library, or the paused player.
+    if Pdf.open: PdfViewer {
         width: parent.width;
         height: parent.height;
     }

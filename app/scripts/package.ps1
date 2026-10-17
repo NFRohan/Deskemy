@@ -29,6 +29,12 @@ if (Test-Path $out) {
     Get-ChildItem $out -File | Where-Object { $_.Name -match '\.sig$|^latest\.json$|^SHA256SUMS\.txt$' } | Remove-Item -Force
 }
 
+# The DLLs build.rs stages beside the exe; without them a build still runs
+# (no playback / an outside PDF app), so make sure a release has them.
+foreach ($dll in "libmpv-2.dll", "pdfium.dll") {
+    if (-not (Test-Path "vendor/$dll")) { throw "vendor/$dll is missing (pdfium: scripts/get-pdfium.ps1)" }
+}
+
 # 1. Release build + installers (+ .sig when a key is set).
 cargo packager --release
 if ($LASTEXITCODE) { throw "cargo packager failed" }
@@ -40,12 +46,12 @@ foreach ($installer in $setup, $msi) {
     if (-not (Test-Path $installer)) { throw "no installer at $installer" }
 }
 
-# 2. Portable zip: the app, libmpv, licenses and the .portable marker, which
+# 2. Portable zip: the app, libmpv, PDFium, licenses and the .portable marker, which
 #    keeps its data in a data/ folder beside it.
 $stage = Join-Path $out "portable"
 Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $stage | Out-Null
-Copy-Item target/release/deskemy.exe, target/release/libmpv-2.dll $stage
+Copy-Item target/release/deskemy.exe, target/release/libmpv-2.dll, target/release/pdfium.dll $stage
 Copy-Item -Recurse target/release/licenses (Join-Path $stage "licenses")
 New-Item -ItemType File (Join-Path $stage ".portable") | Out-Null
 $zip = Join-Path $out "Deskemy_${version}_x64-portable.zip"

@@ -83,7 +83,15 @@ what's paired with the lecture.
       together" number placement everywhere: course page, the player's
       Resources panel and the end-of-lecture pause. Not yet: pairing from the
       player, dragging a resource onto a lecture.
-- [ ] **Simple built-in PDF viewer** — see [Feature ideas](#feature-ideas).
+- [x] **Simple built-in PDF viewer** — a resource that's a PDF opens in
+      Deskemy (course page, the player's Resources panel and the
+      end-of-lecture card): pages, scroll, zoom, page n of m, keys, "Open in
+      your PDF app". Over the player it pauses first (and leaves fullscreen
+      or the mini player). PDFium (`pdfium.dll`, build 7881, the non-V8 one:
+      no JavaScript), via `pdfium-render`, on a thread of its own; only pages
+      near the view are rendered, at their shown width. Without the DLL,
+      PDFs open outside as before. Linux: needs packaging (`libpdfium.so`
+      beside the binary); until then PDFs open outside there.
 - [ ] **Resources prompt timing** (dcsm8) — to discuss once the above are
       done. With "Pause on exercises and
       resources", a heads-up that the lecture has resources some time before
@@ -164,10 +172,8 @@ command palette, A–B loop.
 
 - [x] **Manual resource pairing** — in [2.1](#21). Later, maybe: from the
   player's Resources panel too, and by dragging a resource onto a lecture.
-- **Simple built-in PDF viewer** (dcsm8) — read a lecture's PDFs inside
-  Deskemy: pages, scroll, zoom, page number, "Open in your PDF app". No
-  annotation or editing. Likely PDFium via `pdfium-render` (~5 MB DLL);
-  needs a Linux check.
+- [x] **Simple built-in PDF viewer** (dcsm8) — in [2.1](#21). Later, maybe:
+  find in the PDF, text selection, remembering the page per PDF.
 - **Transcript panel** (later: needs a lot of design) — the lecture's
   subtitles as a scrolling transcript: click a line to jump, the current line
   highlighted, search within the lecture. Subtitle files are already parsed

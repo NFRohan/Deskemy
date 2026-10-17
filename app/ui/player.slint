@@ -4,6 +4,7 @@
 
 import { Nav, TitleBar, WindowChrome } from "shell.slint";
 import { Library } from "library.slint";
+import { Pdf } from "pdf.slint";
 
 /// One entry in a track / chapter / speed menu.
 export struct MenuItem {
@@ -537,6 +538,13 @@ export component PlayerOverlay inherits Rectangle {
 
     // Closing a dialog destroys whatever had focus (e.g. the bookmark label),
     // so hand it back to the shortcut scope.
+    // Back from the PDF viewer, too.
+    property <bool> pdf-open: Pdf.open;
+    changed pdf-open => {
+        if !root.pdf-open && !Playback.mini {
+            keys.focus();
+        }
+    }
     property <string> menu: Playback.open-menu;
     changed menu => {
         // Not when the mini player is taking over (entering it closes the

@@ -848,7 +848,6 @@ fn wire_panel(ui: &AppWindow, session: &Arc<Session>) {
             tracing::warn!(error = %e, lecture = %id, "open lecture");
         }
     });
-    playback.on_open_resource(|path| crate::open_resource(&path));
 }
 
 /// What the overlay shows, sampled from mpv on the event thread.

@@ -160,7 +160,9 @@ release. For translation-specific issues, please open them on that project's rep
 
 ```bash
 # Prerequisites: Rust (stable), MSVC C++ Build Tools, and libmpv-2.dll in
-# app/vendor/ (the "libmpv" build of mpv; the build copies it beside the exe)
+# app/vendor/ (the "libmpv" build of mpv; the build copies it beside the exe).
+# PDFium, for the PDF viewer, goes there too (without it, PDFs open outside):
+powershell -File app/scripts/get-pdfium.ps1
 cd app
 cargo run              # run in development
 cargo test             # tests (a headless mpv runs the playback ones)

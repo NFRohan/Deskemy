@@ -11,6 +11,7 @@ mod instance;
 mod library;
 mod mini;
 mod pages;
+mod pdf;
 mod search;
 mod session;
 mod settings;
@@ -241,6 +242,11 @@ fn main() -> Result<(), slint::PlatformError> {
                 Err(e) => ui.global::<Import>().set_error(e.into()),
             }
         }
+        // "pdf:<file>": the PDF viewer on a real PDF, its first pages rendered.
+        if let Some(file) = page.as_deref().and_then(|p| p.strip_prefix("pdf:")) {
+            let width = std::env::var("DESKEMY_SNAPSHOT_WIDTH").ok().and_then(|w| w.parse::<f32>().ok()).unwrap_or(1280.0);
+            pdf::sample(&ui, file, (width - 48.0).clamp(120.0, 880.0));
+        }
         // "drop": the library with folders dragged over it.
         if page.as_deref() == Some("drop") {
             ui.global::<Import>().set_drop_hover(true);
@@ -371,6 +377,9 @@ fn main() -> Result<(), slint::PlatformError> {
     importing.start_watching(&ui, player.session().clone());
     wire_import(&ui, &importing);
     wire_window_events(&ui, &importing);
+    let viewer = pdf::Viewer::new();
+    pdf::register(&viewer);
+    wire_pdf(&ui, &viewer);
     let mini = mini::MiniPlayer::new(&ui, config.clone());
 
     // Updates: a quiet check shortly after launch (the Tauri app's), and
@@ -692,7 +701,6 @@ fn wire_course(
             p.set_resource_done(&ui, &id, done);
         }
     });
-    course.on_open_resource(|path| open_resource(&path));
     let (p, weak) = (page.clone(), ui.as_weak());
     course.on_pair_open(move |id| {
         if let Some(ui) = weak.upgrade() {
@@ -715,6 +723,49 @@ fn wire_course(
     course.on_pair_reset(move || {
         if let Some(ui) = weak.upgrade() {
             p.pair_reset(&ui);
+        }
+    });
+}
+
+/// The PDF viewer, and every way a resource opens (PDFs go to the viewer).
+fn wire_pdf(ui: &AppWindow, viewer: &std::rc::Rc<pdf::Viewer>) {
+    let (v, weak) = (viewer.clone(), ui.as_weak());
+    ui.global::<Course>().on_open_resource(move |path| {
+        if let Some(ui) = weak.upgrade() {
+            v.open_resource(&ui, &path);
+        }
+    });
+    let (v, weak) = (viewer.clone(), ui.as_weak());
+    ui.global::<Playback>().on_open_resource(move |path| {
+        if let Some(ui) = weak.upgrade() {
+            v.open_resource(&ui, &path);
+        }
+    });
+    let pdf = ui.global::<Pdf>();
+    let (v, weak) = (viewer.clone(), ui.as_weak());
+    pdf.on_close(move || {
+        if let Some(ui) = weak.upgrade() {
+            v.close(&ui);
+        }
+    });
+    let v = viewer.clone();
+    pdf.on_open_outside(move || v.open_outside());
+    let (v, weak) = (viewer.clone(), ui.as_weak());
+    pdf.on_zoom_by(move |direction| {
+        if let Some(ui) = weak.upgrade() {
+            v.zoom_by(&ui, direction);
+        }
+    });
+    let (v, weak) = (viewer.clone(), ui.as_weak());
+    pdf.on_step(move |delta| {
+        if let Some(ui) = weak.upgrade() {
+            v.step(&ui, delta);
+        }
+    });
+    let (v, weak) = (viewer.clone(), ui.as_weak());
+    pdf.on_viewport(move |top, height, width| {
+        if let Some(ui) = weak.upgrade() {
+            v.viewport(&ui, top, height, width);
         }
     });
 }
@@ -884,6 +935,11 @@ fn parent_process_name() -> Option<String> {
 /// Folders dropped on the window (not the player, nor over a dialog) are
 /// added as Add Folder's are. winit reports a drop of several one by one, all
 /// in the same turn of the event loop; they're added together after it.
+/// A folder can be dropped now: on the library or a page, nothing open over it.
+fn accepts_drop(ui: &AppWindow, importing: &importing::Importing) -> bool {
+    !ui.get_playing() && !ui.get_page_dialog() && !ui.global::<Pdf>().get_open() && importing.ready(ui)
+}
+
 fn wire_window_events(ui: &AppWindow, importing: &std::rc::Rc<importing::Importing>) {
     use slint::winit_030::winit::event::{ElementState, MouseButton, WindowEvent};
     use slint::winit_030::{EventResult, WinitWindowAccessor};
@@ -892,8 +948,14 @@ fn wire_window_events(ui: &AppWindow, importing: &std::rc::Rc<importing::Importi
     let dropped: std::rc::Rc<std::cell::RefCell<Vec<PathBuf>>> = Default::default();
     ui.window().on_winit_window_event(move |_, event| {
         let Some(ui) = weak.upgrade() else { return EventResult::Propagate };
-        let accepts_drop = |ui: &AppWindow| !ui.get_playing() && !ui.get_page_dialog() && importing.ready(ui);
         match event {
+            // Over the PDF viewer, back closes it.
+            WindowEvent::MouseInput { button: MouseButton::Back, state, .. } if ui.global::<Pdf>().get_open() => {
+                if *state == ElementState::Released {
+                    ui.global::<Pdf>().invoke_close();
+                }
+                EventResult::PreventDefault
+            }
             WindowEvent::MouseInput { button: MouseButton::Back, state, .. } if ui.get_playing() => {
                 if *state == ElementState::Released {
                     let playback = ui.global::<Playback>();
@@ -907,7 +969,7 @@ fn wire_window_events(ui: &AppWindow, importing: &std::rc::Rc<importing::Importi
                 EventResult::PreventDefault
             }
             WindowEvent::HoveredFile(_) => {
-                ui.global::<Import>().set_drop_hover(accepts_drop(&ui));
+                ui.global::<Import>().set_drop_hover(accepts_drop(&ui, &importing));
                 EventResult::Propagate
             }
             WindowEvent::HoveredFileCancelled => {
@@ -923,7 +985,7 @@ fn wire_window_events(ui: &AppWindow, importing: &std::rc::Rc<importing::Importi
                     slint::Timer::single_shot(std::time::Duration::ZERO, move || {
                         let paths = std::mem::take(&mut *dropped.borrow_mut());
                         let Some(ui) = weak.upgrade() else { return };
-                        if !ui.get_playing() && !ui.get_page_dialog() && importing.ready(&ui) {
+                        if accepts_drop(&ui, &importing) {
                             tracing::info!(?paths, "dropped on the window");
                             importing.add(&ui, paths);
                         } else {

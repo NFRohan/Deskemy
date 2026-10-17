@@ -83,6 +83,8 @@ Remove-Item -Recurse -Force $env:DESKEMY_DATA_DIR -ErrorAction SilentlyContinue
 & $exe --snapshot "$out\import-1.png" "import-course:$qa\Deskemy QA Course" | Out-Null
 & $exe --snapshot "$out\import-2.png" "import-course:$qa\Deskemy QA Extra" | Out-Null
 & $exe --snapshot "$out\import-find.png" "import-find:$qa" | Out-Null
+& $exe --snapshot "$out\pdf-slides.png" "pdf:$((Get-ChildItem $qa -Recurse -Filter '8.1 Slides.pdf').FullName)" | Out-Null
+& $exe --snapshot "$out\pdf-long.png" "pdf:$((Get-ChildItem $qa -Recurse -Filter '13.1 Notes.pdf').FullName)" | Out-Null
 $env:DESKEMY_SNAPSHOT_COURSE = "Deskemy QA Course"
 $pages = "", "favorites", "history", "bookmarks", "stats", "settings", "settings-import",
          "import-preview", "import-scanning", "import-batch", "import-batch-running", "drop",
@@ -98,7 +100,7 @@ $env:DESKEMY_SNAPSHOT_WIDTH = 900; $env:DESKEMY_SNAPSHOT_HEIGHT = 600
 foreach ($p in "", "course", "stats", "settings") { & $exe --snapshot "$out\min-page-$p.png" $p | Out-Null }
 & $exe --snapshot-player "$out\min-player.png" "" | Out-Null
 Remove-Item Env:DESKEMY_SNAPSHOT_WIDTH, Env:DESKEMY_SNAPSHOT_HEIGHT, Env:DESKEMY_SNAPSHOT_COURSE
-"$((Get-ChildItem $out -Filter *.png).Count) images (expect 53)"
+"$((Get-ChildItem $out -Filter *.png).Count) images (expect 55)"
 ```
 
 Check what the real import gave:
@@ -109,6 +111,7 @@ Check what the real import gave:
 - [ ] `page-course.png`: `003 Configuring Git` sits between lectures 2 and 4, and the corrupt lecture is marked.
 - [ ] All three searches find their cue, under "IN LECTURE SUBTITLES" (`pangolin` is the long-path lecture's).
 - [ ] The library (`page-.png`) shows both courses.
+- [ ] `pdf-slides.png` and `pdf-long.png` show their page's text in the viewer, "Page 1 of 1" (the second is the long-path PDF).
 - [ ] `import-find.png` (the `Deskemy QA` folder, as if dropped) lists both courses as found, each "In your library" and unticked, with "Or import “Deskemy QA” as one course".
 
 Then check every image:
@@ -288,6 +291,14 @@ one users get.
   - **Locate folder** with the wrong folder is refused; with the renamed one it works.
 - [ ] Remove from library: the course is gone, and the files are still on disk.
 - [ ] Re-import the same folder: the preview says Re-import, and progress is kept.
+- [ ] PDF viewer: click `8.1 Slides.pdf` on the course page.
+  - It opens in Deskemy, sharp at the window's scaling, with "Page 1 of 1" and 100%.
+  - Zoom in and out (buttons, Ctrl + / Ctrl −); the percentage resets to 100% on a click. Pages re-render sharp after zooming.
+  - A long PDF of your own: scroll, PgUp/PgDn, Home/End, the arrows; the page number follows; memory stays flat while scrolling through it (Task Manager).
+  - **Open in your PDF app** opens it outside. Back, Esc and the mouse's back button close the viewer.
+  - From the player (Resources panel, and the end-of-lecture card with "Pause on exercises and resources"): the video pauses, and fullscreen or the mini player gives way to the full window. Closing the viewer returns to the paused player, and Space resumes it.
+  - A file that isn't a PDF but ends in `.pdf`, or a password-protected one, says so, with **Open in your PDF app** still there.
+  - The portable zip and both installers contain `pdfium.dll`; renaming it away makes PDFs open in your PDF app instead.
 - [ ] Pairing a resource by hand (hover a resource row, the link button):
   - The dialog says where it is now ("Placed automatically with “…”") and ticks that lecture; the filter narrows by lecture or section name.
   - Pair `003 Configuring Git` with a lecture in **Formats**: it moves under that lecture (and to Formats in the Resources list), and the player's Resources panel shows it in Formats.
@@ -313,7 +324,7 @@ one users get.
   - subtitles: external ones labelled `lang · filename`
   - audio (the two-track MKV)
   - chapters (the chaptered MP4; the button stays for the whole video)
-- [ ] Lecture 013 (its path is over 260 characters) plays, its English subtitle is offered and shows, and its resource `13.1 Notes.pdf` opens in your PDF app (from the course page and the player's Resources tab).
+- [ ] Lecture 013 (its path is over 260 characters) plays, its English subtitle is offered and shows, and its resource `13.1 Notes.pdf` opens in the PDF viewer (from the course page and the player's Resources tab), and from there in your PDF app.
 - [ ] Sleep timer:
   - 15m and Custom (1 and 600) count down in the chip.
   - "End of lecture" stops autoplay once.
