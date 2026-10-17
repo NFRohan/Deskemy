@@ -7,7 +7,7 @@ use crate::library::{format_duration, pct};
 use crate::session::Db;
 use crate::settings::{self, Config};
 use crate::tracks::clock;
-use crate::{AppWindow, Course, CurriculumLecture, CurriculumSection, Nav, ResourceGroup, ResourceItem};
+use crate::{AppWindow, Course, CurriculumLecture, CurriculumSection, Nav, PairRow, ResourceGroup, ResourceItem};
 use deskemy_core::courses;
 use deskemy_core::db::queries;
 use deskemy_core::domain::{Attachment, CourseDetail, Lecture, Section};
@@ -86,7 +86,8 @@ const SLOT_REACH: i64 = 3;
 /// than at the end of the section: Udemy's article pages (`003 Configuring
 /// Git.html` between `002` and `004`) under the lecture before them, and its
 /// per-lecture resources (`16.1 Processes and Jobs.html`) under lecture 16.
-/// One numbered before every lecture, or unnumbered, stays at the end.
+/// One numbered before every lecture, or unnumbered, stays at the end. One
+/// paired by hand stays where it was put.
 pub fn inline_resources<'a>(sections: &[Section], attachments: &'a [Attachment]) -> (ResourceMap<'a>, ResourceMap<'a>) {
     let (mut by_lecture, mut by_section): (ResourceMap, ResourceMap) = Default::default();
     let numbered: HashMap<&str, Vec<(i64, &str)>> = sections
@@ -103,6 +104,7 @@ pub fn inline_resources<'a>(sections: &[Section], attachments: &'a [Attachment])
     for a in attachments {
         match (a.lecture_id.as_deref(), a.section_id.as_deref()) {
             (Some(lecture), _) => by_lecture.entry(lecture.to_string()).or_default().push(a),
+            (None, Some(section)) if a.paired => by_section.entry(section.to_string()).or_default().push(a),
             (None, Some(section)) => {
                 let before = slot(&a.file_path, &a.name).and_then(|slot| {
                     let lectures = numbered.get(section)?;
@@ -167,6 +169,51 @@ pub fn resource_groups<'a>(c: &CourseDetail, attachments: &'a [Attachment]) -> V
     groups
 }
 
+/// The lecture a resource is shown with: where the curriculum puts it with
+/// "keep videos and resources together", else its own (guessed or paired).
+pub fn shown_with<'a>(c: &'a CourseDetail, attachments: &[Attachment], id: &str, inline: bool) -> Option<&'a Lecture> {
+    let lecture_id = if inline {
+        let (by_lecture, _) = inline_resources(&c.sections, attachments);
+        by_lecture.into_iter().find(|(_, list)| list.iter().any(|a| a.id == id)).map(|(lecture, _)| lecture)
+    } else {
+        attachments.iter().find(|a| a.id == id)?.lecture_id.clone()
+    }?;
+    c.sections.iter().flat_map(|s| s.lectures.iter()).find(|l| l.id == lecture_id)
+}
+
+/// The pairing dialog's line on where a resource is now.
+pub fn pair_where(paired: bool, lecture: Option<&Lecture>) -> String {
+    let with = lecture.map_or_else(|| "no lecture".to_string(), |l| format!("“{}”", l.title));
+    if paired {
+        format!("Paired by you with {with}.")
+    } else {
+        format!("Placed automatically with {with}.")
+    }
+}
+
+/// The pairing dialog's lecture list: each section's heading, then its
+/// lectures. A filter keeps the lectures whose title has it, or every lecture
+/// of a section whose title has it.
+pub fn pair_rows(c: &CourseDetail, query: &str, current: Option<&str>) -> Vec<PairRow> {
+    let query = query.trim().to_lowercase();
+    let has = |title: &str| title.to_lowercase().contains(&query);
+    let mut rows = Vec::new();
+    for s in &c.sections {
+        let lectures: Vec<&Lecture> = s.lectures.iter().filter(|l| has(&s.title) || has(&l.title)).collect();
+        if lectures.is_empty() {
+            continue;
+        }
+        rows.push(PairRow { id: "".into(), title: s.title.clone().into(), heading: true, current: false });
+        rows.extend(lectures.into_iter().map(|l| PairRow {
+            id: l.id.clone().into(),
+            title: l.title.clone().into(),
+            heading: false,
+            current: current == Some(l.id.as_str()),
+        }));
+    }
+    rows
+}
+
 /// The open course's state (UI thread only).
 pub struct CoursePage {
     db: Db,
@@ -176,6 +223,8 @@ pub struct CoursePage {
     id: RefCell<Option<String>>,
     expanded: RefCell<HashSet<String>>,
     image: RefCell<Option<(String, slint::Image)>>,
+    /// The resource in the pairing dialog, and the lecture it's with now.
+    pairing: RefCell<Option<(String, Option<String>)>>,
 }
 
 impl CoursePage {
@@ -187,6 +236,7 @@ impl CoursePage {
             id: RefCell::new(None),
             expanded: RefCell::new(HashSet::new()),
             image: RefCell::new(None),
+            pairing: RefCell::new(None),
         })
     }
 
@@ -470,6 +520,68 @@ impl CoursePage {
         self.refresh(ui);
     }
 
+    /// Open the pairing dialog for a resource of the open course.
+    pub fn pair_open(&self, ui: &AppWindow, resource: &str) {
+        let Some(course) = self.id() else { return };
+        let (detail, attachments) = {
+            let conn = self.conn();
+            (
+                queries::get_course_detail(&conn, &course).ok().flatten(),
+                queries::list_course_attachments(&conn, &course).unwrap_or_default(),
+            )
+        };
+        let (Some(c), Some(a)) = (detail, attachments.iter().find(|a| a.id == resource)) else { return };
+        let inline = settings::lock(&self.config).resources_inline;
+        let lecture = shown_with(&c, &attachments, resource, inline);
+        let current = lecture.map(|l| l.id.clone());
+        let page = ui.global::<Course>();
+        page.set_pair_name(a.name.clone().into());
+        page.set_pair_where(pair_where(a.paired, lecture).into());
+        page.set_pair_manual(a.paired);
+        page.set_pair_none(a.paired && a.lecture_id.is_none());
+        page.set_pair_query("".into());
+        page.set_pair_error("".into());
+        page.set_pair_rows(model(pair_rows(&c, "", current.as_deref())));
+        *self.pairing.borrow_mut() = Some((resource.to_string(), current));
+        page.set_dialog("pair".into());
+    }
+
+    pub fn pair_filter(&self, ui: &AppWindow, query: &str) {
+        let Some(course) = self.id() else { return };
+        let current = self.pairing.borrow().as_ref().and_then(|(_, lecture)| lecture.clone());
+        let Some(c) = queries::get_course_detail(&self.conn(), &course).ok().flatten() else { return };
+        ui.global::<Course>().set_pair_rows(model(pair_rows(&c, query, current.as_deref())));
+    }
+
+    /// Pair the dialog's resource with a lecture, or (None) with none.
+    pub fn pair_with(&self, ui: &AppWindow, lecture: Option<&str>) {
+        let Some((resource, _)) = self.pairing.borrow().clone() else { return };
+        let paired = queries::pair_resource(&self.conn(), &resource, lecture);
+        self.pair_done(ui, paired.map_err(|e| e.to_string()));
+    }
+
+    /// Back to the importer's placement.
+    pub fn pair_reset(&self, ui: &AppWindow) {
+        let Some((resource, _)) = self.pairing.borrow().clone() else { return };
+        let reset = queries::unpair_resource(&self.conn(), &resource);
+        self.pair_done(ui, reset.map_err(|e| e.to_string()));
+    }
+
+    fn pair_done(&self, ui: &AppWindow, result: Result<(), String>) {
+        let page = ui.global::<Course>();
+        match result {
+            Ok(()) => {
+                *self.pairing.borrow_mut() = None;
+                page.set_dialog("".into());
+                self.refresh(ui);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "pair resource");
+                page.set_pair_error(format!("Couldn't pair it: {e}").into());
+            }
+        }
+    }
+
     /// Mark a lecture done / not done by hand.
     pub fn toggle_complete(&self, ui: &AppWindow, lecture: &str) {
         let done = {
@@ -555,6 +667,44 @@ mod tests {
     }
 
     #[test]
+    fn a_resource_paired_by_hand_stays_where_it_was_put() {
+        let lec = |id: &str, file: &str| Lecture { id: id.into(), file_path: format!("C:/c/s1/{file}"), ..lecture(id, false, true, None) };
+        let c = course(None, vec![("s1", vec![lec("l2", "002 What is Git.mp4"), lec("l4", "004 Branches.mp4")])]);
+        let att = |name: &str, lecture: Option<&str>, paired: bool| Attachment {
+            id: name.into(),
+            name: name.into(),
+            file_path: format!("C:/c/s1/{name}"),
+            kind: None,
+            section_id: Some("s1".into()),
+            lecture_id: lecture.map(Into::into),
+            completed: false,
+            paired,
+        };
+        // Numbered after 002, but paired with no lecture: the section's end.
+        let atts = vec![att("003 Configuring Git.html", None, true), att("005 Notes.pdf", None, false)];
+        let (by_lecture, by_section) = inline_resources(&c.sections, &atts);
+        assert_eq!(by_section["s1"].iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["003 Configuring Git.html"]);
+        assert_eq!(by_lecture["l4"][0].id, "005 Notes.pdf");
+
+        // Where the dialog says it is, with and without "keep together".
+        assert_eq!(shown_with(&c, &atts, "005 Notes.pdf", true).map(|l| l.id.as_str()), Some("l4"));
+        assert!(shown_with(&c, &atts, "005 Notes.pdf", false).is_none());
+        assert_eq!(pair_where(false, shown_with(&c, &atts, "005 Notes.pdf", true)), "Placed automatically with “l4”.");
+        assert_eq!(pair_where(true, None), "Paired by you with no lecture.");
+    }
+
+    #[test]
+    fn the_pairing_list_filters_by_lecture_or_section() {
+        let c = course(None, vec![("Intro", vec![lecture("Welcome", false, true, None)]), ("Git", vec![lecture("Branches", false, true, None), lecture("Merging", false, true, None)])]);
+        let rows = |query: &str| pair_rows(&c, query, Some("Merging")).iter().map(|r| (r.title.to_string(), r.heading, r.current)).collect::<Vec<_>>();
+        let (h, l) = (true, false);
+        assert_eq!(rows("").len(), 5);
+        assert_eq!(rows("merg"), [("Git".into(), h, false), ("Merging".into(), l, true)]);
+        assert_eq!(rows("GIT"), [("Git".into(), h, false), ("Branches".into(), l, false), ("Merging".into(), l, true)]);
+        assert!(rows("nothing").is_empty());
+    }
+
+    #[test]
     fn section_meta_counts_done_and_sums_known_durations() {
         let s = Section {
             id: "s".into(),
@@ -588,6 +738,7 @@ mod tests {
             section_id: Some("s1".into()),
             lecture_id: None,
             completed: false,
+            paired: false,
         };
         let atts = vec![att("003 Configuring Git.html"), att("005 Cheatsheet.html"), att("001 Welcome.html"), att("notes.pdf")];
         let (by_lecture, by_section) = inline_resources(std::slice::from_ref(&s1), &atts);
@@ -623,6 +774,7 @@ mod tests {
             section_id: section.map(Into::into),
             lecture_id: lecture.map(Into::into),
             completed,
+            paired: false,
         };
         let atts = vec![
             att("ex1.pdf", Some("s1"), Some("l1"), true),
@@ -652,6 +804,7 @@ mod tests {
             section_id: section.map(Into::into),
             lecture_id: None,
             completed: false,
+            paired: false,
         };
         let atts = vec![att("loose.pdf", None), att("two.pdf", Some("s2")), att("one.pdf", Some("s1"))];
         let groups: Vec<(String, Vec<&str>)> = resource_groups(&c, &atts)

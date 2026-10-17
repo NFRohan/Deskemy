@@ -74,8 +74,15 @@ what's paired with the lecture.
       its own: a dropped folder of courses isn't kept as a library root (no
       UI to list or remove roots yet), so new courses added to it later aren't
       picked up. No drops on Wayland (winit has none there).
-- [ ] **Manual resource pairing** — see [Feature ideas](#feature-ideas).
-      A new table (schema v9); needs a short design pass on re-imports.
+- [x] **Manual resource pairing** — a resource row's link button (course
+      page) pairs it with any lecture of the course, with no lecture, or back
+      to automatic. Schema v9: `resource_pairings`, by file path, so it
+      survives re-imports, auto-rescan and Locate folder; a pairing whose
+      resource or lecture is gone is dropped at the next re-import (and
+      ignored until then). It wins over the importer's guess and the "keep
+      together" number placement everywhere: course page, the player's
+      Resources panel and the end-of-lecture pause. Not yet: pairing from the
+      player, dragging a resource onto a lecture.
 - [ ] **Simple built-in PDF viewer** — see [Feature ideas](#feature-ideas).
 - [ ] **Resources prompt timing** (dcsm8) — to discuss once the above are
       done. With "Pause on exercises and
@@ -155,10 +162,8 @@ Priority (2.1): manual resource pairing, the PDF viewer, drag & drop import.
 Later: the transcript panel (needs a lot of design). Held: study plan,
 command palette, A–B loop.
 
-- **Manual resource pairing** — attach a resource (a PDF, a link, a file) to
-  a lecture by hand when the importer guessed wrong or the file has no
-  numbering: pick a lecture from the resource's menu (or drag it onto one);
-  stored per course, kept across re-imports, and "reset to automatic".
+- [x] **Manual resource pairing** — in [2.1](#21). Later, maybe: from the
+  player's Resources panel too, and by dragging a resource onto a lecture.
 - **Simple built-in PDF viewer** (dcsm8) — read a lecture's PDFs inside
   Deskemy: pages, scroll, zoom, page number, "Open in your PDF app". No
   annotation or editing. Likely PDFium via `pdfium-render` (~5 MB DLL);

@@ -149,6 +149,9 @@ pub struct Attachment {
     pub lecture_id: Option<String>,
     /// Marked done (an exercise worked through, notes read).
     pub completed: bool,
+    /// Placed by hand (`lecture_id` is the chosen lecture, or None for none),
+    /// not by the importer's guess.
+    pub paired: bool,
 }
 
 /// One full-text search result across courses/sections/lectures/attachments.

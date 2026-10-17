@@ -2,7 +2,7 @@
 // routes/tracks and routes/tracks/[id].
 
 import { Theme } from "theme.slint";
-import { DialogButton, IconAction } from "course.slint";
+import { DialogButton, Field, IconAction } from "course.slint";
 import { Library } from "library.slint";
 
 export struct TrackCard {
@@ -559,50 +559,6 @@ export component TrackPage inherits Flickable {
 }
 
 /// A bordered text box; `multiline` makes it a two-line description area.
-component Field inherits Rectangle {
-    in-out property <string> text;
-    in property <string> placeholder;
-    in property <bool> multiline;
-    in property <bool> autofocus;
-    callback accepted;
-    callback edited(string);
-
-    height: root.multiline ? 60px : 40px;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: input.has-focus ? Theme.accent-blue : Theme.outline-variant;
-    background: Theme.surface-container-low;
-
-    input := TextInput {
-        x: 12px;
-        y: root.multiline ? 8px : 0px;
-        width: parent.width - 24px;
-        height: root.multiline ? parent.height - 16px : parent.height;
-        single-line: !root.multiline;
-        wrap: root.multiline ? word-wrap : no-wrap;
-        vertical-alignment: root.multiline ? top : center;
-        color: Theme.on-surface;
-        font-size: Theme.body-md;
-        text <=> root.text;
-        init => {
-            if root.autofocus {
-                self.focus();
-            }
-        }
-        accepted => { root.accepted(); }
-        edited => { root.edited(self.text); }
-    }
-    if root.text == "": Text {
-        x: 12px;
-        y: input.y;
-        height: root.multiline ? 20px : parent.height;
-        text: root.placeholder;
-        color: Theme.on-surface-variant;
-        font-size: Theme.body-md;
-        vertical-alignment: center;
-    }
-}
-
 component FieldLabel inherits Text {
     color: Theme.on-surface-variant;
     font-size: Theme.label-md;

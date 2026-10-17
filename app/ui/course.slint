@@ -28,6 +28,16 @@ export struct CurriculumSection {
     loose: [ResourceItem],
 }
 
+/// A row of the pairing dialog's lecture list: a section heading, or a
+/// lecture to pair with.
+export struct PairRow {
+    id: string,
+    title: string,
+    heading: bool,
+    /// The lecture the resource is with now.
+    current: bool,
+}
+
 /// The open course (from Rust) and what the page can do with it.
 export global Course {
     in property <bool> found: true;
@@ -51,11 +61,29 @@ export global Course {
     /// "2 / 5 resources done", or "".
     in property <string> resources-summary;
 
-    /// The open dialog: "" (none), "cover" or "delete".
+    /// The open dialog: "" (none), "cover", "delete" or "pair".
     in-out property <string> dialog;
     in-out property <string> cover-error;
     in-out property <string> relocate-error;
     in-out property <string> delete-error;
+
+    // Pairing a resource with a lecture by hand.
+    in property <string> pair-name;
+    /// "Placed automatically with “Intro”" / "Paired by you with no lecture".
+    in property <string> pair-where;
+    /// Paired by hand: it can go back to automatic.
+    in property <bool> pair-manual;
+    /// Paired with no lecture now.
+    in property <bool> pair-none;
+    in property <[PairRow]> pair-rows;
+    in-out property <string> pair-query;
+    in-out property <string> pair-error;
+    /// Open the dialog for a resource (by id).
+    callback pair-open(string);
+    callback pair-filter(string);
+    /// Pair with a lecture (by id), or "" for none.
+    callback pair-with(string);
+    callback pair-reset();
 
     callback play(string);
     callback toggle-section(string);
@@ -286,11 +314,37 @@ component ResourceTick inherits Rectangle {
     }
 }
 
+/// Pair a resource with a lecture: shown while its row is hovered (and
+/// always to a screen reader).
+component PairButton inherits Rectangle {
+    in property <ResourceItem> item;
+    in property <bool> row-hover;
+    out property <bool> hovered: touch.has-hover;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.surface-container-highest : transparent;
+    opacity: root.row-hover || touch.has-hover ? 1 : 0;
+    accessible-role: button;
+    accessible-label: "Pair “" + root.item.name + "” with a lecture";
+    accessible-action-default => { Course.pair-open(root.item.id); }
+    Image {
+        source: @image-url("icons/link.svg");
+        width: 15px;
+        height: 15px;
+        colorize: touch.has-hover ? Theme.on-surface : Theme.on-surface-variant;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Course.pair-open(root.item.id); }
+    }
+}
+
 /// A resource inside the curriculum, under its lecture: opens on click.
 component CurriculumResource inherits Rectangle {
     in property <ResourceItem> item;
     height: 34px;
-    background: touch.has-hover ? Theme.surface-container : transparent;
+    background: touch.has-hover || pair.hovered ? Theme.surface-container : transparent;
     touch := TouchArea {
         mouse-cursor: pointer;
         clicked => { Course.open-resource(root.item.path); }
@@ -319,6 +373,11 @@ component CurriculumResource inherits Rectangle {
             color: Theme.on-surface-variant;
             font-size: Theme.label-sm;
             vertical-alignment: center;
+        }
+        pair := PairButton {
+            item: root.item;
+            row-hover: touch.has-hover;
+            y: (parent.height - self.height) / 2;
         }
     }
 }
@@ -772,7 +831,7 @@ export component CoursePage inherits Flickable {
                     items := VerticalLayout {
                         for item[i] in group.items: Rectangle {
                             height: 42px;
-                            background: res-touch.has-hover ? Theme.surface-container : transparent;
+                            background: res-touch.has-hover || res-pair.hovered ? Theme.surface-container : transparent;
                             if i > 0: Rectangle {
                                 y: 0;
                                 height: 1px;
@@ -805,12 +864,101 @@ export component CoursePage inherits Flickable {
                                     font-size: Theme.label-sm;
                                     vertical-alignment: center;
                                 }
+                                res-pair := PairButton {
+                                    item: item;
+                                    row-hover: res-touch.has-hover;
+                                    y: (parent.height - self.height) / 2;
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/// A row of the pairing dialog: a section heading, or a lecture to click.
+component PairRowView inherits Rectangle {
+    in property <PairRow> entry;
+    height: root.entry.heading ? 30px : 36px;
+    border-radius: 6px;
+    background: !root.entry.heading && touch.has-hover ? Theme.surface-container-high : transparent;
+    accessible-role: button;
+    accessible-label: root.entry.title;
+    accessible-enabled: !root.entry.heading;
+    accessible-checked: root.entry.current;
+    accessible-action-default => { Course.pair-with(root.entry.id); }
+    touch := TouchArea {
+        enabled: !root.entry.heading;
+        mouse-cursor: pointer;
+        clicked => { Course.pair-with(root.entry.id); }
+    }
+    HorizontalLayout {
+        padding-left: root.entry.heading ? 4px : 12px;
+        padding-right: 8px;
+        spacing: 8px;
+        Text {
+            text: root.entry.title;
+            color: root.entry.heading ? Theme.on-surface-variant : Theme.on-surface;
+            font-size: root.entry.heading ? Theme.label-md : Theme.body-sm;
+            font-weight: root.entry.heading ? 600 : 500;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        if root.entry.current: Image {
+            source: @image-url("icons/check.svg");
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.primary;
+        }
+    }
+}
+
+/// A text box, as the dialogs use.
+export component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> multiline;
+    in property <bool> autofocus;
+    callback accepted;
+    callback edited(string);
+
+    height: root.multiline ? 60px : 40px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent-blue : Theme.outline-variant;
+    background: Theme.surface-container-low;
+
+    input := TextInput {
+        x: 12px;
+        y: root.multiline ? 8px : 0px;
+        width: parent.width - 24px;
+        height: root.multiline ? parent.height - 16px : parent.height;
+        single-line: !root.multiline;
+        wrap: root.multiline ? word-wrap : no-wrap;
+        vertical-alignment: root.multiline ? top : center;
+        color: Theme.on-surface;
+        font-size: Theme.body-md;
+        text <=> root.text;
+        init => {
+            if root.autofocus {
+                self.focus();
+            }
+        }
+        accepted => { root.accepted(); }
+        edited => { root.edited(self.text); }
+    }
+    if root.text == "": Text {
+        x: 12px;
+        y: input.y;
+        height: root.multiline ? 20px : parent.height;
+        text: root.placeholder;
+        color: Theme.on-surface-variant;
+        font-size: Theme.body-md;
+        vertical-alignment: center;
     }
 }
 
@@ -874,11 +1022,16 @@ export component CourseDialogs inherits Rectangle {
     // Slint measures wrapped text at its preferred width (one long line), so
     // the card would come out too short; capping max-width at the room
     // actually available makes the measured height the wrapped one.
-    property <length> card-width: min(448px, root.width - 32px);
+    property <length> card-width: min(Course.dialog == "pair" ? 520px : 448px, root.width - 32px);
     property <length> text-width: root.card-width - 40px;
 
     keys := FocusScope {
-        init => { self.focus(); }
+        // The pairing dialog focuses its filter box instead; Esc still bubbles here.
+        init => {
+            if Course.dialog != "pair" {
+                self.focus();
+            }
+        }
         key-pressed(event) => {
             if event.text == Key.Escape {
                 Course.dialog = "";
@@ -1006,6 +1159,110 @@ export component CourseDialogs inherits Rectangle {
                         font-size: Theme.label-sm;
                         wrap: word-wrap;
                         max-width: root.text-width;
+                    }
+                }
+
+                if Course.dialog == "pair": VerticalLayout {
+                    spacing: 12px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text {
+                                text: "Pair with a lecture";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                            }
+                            Text {
+                                text: Course.pair-name;
+                                color: Theme.on-surface;
+                                font-size: Theme.headline-sm;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                        }
+                        Rectangle {
+                            width: 32px;
+                            height: 32px;
+                            border-radius: 6px;
+                            background: pair-close.has-hover ? Theme.surface-container-highest : transparent;
+                            accessible-role: button;
+                            accessible-label: "Close";
+                            accessible-action-default => { Course.dialog = ""; }
+                            Image {
+                                source: @image-url("icons/x.svg");
+                                width: 18px;
+                                height: 18px;
+                                colorize: Theme.on-surface-variant;
+                            }
+                            pair-close := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Course.dialog = ""; }
+                            }
+                        }
+                    }
+                    Text {
+                        text: Course.pair-where;
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.body-sm;
+                        wrap: word-wrap;
+                        max-width: root.text-width;
+                    }
+                    Field {
+                        text <=> Course.pair-query;
+                        placeholder: "Filter lectures…";
+                        autofocus: true;
+                        edited(query) => { Course.pair-filter(query); }
+                    }
+                    if Course.pair-rows.length == 0: Text {
+                        text: "No lecture matches.";
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.body-sm;
+                        horizontal-alignment: center;
+                        height: 60px;
+                        vertical-alignment: center;
+                    }
+                    // Up to 80% of the window, then it scrolls.
+                    if Course.pair-rows.length > 0: Flickable {
+                        height: min(pair-list.preferred-height, root.height * 0.8 - 250px);
+                        content-width: self.width;
+                        content-height: pair-list.preferred-height;
+                        pair-list := VerticalLayout {
+                            width: parent.width;
+                            spacing: 2px;
+                            for row in Course.pair-rows: PairRowView {
+                                entry: row;
+                            }
+                        }
+                    }
+                    if Course.pair-error != "": Text {
+                        text: Course.pair-error;
+                        color: Theme.error;
+                        font-size: Theme.label-sm;
+                        wrap: word-wrap;
+                        max-width: root.text-width;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        DialogButton {
+                            text: "With no lecture";
+                            active: !Course.pair-none;
+                            clicked => { Course.pair-with(""); }
+                        }
+                        if Course.pair-manual: DialogButton {
+                            text: "Back to automatic";
+                            icon: @image-url("icons/rotate-ccw.svg");
+                            has-icon: true;
+                            clicked => { Course.pair-reset(); }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+                        DialogButton {
+                            text: "Cancel";
+                            clicked => { Course.dialog = ""; }
+                        }
                     }
                 }
 

@@ -114,6 +114,13 @@ pub fn relocate_course(
         params![course_id, new_folder, old_folder],
     )?;
     conn.execute(
+        "UPDATE resource_pairings
+            SET resource_path = ?2 || substr(resource_path, length(?3) + 1),
+                lecture_path = ?2 || substr(lecture_path, length(?3) + 1)
+          WHERE course_id = ?1",
+        params![course_id, new_folder, old_folder],
+    )?;
+    conn.execute(
         "UPDATE courses SET folder_path = ?2, scan_status = 'Ready' WHERE id = ?1",
         params![course_id, new_folder],
     )?;
@@ -534,12 +541,20 @@ pub fn restore_bookmark(
 }
 
 /// A course's resources (pdfs, archives, code, …), ordered by section then name.
+/// One paired by hand sits with its lecture (and in that lecture's section);
+/// a pairing whose lecture is gone counts for nothing.
 pub fn list_course_attachments(conn: &Connection, course_id: &str) -> Result<Vec<Attachment>> {
     let mut stmt = conn.prepare(
-        "SELECT a.id, a.name, a.file_path, a.kind, a.section_id, a.lecture_id,
-                ap.attachment_id IS NOT NULL
+        "SELECT a.id, a.name, a.file_path, a.kind,
+                COALESCE(pl.section_id, a.section_id),
+                CASE WHEN p.course_id IS NULL OR (p.lecture_path IS NOT NULL AND pl.id IS NULL)
+                     THEN a.lecture_id ELSE pl.id END,
+                ap.attachment_id IS NOT NULL,
+                p.course_id IS NOT NULL AND (p.lecture_path IS NULL OR pl.id IS NOT NULL)
            FROM attachments a
-           LEFT JOIN sections s ON s.id = a.section_id
+           LEFT JOIN resource_pairings p ON p.course_id = a.course_id AND p.resource_path = a.file_path
+           LEFT JOIN lectures pl ON pl.course_id = a.course_id AND pl.file_path = p.lecture_path
+           LEFT JOIN sections s ON s.id = COALESCE(pl.section_id, a.section_id)
            LEFT JOIN attachment_progress ap ON ap.attachment_id = a.id
           WHERE a.course_id = ?1
           ORDER BY COALESCE(s.position, -1), a.name",
@@ -554,10 +569,73 @@ pub fn list_course_attachments(conn: &Connection, course_id: &str) -> Result<Vec
                 section_id: r.get(4)?,
                 lecture_id: r.get(5)?,
                 completed: r.get(6)?,
+                paired: r.get(7)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// Pair a resource with a lecture of its course by hand, or (None) with no
+/// lecture.
+pub fn pair_resource(conn: &Connection, attachment_id: &str, lecture_id: Option<&str>) -> Result<()> {
+    let lecture_path: Option<String> = match lecture_id {
+        Some(lecture) => Some(
+            conn.query_row(
+                "SELECT l.file_path FROM lectures l JOIN attachments a ON a.course_id = l.course_id
+                  WHERE l.id = ?1 AND a.id = ?2",
+                params![lecture, attachment_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| DeskemyError::NotFound(format!("lecture {lecture} in this resource's course")))?,
+        ),
+        None => None,
+    };
+    conn.execute(
+        "INSERT INTO resource_pairings (course_id, resource_path, lecture_path)
+         SELECT course_id, file_path, ?2 FROM attachments WHERE id = ?1
+         ON CONFLICT (course_id, resource_path) DO UPDATE SET lecture_path = excluded.lecture_path",
+        params![attachment_id, lecture_path],
+    )?;
+    Ok(())
+}
+
+/// Back to the importer's placement.
+pub fn unpair_resource(conn: &Connection, attachment_id: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM resource_pairings
+          WHERE (course_id, resource_path) = (SELECT course_id, file_path FROM attachments WHERE id = ?1)",
+        params![attachment_id],
+    )?;
+    Ok(())
+}
+
+/// (resource_path, lecture_path) of a course's pairings, to carry over a
+/// re-import.
+pub fn resource_pairings(conn: &Connection, course_id: &str) -> Result<Vec<(String, Option<String>)>> {
+    let mut stmt = conn.prepare("SELECT resource_path, lecture_path FROM resource_pairings WHERE course_id = ?1")?;
+    let rows = stmt
+        .query_map(params![course_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Pair again after a re-import, if the resource (and lecture) are still there.
+pub fn restore_resource_pairing(
+    conn: &Connection,
+    course_id: &str,
+    resource_path: &str,
+    lecture_path: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO resource_pairings (course_id, resource_path, lecture_path)
+         SELECT ?1, ?2, ?3
+          WHERE EXISTS (SELECT 1 FROM attachments WHERE course_id = ?1 AND file_path = ?2)
+            AND (?3 IS NULL OR EXISTS (SELECT 1 FROM lectures WHERE course_id = ?1 AND file_path = ?3))",
+        params![course_id, resource_path, lecture_path],
+    )?;
+    Ok(())
 }
 
 /// Mark a resource done or not.

@@ -273,11 +273,24 @@ fn main() -> Result<(), slint::PlatformError> {
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("track")) {
             snapshot::sample_tracks(&ui, &tracks, page);
         }
-        // "course", or "course-cover" / "course-delete" with that dialog open.
+        // "course", or "course-cover" / "course-delete" with that dialog open;
+        // "course-pair[:<name>]" pairs the resource named so (the first one).
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
             snapshot::sample_course(&ui, &db, &course);
             let dialog = page.strip_prefix("course-").unwrap_or_default();
-            ui.global::<Course>().set_dialog(dialog.into());
+            match dialog.strip_prefix("pair") {
+                Some(name) => {
+                    let name = name.trim_start_matches(':');
+                    let resources = course
+                        .id()
+                        .and_then(|id| db::queries::list_course_attachments(&db.lock().unwrap_or_else(|e| e.into_inner()), &id).ok())
+                        .unwrap_or_default();
+                    if let Some(a) = resources.iter().find(|a| a.name.contains(name)) {
+                        course.pair_open(&ui, &a.id);
+                    }
+                }
+                None => ui.global::<Course>().set_dialog(dialog.into()),
+            }
         }
         ui.show()?;
         snapshot::save(&window, &path).map_err(slint::PlatformError::Other)?;
@@ -680,6 +693,30 @@ fn wire_course(
         }
     });
     course.on_open_resource(|path| open_resource(&path));
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_pair_open(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            p.pair_open(&ui, &id);
+        }
+    });
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_pair_filter(move |query| {
+        if let Some(ui) = weak.upgrade() {
+            p.pair_filter(&ui, &query);
+        }
+    });
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_pair_with(move |lecture| {
+        if let Some(ui) = weak.upgrade() {
+            p.pair_with(&ui, Some(lecture.as_str()).filter(|l| !l.is_empty()));
+        }
+    });
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_pair_reset(move || {
+        if let Some(ui) = weak.upgrade() {
+            p.pair_reset(&ui);
+        }
+    });
 }
 
 /// Open a resource in its default app. The shell can't take a path of 260+

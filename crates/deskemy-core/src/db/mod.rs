@@ -12,7 +12,7 @@ pub use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -249,6 +249,19 @@ fn migrate(conn: &Connection) -> Result<()> {
             "CREATE TABLE attachment_progress (
                  attachment_id TEXT PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
                  completed_at  INTEGER NOT NULL
+             );",
+        )?;
+    }
+    if version < 9 {
+        // Resources paired with a lecture by hand, over the importer's guess.
+        // By file path: a re-import makes new ids, the files keep their
+        // paths. A NULL lecture_path pairs it with no lecture.
+        tx.execute_batch(
+            "CREATE TABLE resource_pairings (
+                 course_id     TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                 resource_path TEXT NOT NULL,
+                 lecture_path  TEXT,
+                 PRIMARY KEY (course_id, resource_path)
              );",
         )?;
     }

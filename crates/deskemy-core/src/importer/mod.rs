@@ -40,6 +40,8 @@ struct Preserved {
     bookmarks: Vec<(String, Option<String>, f64, Option<String>, i64)>,
     /// (file_path, completed_at) of resources marked done
     resources_done: Vec<(String, i64)>,
+    /// (resource file_path, lecture file_path) of resources paired by hand
+    pairings: Vec<(String, Option<String>)>,
 }
 
 /// Metadata carried over from a previous import so an unchanged file's video
@@ -396,6 +398,10 @@ impl Importer {
             for (path, at) in &p.resources_done {
                 queries::restore_attachment_progress(&tx, &course_id, path, *at)?;
             }
+            // Dropped if the resource or its lecture is gone.
+            for (resource, lecture) in &p.pairings {
+                queries::restore_resource_pairing(&tx, &course_id, resource, lecture.as_deref())?;
+            }
         }
 
         tx.commit()?;
@@ -421,6 +427,7 @@ impl Importer {
             progress: queries::progress_with_files(conn, course_id)?,
             bookmarks: queries::bookmarks_with_files(conn, course_id)?,
             resources_done: queries::attachment_progress_with_files(conn, course_id)?,
+            pairings: queries::resource_pairings(conn, course_id)?,
         })
     }
 

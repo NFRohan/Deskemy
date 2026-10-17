@@ -555,3 +555,72 @@ fn resources_marked_done_survive_a_reimport() {
     db::queries::set_attachment_completed(&conn, &first.id, false).unwrap();
     assert!(!db::queries::list_course_attachments(&conn, &id).unwrap()[0].completed);
 }
+
+#[test]
+fn resources_paired_by_hand_stay_paired() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Course");
+    let (s1, s2) = (course.join("01 Basics"), course.join("02 More"));
+    fs::create_dir_all(&s1).unwrap();
+    fs::create_dir_all(&s2).unwrap();
+    touch(&s1.join("01 Lesson.mp4"));
+    touch(&s1.join("01 Lesson.pdf"));
+    touch(&s1.join("cheatsheet.pdf"));
+    touch(&s2.join("02 Next.mp4"));
+
+    let mut conn = db::open_in_memory().unwrap();
+    let importer = Importer::new(Box::new(StubProber));
+    let id = importer.import_course(&mut conn, None, &course).unwrap();
+    let detail = |conn: &db::Connection, id: &str| db::queries::get_course_detail(conn, id).unwrap().unwrap();
+    let find = |conn: &db::Connection, id: &str, name: &str| {
+        db::queries::list_course_attachments(conn, id).unwrap().into_iter().find(|a| a.name == name).unwrap()
+    };
+    let d = detail(&conn, &id);
+    let (lesson, next) = (&d.sections[0].lectures[0], &d.sections[1].lectures[0]);
+    let sheet = find(&conn, &id, "cheatsheet.pdf");
+    assert!(!sheet.paired && sheet.lecture_id.is_none());
+    assert_eq!(find(&conn, &id, "01 Lesson.pdf").lecture_id.as_deref(), Some(lesson.id.as_str()));
+
+    // With a lecture of another section: it moves there, section and all.
+    db::queries::pair_resource(&conn, &sheet.id, Some(&next.id)).unwrap();
+    let sheet = find(&conn, &id, "cheatsheet.pdf");
+    assert!(sheet.paired);
+    assert_eq!(sheet.lecture_id.as_deref(), Some(next.id.as_str()));
+    assert_eq!(sheet.section_id.as_deref(), Some(d.sections[1].id.as_str()));
+    // With no lecture: off its guessed lecture, in its own section.
+    let pdf = find(&conn, &id, "01 Lesson.pdf");
+    db::queries::pair_resource(&conn, &pdf.id, None).unwrap();
+    let pdf = find(&conn, &id, "01 Lesson.pdf");
+    assert!(pdf.paired && pdf.lecture_id.is_none());
+    assert_eq!(pdf.section_id.as_deref(), Some(d.sections[0].id.as_str()));
+    // A lecture of another course is refused.
+    assert!(db::queries::pair_resource(&conn, &pdf.id, Some("not-a-lecture")).is_err());
+
+    // A re-import (new ids) keeps both.
+    let id = importer.import_course(&mut conn, None, &course).unwrap();
+    let next_id = detail(&conn, &id).sections[1].lectures[0].id.clone();
+    assert_eq!(find(&conn, &id, "cheatsheet.pdf").lecture_id, Some(next_id));
+    assert!(find(&conn, &id, "01 Lesson.pdf").paired);
+
+    // So does moving the folder.
+    let moved = tmp.path().join("Moved");
+    fs::rename(&course, &moved).unwrap();
+    db::queries::relocate_course(&conn, &id, &course.to_string_lossy(), &moved.to_string_lossy()).unwrap();
+    assert!(find(&conn, &id, "cheatsheet.pdf").paired);
+    assert!(find(&conn, &id, "01 Lesson.pdf").paired);
+
+    // Its lecture gone: back to the importer's guess.
+    fs::remove_file(moved.join("02 More").join("02 Next.mp4")).unwrap();
+    touch(&moved.join("02 More").join("03 Other.mp4"));
+    let id = importer.import_course(&mut conn, None, &moved).unwrap();
+    let sheet = find(&conn, &id, "cheatsheet.pdf");
+    assert!(!sheet.paired && sheet.lecture_id.is_none());
+
+    // Back to automatic.
+    let pdf = find(&conn, &id, "01 Lesson.pdf");
+    db::queries::unpair_resource(&conn, &pdf.id).unwrap();
+    let pdf = find(&conn, &id, "01 Lesson.pdf");
+    let lesson_id = detail(&conn, &id).sections[0].lectures[0].id.clone();
+    assert!(!pdf.paired);
+    assert_eq!(pdf.lecture_id, Some(lesson_id));
+}

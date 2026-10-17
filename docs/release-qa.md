@@ -88,7 +88,8 @@ $pages = "", "favorites", "history", "bookmarks", "stats", "settings", "settings
          "import-preview", "import-scanning", "import-batch", "import-batch-running", "drop",
          "search:quokka", "search:ornitorrinco", "search:pangolin",
          "tracks", "tracks-create", "track", "track-add", "track-edit", "track-delete",
-         "course", "course-cover", "course-delete", "update:library", "update:settings-downloading"
+         "course", "course-cover", "course-delete", "course-pair:Configuring",
+         "update:library", "update:settings-downloading"
 foreach ($p in $pages) { & $exe --snapshot "$out\page-$($p -replace '[:]','_').png" $p | Out-Null }
 $menus = "", "speed", "sub", "audio", "chapters", "sleep", "bookmark", "shortcuts", "stats",
          "content", "resources", "exercise", "speed-saved", "fullscreen", "mini", "mini-exercise", "light"
@@ -97,7 +98,7 @@ $env:DESKEMY_SNAPSHOT_WIDTH = 900; $env:DESKEMY_SNAPSHOT_HEIGHT = 600
 foreach ($p in "", "course", "stats", "settings") { & $exe --snapshot "$out\min-page-$p.png" $p | Out-Null }
 & $exe --snapshot-player "$out\min-player.png" "" | Out-Null
 Remove-Item Env:DESKEMY_SNAPSHOT_WIDTH, Env:DESKEMY_SNAPSHOT_HEIGHT, Env:DESKEMY_SNAPSHOT_COURSE
-"$((Get-ChildItem $out -Filter *.png).Count) images (expect 52)"
+"$((Get-ChildItem $out -Filter *.png).Count) images (expect 53)"
 ```
 
 Check what the real import gave:
@@ -287,6 +288,11 @@ one users get.
   - **Locate folder** with the wrong folder is refused; with the renamed one it works.
 - [ ] Remove from library: the course is gone, and the files are still on disk.
 - [ ] Re-import the same folder: the preview says Re-import, and progress is kept.
+- [ ] Pairing a resource by hand (hover a resource row, the link button):
+  - The dialog says where it is now ("Placed automatically with “…”") and ticks that lecture; the filter narrows by lecture or section name.
+  - Pair `003 Configuring Git` with a lecture in **Formats**: it moves under that lecture (and to Formats in the Resources list), and the player's Resources panel shows it in Formats.
+  - "With no lecture" puts it at the end of its section; "Back to automatic" returns it between lectures 2 and 4.
+  - It stays paired after a re-import (Add Folder on the same folder), and after Settings → Locate folder on a moved copy.
 - [ ] Drag and drop, from Explorer onto the library (on a scratch library: `DESKEMY_DATA_DIR`):
   - Dragging over the window shows "Drop to import"; dragging back out clears it.
   - `Deskemy QA Course` alone opens its preview, as Add Folder does.
