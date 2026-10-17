@@ -46,6 +46,36 @@ pub fn steady_chapters(
     }
 }
 
+/// A language tag's family, to match "pt", "pt-BR", "por" and "POR" alike:
+/// its first part, lowercase, with the common three-letter codes (Matroska's)
+/// as their two-letter ones.
+pub fn language_family(tag: &str) -> String {
+    let primary = tag.split(['-', '_']).next().unwrap_or_default().to_lowercase();
+    const THREE: &[(&str, &str)] = &[
+        ("eng", "en"), ("por", "pt"), ("spa", "es"), ("fre", "fr"), ("fra", "fr"), ("ger", "de"), ("deu", "de"),
+        ("ita", "it"), ("rus", "ru"), ("chi", "zh"), ("zho", "zh"), ("jpn", "ja"), ("kor", "ko"), ("ara", "ar"),
+        ("hin", "hi"), ("tur", "tr"), ("pol", "pl"), ("dut", "nl"), ("nld", "nl"), ("ind", "id"), ("vie", "vi"),
+        ("ben", "bn"), ("ukr", "uk"), ("per", "fa"), ("fas", "fa"), ("heb", "he"), ("tha", "th"), ("swe", "sv"),
+    ];
+    THREE.iter().find(|(three, _)| *three == primary).map_or(primary, |(_, two)| two.to_string())
+}
+
+/// The track that shows a remembered subtitle choice in this file: the same
+/// language tag, else the same language family ("pt-BR" for "pt"), its title
+/// settling a tie; for a choice without a language ("" — a plain `.srt`),
+/// the first track without one. None: this file has no such track.
+pub fn pick_subtitle(lang: &str, title: Option<&str>, subs: &[Track]) -> Option<i64> {
+    let best = |same: &dyn Fn(&Track) -> bool| {
+        let matching: Vec<&Track> = subs.iter().filter(|t| same(t)).collect();
+        matching.iter().find(|t| t.title.as_deref() == title).or(matching.first()).map(|t| t.id)
+    };
+    if lang.is_empty() {
+        return best(&|t| t.lang.as_deref().unwrap_or_default().is_empty());
+    }
+    best(&|t| t.lang.as_deref().is_some_and(|l| l.eq_ignore_ascii_case(lang)))
+        .or_else(|| best(&|t| t.lang.as_deref().is_some_and(|l| language_family(l) == language_family(lang))))
+}
+
 /// Everything the menus show, read from mpv in one go.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Tracks {
@@ -200,6 +230,31 @@ mod tests {
             title: title.map(Into::into),
             filename: filename.map(Into::into),
         }
+    }
+
+    #[test]
+    fn a_remembered_subtitle_is_found_by_language_not_number() {
+        let subs = |langs: &[Option<&str>]| -> Vec<Track> {
+            langs.iter().enumerate().map(|(i, l)| track(i as i64 + 1, *l, None, None)).collect()
+        };
+        // Portuguese is track 2 in one lecture, 1 or 3 in others (GH #11).
+        assert_eq!(pick_subtitle("pt", None, &subs(&[Some("en"), Some("pt")])), Some(2));
+        assert_eq!(pick_subtitle("pt", None, &subs(&[Some("pt")])), Some(1));
+        assert_eq!(pick_subtitle("pt", None, &subs(&[Some("es"), Some("fr"), Some("pt")])), Some(3));
+        // Not there: none, rather than another language.
+        assert_eq!(pick_subtitle("pt", None, &subs(&[Some("en"), Some("es")])), None);
+        // The family when the exact tag isn't there; the exact one first.
+        assert_eq!(pick_subtitle("pt", None, &subs(&[Some("en"), Some("pt-BR")])), Some(2));
+        assert_eq!(pick_subtitle("pt", None, &subs(&[Some("por")])), Some(1));
+        assert_eq!(pick_subtitle("pt-BR", None, &subs(&[Some("pt"), Some("pt-BR")])), Some(2));
+        // No language: the plain sidecar, not a tagged one.
+        assert_eq!(pick_subtitle("", None, &subs(&[Some("en"), None])), Some(2));
+        // Two of one language: the title decides.
+        let two = vec![track(1, Some("en"), Some("Full"), None), track(2, Some("en"), Some("SDH"), None)];
+        assert_eq!(pick_subtitle("en", Some("SDH"), &two), Some(2));
+        assert_eq!(pick_subtitle("en", Some("Forced"), &two), Some(1));
+        assert_eq!(language_family("POR"), "pt");
+        assert_eq!(language_family("zh_Hans"), "zh");
     }
 
     #[test]

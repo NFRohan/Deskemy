@@ -460,6 +460,7 @@ caught it.
 | Grayscale player text looked worse than subpixel (2.0.2 dev) | Player → text sharpness |
 | Packaging deleted the previous installers (2.0 dev) | §3 files present |
 | A video whose path is over 260 characters imported as unplayable (1.x–2.0.2) | §2 import preview (1 unplayable, not 2); Player → lecture 013 |
+| The subtitle language changed or went off in the next lecture (#11) | QA Course lecture 2 ("Two Subtitle Languages"): pick the second language, then step through the lectures: each one with that language shows it, the others show none; a restart keeps it |
 | Add Folder did nothing when the dialog couldn't open (Linux, #10) | Linux only: no session bus and no zenity shows a message above Add Folder |
 | Two copies on one library could lose each other's writes (2.0–2.0.2) | §7 single copy |
 | `--verify-update` in PowerShell printed nothing, which looked like a pass (2.0.2 QA) | §3, `\| Write-Output` |

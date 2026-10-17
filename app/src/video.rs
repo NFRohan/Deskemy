@@ -938,6 +938,14 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             shown_tracks = Some(signature);
             let mut t = tracks::read(mpv);
             let path = mpv.get_property_string("path");
+            // The course's subtitle language, found among this file's tracks.
+            if let Some(sid) = session.settle_subtitle(path.as_deref(), &t) {
+                if let Err(e) = mpv.set_property("sid", &sid) {
+                    tracing::warn!(error = %e, sid, "remembered subtitle");
+                }
+                // The menus catch up on the next tick (the signature moved).
+                t.sid = sid.parse().ok();
+            }
             t.chapters =
                 tracks::steady_chapters(std::mem::take(&mut t.chapters), t.chapters_known, path.as_deref(), &mut known_chapters);
             Menus::from(&t)

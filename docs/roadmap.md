@@ -113,6 +113,15 @@ what's paired with the lecture.
   tried it; close then.
 - **#10 Add Folder silent when the dialog can't open** (Linux) — see
   [2.0.3](#203).
+- **#11 Subtitle language not kept from lecture to lecture** — fixed for
+  2.1: the choice was saved as mpv's track number, which differs per file
+  (embedded tracks, then each lecture's own sidecars), so the next lecture
+  showed another language, or none where that number didn't exist. Now
+  it's saved by language (and title), and found in each file's tracks; a
+  lecture without it shows none. 2.0's saved numbers turn into a language
+  the first time the course plays. Schema v10. Reply on the issue when 2.1
+  is out. (Audio tracks are still remembered by number: courses rarely have
+  more than one.)
 
 ## Windows polish
 

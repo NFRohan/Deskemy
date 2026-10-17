@@ -20,15 +20,22 @@ fn clearing_speeds_keeps_track_choices() {
     let (linux, docker, k8s) = (import("Linux"), import("Docker"), import("Kubernetes"));
 
     queries::set_pref_speed(&conn, &linux, 1.0).unwrap();
-    queries::set_pref_subtitle(&conn, &linux, Some(2)).unwrap();
+    let pick = queries::SubtitlePick { id: 2, lang: "pt", title: None };
+    queries::set_pref_subtitle(&conn, &linux, Some(pick)).unwrap();
     queries::set_pref_speed(&conn, &docker, 1.5).unwrap();
     queries::set_pref_speed(&conn, &k8s, 2.0).unwrap();
-    let speed = |conn: &db::Connection, id: &str| queries::get_course_prefs(conn, id).unwrap().and_then(|p| p.0);
+    let speed = |conn: &db::Connection, id: &str| queries::get_course_prefs(conn, id).unwrap().and_then(|p| p.speed);
 
     // One course.
     assert_eq!(queries::clear_pref_speed(&conn, Some(&linux)).unwrap(), 1);
     assert_eq!(speed(&conn, &linux), None);
-    assert_eq!(queries::get_course_prefs(&conn, &linux).unwrap().unwrap().1, Some(2), "subtitle kept");
+    let prefs = queries::get_course_prefs(&conn, &linux).unwrap().unwrap();
+    assert_eq!((prefs.subtitles_on, prefs.subtitle_lang.as_deref()), (true, Some("pt")), "subtitle kept");
+
+    // Off keeps the language, for when it's turned back on.
+    queries::set_pref_subtitle(&conn, &linux, None).unwrap();
+    let prefs = queries::get_course_prefs(&conn, &linux).unwrap().unwrap();
+    assert_eq!((prefs.subtitles_on, prefs.subtitle_lang.as_deref()), (false, Some("pt")));
     assert_eq!(speed(&conn, &docker), Some(1.5));
 
     // Every course; already-cleared ones don't count.

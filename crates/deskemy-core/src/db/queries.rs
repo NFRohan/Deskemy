@@ -3,7 +3,7 @@
 
 use crate::db::{new_id, now};
 use crate::domain::{
-    Attachment, Bookmark, BookmarkDetail, CourseDetail, CourseSummary, DayActivity, HistoryEntry,
+    Attachment, Bookmark, BookmarkDetail, CourseDetail, CoursePrefs, CourseSummary, DayActivity, HistoryEntry,
     Lecture, LibraryStats, Section, SearchHit, SubtitleHit, TrackCourse, TrackDetail, TrackSummary,
 };
 use crate::error::{DeskemyError, Result};
@@ -1222,17 +1222,23 @@ pub fn get_lecture_view(
 
 // --- Per-course playback preferences ---
 
-/// (speed, subtitle_id, subtitles_on, audio_id) for a course, if recorded.
-#[allow(clippy::type_complexity)]
-pub fn get_course_prefs(
-    conn: &Connection,
-    course_id: &str,
-) -> Result<Option<(Option<f64>, Option<i64>, bool, Option<i64>)>> {
+/// A course's remembered playback choices, if any.
+pub fn get_course_prefs(conn: &Connection, course_id: &str) -> Result<Option<CoursePrefs>> {
     Ok(conn
         .query_row(
-            "SELECT speed, subtitle_id, subtitles_on, audio_id FROM course_prefs WHERE course_id = ?1",
+            "SELECT speed, subtitles_on, subtitle_lang, subtitle_title, subtitle_id, audio_id
+               FROM course_prefs WHERE course_id = ?1",
             params![course_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?)),
+            |r| {
+                Ok(CoursePrefs {
+                    speed: r.get(0)?,
+                    subtitles_on: r.get::<_, i64>(1)? != 0,
+                    subtitle_lang: r.get(2)?,
+                    subtitle_title: r.get(3)?,
+                    subtitle_id: r.get(4)?,
+                    audio_id: r.get(5)?,
+                })
+            },
         )
         .optional()?)
 }
@@ -1255,14 +1261,24 @@ pub fn clear_pref_speed(conn: &Connection, course_id: Option<&str>) -> Result<us
     )?)
 }
 
-/// Remember the subtitle selection: `Some(id)` records the track and marks subs
+/// A subtitle track as remembered: its number in the file it was picked in,
+/// its language ("" for none) and its title.
+pub struct SubtitlePick<'a> {
+    pub id: i64,
+    pub lang: &'a str,
+    pub title: Option<&'a str>,
+}
+
+/// Remember the subtitle selection: `Some` records the track and marks subs
 /// on; `None` just marks subs off (keeps the last selected track).
-pub fn set_pref_subtitle(conn: &Connection, course_id: &str, sid: Option<i64>) -> Result<()> {
-    match sid {
-        Some(id) => conn.execute(
-            "INSERT INTO course_prefs (course_id, subtitle_id, subtitles_on) VALUES (?1, ?2, 1)
-             ON CONFLICT(course_id) DO UPDATE SET subtitle_id = ?2, subtitles_on = 1",
-            params![course_id, id],
+pub fn set_pref_subtitle(conn: &Connection, course_id: &str, pick: Option<SubtitlePick>) -> Result<()> {
+    match pick {
+        Some(p) => conn.execute(
+            "INSERT INTO course_prefs (course_id, subtitle_id, subtitle_lang, subtitle_title, subtitles_on)
+             VALUES (?1, ?2, ?3, ?4, 1)
+             ON CONFLICT(course_id) DO UPDATE
+                SET subtitle_id = ?2, subtitle_lang = ?3, subtitle_title = ?4, subtitles_on = 1",
+            params![course_id, p.id, p.lang, p.title],
         )?,
         None => conn.execute(
             "INSERT INTO course_prefs (course_id, subtitles_on) VALUES (?1, 0)

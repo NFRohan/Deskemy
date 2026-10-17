@@ -99,6 +99,19 @@ struct Inner {
     /// Lectures already counted as completed today (count each once).
     completed: HashSet<String>,
     sleep: Sleep,
+    /// The course's subtitle choice, still to find among the tracks of the
+    /// file loading (as passed to mpv: its `path` once it's loaded).
+    subtitle: Option<(String, Remembered)>,
+}
+
+/// A remembered subtitle choice, waiting for a file's tracks.
+#[derive(Clone, Debug)]
+enum Remembered {
+    /// By language ("" for none) and title: the same in every lecture.
+    Track { lang: String, title: Option<String> },
+    /// By number only (recorded before 2.1): read once in the file it was
+    /// picked in, and remembered by language from then on.
+    Number(i64),
 }
 
 /// Speeds from the menu and from config: equal, give or take float noise.
@@ -220,7 +233,7 @@ impl Session {
         // A course's saved speed overrides the default where present.
         let prefs = queries::get_course_prefs(&db, &course_id).ok().flatten();
         let default_speed = settings::lock(&self.config).default_speed;
-        let saved_speed = prefs.and_then(|p| p.0);
+        let saved_speed = prefs.as_ref().and_then(|p| p.speed);
         let speed = saved_speed.unwrap_or(default_speed);
         let view = queries::get_lecture_view(&db, &item.lecture_id).ok().flatten();
         let up_next = inner
@@ -241,21 +254,27 @@ impl Session {
         loaded.map_err(|e| e.to_string())?;
         let _ = self.mpv.set_property("pause", "no");
         let _ = self.mpv.set_property("speed", &speed.to_string());
-        // Remembered audio/subtitle choice (mpv applies it once tracks load).
-        if let Some((_, sub_id, subs_on, audio_id)) = prefs {
-            if let Some(a) = audio_id {
-                let _ = self.mpv.set_property("aid", &a.to_string());
-            }
-            match (subs_on, sub_id) {
-                (true, Some(s)) => {
-                    let _ = self.mpv.set_property("sid", &s.to_string());
-                }
-                (false, _) => {
-                    let _ = self.mpv.set_property("sid", "no");
-                }
-                _ => {}
-            }
+        // Remembered audio choice (mpv applies it once tracks load).
+        if let Some(a) = prefs.as_ref().and_then(|p| p.audio_id) {
+            let _ = self.mpv.set_property("aid", &a.to_string());
         }
+        // The subtitle choice: a track's number differs from file to file
+        // (GH #11), so it's found by language once this file's tracks are in
+        // (`settle_subtitle`); none until then. mpv keeps the last file's
+        // `sid`, so it's always set here.
+        let (sid, remembered) = match &prefs {
+            Some(p) if !p.subtitles_on => ("no".to_string(), None),
+            Some(p) => match (&p.subtitle_lang, p.subtitle_id) {
+                (Some(lang), _) => {
+                    ("no".to_string(), Some(Remembered::Track { lang: lang.clone(), title: p.subtitle_title.clone() }))
+                }
+                (None, Some(id)) => (id.to_string(), Some(Remembered::Number(id))),
+                (None, None) => ("auto".to_string(), None),
+            },
+            None => ("auto".to_string(), None),
+        };
+        let _ = self.mpv.set_property("sid", &sid);
+        inner.subtitle = remembered.map(|r| (file.to_string(), r));
 
         let (title, course_id, course, section) = match view {
             Some(view) => view,
@@ -404,11 +423,54 @@ impl Session {
         self.set_speed(settings::lock(&self.config).default_speed);
     }
 
-    /// Pick a subtitle track (None = off) and remember it for this course.
+    /// Pick a subtitle track (None = off) and remember it for this course,
+    /// by its language and title.
     pub fn set_subtitle(&self, sid: Option<i64>) {
+        self.inner().subtitle = None;
         let value = sid.map_or_else(|| "no".to_string(), |s| s.to_string());
-        if self.set("sid", &value) {
-            self.remember(|db, course| queries::set_pref_subtitle(db, course, sid));
+        if !self.set("sid", &value) {
+            return;
+        }
+        let track = sid.and_then(|id| crate::tracks::read(&self.mpv).subtitles.into_iter().find(|t| t.id == id));
+        if sid.is_some() && track.is_none() {
+            tracing::warn!(?sid, "picked subtitle track not in the track list; not remembered");
+            return;
+        }
+        self.remember_subtitle(track.as_ref());
+    }
+
+    fn remember_subtitle(&self, track: Option<&crate::tracks::Track>) {
+        let pick = track.map(|t| queries::SubtitlePick {
+            id: t.id,
+            lang: t.lang.as_deref().unwrap_or_default(),
+            title: t.title.as_deref(),
+        });
+        self.remember(|db, course| queries::set_pref_subtitle(db, course, pick));
+    }
+
+    /// The loaded file's tracks are in (or changed): show the course's
+    /// remembered subtitle in it. The player's event thread calls this as
+    /// tracks change; a sidecar can attach after the file opens, so the
+    /// choice stays wanted for the whole file, until another pick. Returns
+    /// the `sid` to set, if it must change.
+    pub fn settle_subtitle(&self, path: Option<&str>, tracks: &crate::tracks::Tracks) -> Option<String> {
+        let (file, remembered) = self.inner().subtitle.clone()?;
+        if path != Some(file.as_str()) {
+            return None;
+        }
+        match remembered {
+            Remembered::Track { lang, title } => {
+                let want = crate::tracks::pick_subtitle(&lang, title.as_deref(), &tracks.subtitles);
+                (want != tracks.sid).then(|| want.map_or_else(|| "no".to_string(), |id| id.to_string()))
+            }
+            // Selected by number at load: remember what that is, by language.
+            Remembered::Number(id) => {
+                let track = tracks.subtitles.iter().find(|t| t.id == id)?;
+                self.remember_subtitle(Some(track));
+                let lang = track.lang.clone().unwrap_or_default();
+                self.inner().subtitle = Some((file, Remembered::Track { lang, title: track.title.clone() }));
+                None
+            }
         }
     }
 
@@ -855,5 +917,120 @@ mod tests {
         assert_eq!(candidates, vec!["gone-after-a-rescan".to_string(), lectures[0].clone()]);
         assert!(session.open(&candidates[0]).is_err());
         assert!(session.open(&candidates[1]).is_ok());
+    }
+
+    /// A course of real (tiny) videos with sidecar subtitles, made by ffmpeg:
+    /// each entry a video's stem and its subtitle languages. None without
+    /// ffmpeg.
+    fn library_with_subtitles(lectures: &[(&str, &[&str])]) -> Option<(tempfile::TempDir, Db, Vec<String>)> {
+        let tmp = tempfile::tempdir().unwrap();
+        let course = tmp.path().join("Course");
+        std::fs::create_dir_all(&course).unwrap();
+        for (stem, langs) in lectures {
+            let video = course.join(format!("{stem}.mp4"));
+            let made = std::process::Command::new("ffmpeg")
+                .args(["-v", "error", "-f", "lavfi", "-i", "color=c=black:s=64x36:d=3", "-c:v", "mpeg4", "-y"])
+                .arg(&video)
+                .status();
+            if !made.is_ok_and(|s| s.success()) {
+                eprintln!("ffmpeg not available — skipping");
+                return None;
+            }
+            for lang in *langs {
+                let cue = format!("1\n00:00:00,000 --> 00:00:03,000\n{lang}\n");
+                std::fs::write(course.join(format!("{stem}.{lang}.srt")), cue).unwrap();
+            }
+        }
+        let mut conn = deskemy_core::db::open(&tmp.path().join("deskemy.db")).unwrap();
+        let course_id = Importer::new(Box::new(StubProber)).import_course(&mut conn, None, &course).unwrap();
+        let lectures = queries::list_course_playlist(&conn, &course_id).unwrap().into_iter().map(|(id, _)| id).collect();
+        Some((tmp, Arc::new(Mutex::new(conn)), lectures))
+    }
+
+    /// Wait for the loaded file's tracks (sidecars attach as it opens), then
+    /// do what the player's event thread does with them.
+    fn settle(session: &Session, mpv: &Mpv) -> crate::tracks::Tracks {
+        let t = settle_tracks(session, mpv);
+        match session.settle_subtitle(mpv.get_property_string("path").as_deref(), &t) {
+            Some(sid) => {
+                mpv.set_property("sid", &sid).unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                crate::tracks::read(mpv)
+            }
+            None => t,
+        }
+    }
+
+    fn settle_tracks(session: &Session, mpv: &Mpv) -> crate::tracks::Tracks {
+        let path = {
+            let inner = session.inner();
+            inner.items.get(inner.index).map(|i| i.path.clone())
+        };
+        let started = Instant::now();
+        while started.elapsed() < std::time::Duration::from_secs(5) {
+            let loaded = mpv.get_property_string("path") == path.as_deref().map(|p| mpv::file_arg(p).into_owned());
+            if loaded && mpv.get_i64("track-list/count").unwrap_or(0) > 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        crate::tracks::read(mpv)
+    }
+
+    fn shown_language(t: &crate::tracks::Tracks) -> Option<String> {
+        let sid = t.sid?;
+        t.subtitles.iter().find(|s| s.id == sid)?.lang.clone()
+    }
+
+    #[test]
+    fn the_subtitle_language_follows_from_lecture_to_lecture() {
+        let Some(mpv) = headless_mpv() else { return };
+        let _ = mpv.set_property("sub-auto", "fuzzy");
+        // Track 2 is Portuguese in the first lecture only.
+        let Some((_tmp, db, lectures)) =
+            library_with_subtitles(&[("001 First", &["en", "pt"]), ("002 Second", &["pt"]), ("003 Third", &["es", "fr", "pt"])])
+        else {
+            return;
+        };
+        let session = Session::new(mpv.clone(), db, settings::shared(AppConfig::default()));
+
+        session.open(&lectures[0]).unwrap();
+        let t = settle(&session, &mpv);
+        let pt = t.subtitles.iter().find(|s| s.lang.as_deref() == Some("pt")).expect("a Portuguese track").id;
+        session.set_subtitle(Some(pt));
+        assert_eq!(shown_language(&settle(&session, &mpv)).as_deref(), Some("pt"));
+
+        session.step(1).unwrap();
+        assert_eq!(shown_language(&settle(&session, &mpv)).as_deref(), Some("pt"), "the second lecture");
+        session.step(1).unwrap();
+        assert_eq!(shown_language(&settle(&session, &mpv)).as_deref(), Some("pt"), "the third lecture");
+
+        // Off stays off.
+        session.set_subtitle(None);
+        session.step(-1).unwrap();
+        assert_eq!(settle(&session, &mpv).sid, None);
+    }
+
+    #[test]
+    fn a_subtitle_remembered_by_number_becomes_a_language() {
+        let Some(mpv) = headless_mpv() else { return };
+        let _ = mpv.set_property("sub-auto", "fuzzy");
+        let Some((_tmp, db, lectures)) = library_with_subtitles(&[("001 First", &["en", "pt"]), ("002 Second", &["es", "fr", "pt"])])
+        else {
+            return;
+        };
+        // As 2.0 saved it: track 2 (Portuguese in the first lecture), no language.
+        {
+            let conn = db.lock().unwrap();
+            let course = queries::get_lecture_playback(&conn, &lectures[0]).unwrap().unwrap().1;
+            conn.execute("INSERT INTO course_prefs (course_id, subtitle_id, subtitles_on) VALUES (?1, 2, 1)", [&course]).unwrap();
+        }
+        let session = Session::new(mpv.clone(), db, settings::shared(AppConfig::default()));
+        session.open(&lectures[0]).unwrap();
+        assert_eq!(shown_language(&settle(&session, &mpv)).as_deref(), Some("pt"));
+        // From then on it's Portuguese, not track 2 (French here).
+        session.step(1).unwrap();
+        assert_eq!(shown_language(&settle(&session, &mpv)).as_deref(), Some("pt"));
     }
 }

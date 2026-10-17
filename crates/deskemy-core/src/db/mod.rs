@@ -12,7 +12,7 @@ pub use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 10;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -263,6 +263,15 @@ fn migrate(conn: &Connection) -> Result<()> {
                  lecture_path  TEXT,
                  PRIMARY KEY (course_id, resource_path)
              );",
+        )?;
+    }
+    if version < 10 {
+        // The subtitle choice by language (and title): a track's number
+        // differs from one lecture's file to the next (GH #11). '' is a track
+        // with no language; NULL, a choice recorded by number only (before).
+        tx.execute_batch(
+            "ALTER TABLE course_prefs ADD COLUMN subtitle_lang TEXT;
+             ALTER TABLE course_prefs ADD COLUMN subtitle_title TEXT;",
         )?;
     }
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;

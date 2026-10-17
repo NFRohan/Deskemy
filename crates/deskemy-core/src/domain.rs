@@ -138,6 +138,20 @@ pub struct LibraryStats {
     pub activity: Vec<DayActivity>,
 }
 
+/// A course's playback choices, remembered as they're made in the player.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CoursePrefs {
+    pub speed: Option<f64>,
+    pub subtitles_on: bool,
+    /// The subtitle track's language ("" for none) and title. None: recorded
+    /// by an older Deskemy, by track number only.
+    pub subtitle_lang: Option<String>,
+    pub subtitle_title: Option<String>,
+    /// The track's number in the file it was picked in.
+    pub subtitle_id: Option<i64>,
+    pub audio_id: Option<i64>,
+}
+
 /// A non-media resource that shipped with a course (pdf, zip, code, …).
 #[derive(Debug, Clone, Serialize)]
 pub struct Attachment {
