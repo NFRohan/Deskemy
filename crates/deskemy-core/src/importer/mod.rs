@@ -239,7 +239,7 @@ impl Importer {
         plan: &ImportPlan,
     ) -> Result<String> {
         // The guard ends with this statement: indexing locks again.
-        let id = self.persist(&mut db.lock().unwrap_or_else(|e| e.into_inner()), root_id, snap, plan)?;
+        let id = self.persist(&mut crate::db::lock(db), root_id, snap, plan)?;
         match crate::maintenance::index_course_subtitles(db, &id) {
             Ok(cues) => tracing::debug!(course = %id, cues, "indexed subtitles"),
             Err(e) => tracing::warn!(course = %id, error = %e, "index subtitles"),

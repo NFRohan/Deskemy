@@ -124,6 +124,7 @@ pub enum Opener {
 }
 
 pub struct Viewer {
+    db: crate::session::Db,
     shared: Arc<Shared>,
     state: RefCell<State>,
     started: RefCell<bool>,
@@ -132,8 +133,14 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    pub fn new() -> std::rc::Rc<Self> {
-        std::rc::Rc::new(Viewer { shared: Arc::default(), state: RefCell::default(), started: RefCell::new(false), resource: RefCell::default() })
+    pub fn new(db: crate::session::Db) -> std::rc::Rc<Self> {
+        std::rc::Rc::new(Viewer {
+            db,
+            shared: Arc::default(),
+            state: RefCell::default(),
+            started: RefCell::new(false),
+            resource: RefCell::default(),
+        })
     }
 
     /// Open a resource: a PDF in the viewer (when PDFium is here), anything
@@ -154,10 +161,21 @@ impl Viewer {
     pub fn mark_done(&self, ui: &AppWindow, done: bool) {
         let Some((id, from)) = self.resource.borrow().clone() else { return };
         match from {
-            Opener::Course => ui.global::<Course>().invoke_toggle_resource(id.into(), done),
-            Opener::Player => ui.global::<Playback>().invoke_toggle_resource(id.into(), done),
+            Opener::Course => ui.global::<Course>().invoke_toggle_resource(id.clone().into(), done),
+            Opener::Player => ui.global::<Playback>().invoke_toggle_resource(id.clone().into(), done),
         }
-        ui.global::<Pdf>().set_done(done);
+        // What was saved, not what was asked: a rescan may have replaced it.
+        let saved = deskemy_core::db::queries::attachment_completed(&self.db.lock().unwrap_or_else(|e| e.into_inner()), &id);
+        let pdf = ui.global::<Pdf>();
+        match saved {
+            Ok(Some(done)) => pdf.set_done(done),
+            Ok(None) => {
+                tracing::warn!(resource = %id, "resource gone (rescanned); its tick is off");
+                *self.resource.borrow_mut() = None;
+                pdf.set_resource("".into());
+            }
+            Err(e) => tracing::warn!(error = %e, "resource done"),
+        }
     }
 
     fn open(&self, ui: &AppWindow, path: &str) {

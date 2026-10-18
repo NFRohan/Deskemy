@@ -135,6 +135,12 @@ pub fn new_id() -> String {
 }
 
 /// Open a connection at `path`, apply pragmas, and run migrations.
+/// The shared connection, even if a thread panicked holding it (SQLite's
+/// own transactions keep the data whole).
+pub(crate) fn lock(db: &std::sync::Mutex<Connection>) -> std::sync::MutexGuard<'_, Connection> {
+    db.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 pub fn open(path: &Path) -> Result<Connection> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

@@ -609,6 +609,11 @@ fn resources_paired_by_hand_stay_paired() {
     // The old ids are gone: pairing them says so rather than doing nothing.
     assert!(db::queries::pair_resource(&conn, &stale, None).is_err());
     assert!(db::queries::unpair_resource(&conn, &stale).is_err());
+    assert_eq!(db::queries::attachment_completed(&conn, &stale).unwrap(), None);
+    let current = find(&conn, &id, "01 Lesson.pdf").id;
+    assert_eq!(db::queries::attachment_completed(&conn, &current).unwrap(), Some(false));
+    db::queries::set_attachment_completed(&conn, &current, true).unwrap();
+    assert_eq!(db::queries::attachment_completed(&conn, &current).unwrap(), Some(true));
     let next_id = detail(&conn, &id).sections[1].lectures[0].id.clone();
     assert_eq!(find(&conn, &id, "cheatsheet.pdf").lecture_id, Some(next_id));
     assert!(find(&conn, &id, "01 Lesson.pdf").paired);

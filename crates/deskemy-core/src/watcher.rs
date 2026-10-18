@@ -3,7 +3,7 @@
 //! course(s) — which preserves user data (see importer) — and tells the host,
 //! so its UI can refresh.
 
-use crate::db::queries;
+use crate::db::{lock, queries};
 use crate::importer::Importer;
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
@@ -74,10 +74,6 @@ impl LibraryWatcher {
         }
         tracing::info!(paths = self.watched.len(), "library watcher active");
     }
-}
-
-fn lock(db: &Mutex<Connection>) -> std::sync::MutexGuard<'_, Connection> {
-    db.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Map changed paths to owning courses (or new course folders under a root)

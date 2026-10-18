@@ -103,32 +103,35 @@ pub fn relocate_course(
     old_folder: &str,
     new_folder: &str,
 ) -> Result<()> {
-    conn.execute(
+    // All or nothing: half the tables moved would fail the next try's checks.
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
         "UPDATE lectures SET file_path = ?2 || substr(file_path, length(?3) + 1)
            WHERE course_id = ?1",
         params![course_id, new_folder, old_folder],
     )?;
-    conn.execute(
+    tx.execute(
         "UPDATE attachments SET file_path = ?2 || substr(file_path, length(?3) + 1)
            WHERE course_id = ?1",
         params![course_id, new_folder, old_folder],
     )?;
-    conn.execute(
+    tx.execute(
         "UPDATE subtitles SET file_path = ?2 || substr(file_path, length(?3) + 1)
           WHERE lecture_id IN (SELECT id FROM lectures WHERE course_id = ?1)",
         params![course_id, new_folder, old_folder],
     )?;
-    conn.execute(
+    tx.execute(
         "UPDATE resource_pairings
             SET resource_path = ?2 || substr(resource_path, length(?3) + 1),
                 lecture_path = ?2 || substr(lecture_path, length(?3) + 1)
           WHERE course_id = ?1",
         params![course_id, new_folder, old_folder],
     )?;
-    conn.execute(
+    tx.execute(
         "UPDATE courses SET folder_path = ?2, scan_status = 'Ready' WHERE id = ?1",
         params![course_id, new_folder],
     )?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -654,6 +657,20 @@ pub fn restore_resource_pairing(
 }
 
 /// Mark a resource done or not.
+/// Whether a resource is marked done; None when there's no such resource
+/// (a rescan gave the course new ids).
+pub fn attachment_completed(conn: &Connection, attachment_id: &str) -> Result<Option<bool>> {
+    let done = conn
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM attachment_progress WHERE attachment_id = a.id)
+               FROM attachments a WHERE a.id = ?1",
+            params![attachment_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(done)
+}
+
 pub fn set_attachment_completed(conn: &Connection, attachment_id: &str, completed: bool) -> Result<()> {
     if completed {
         conn.execute(

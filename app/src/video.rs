@@ -581,13 +581,8 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
             run(&m, &["cycle", "pause"]);
         }
     });
-    let (m, s) = (mpv.clone(), session.clone());
-    playback.on_pause(move || {
-        // Ended, mpv is idle: pausing it would start the next file paused.
-        if !s.has_ended() {
-            run(&m, &["set", "pause", "yes"]);
-        }
-    });
+    let m = mpv.clone();
+    playback.on_pause(move || run(&m, &["set", "pause", "yes"]));
     let m = mpv.clone();
     playback.on_seek(move |t| run(&m, &["seek", &format!("{t:.3}"), "absolute"]));
     let m = mpv.clone();

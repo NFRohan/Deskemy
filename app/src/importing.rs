@@ -624,6 +624,7 @@ mod tests {
             std::fs::write(path, b"x").unwrap();
         };
         touch("Courses/Rust/01 Intro/001 Hello.mp4");
+        touch("Courses/Rust/02 Types/002 Ints.mp4");
         touch("Courses/Go/01 Intro/001 Hello.mp4");
         touch("Single/01 Intro/001 Hello.mp4");
         touch("Empty/notes.pdf");

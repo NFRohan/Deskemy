@@ -190,6 +190,8 @@ impl Session {
         *inner = Inner {
             completed: std::mem::take(&mut inner.completed),
             sleep: inner.sleep,
+            // The last file may still read as at its end: not this one's end.
+            at_end: inner.at_end,
             revision: inner.revision + 1,
             now: NowPlaying {
                 file: path.clone(),
@@ -217,7 +219,8 @@ impl Session {
     }
 
     /// The lecture played to its end and nothing was loaded after it.
-    pub fn has_ended(&self) -> bool {
+    #[cfg(test)]
+    fn has_ended(&self) -> bool {
         self.inner().ended
     }
 
@@ -367,7 +370,11 @@ impl Session {
         if at_end && !was {
             self.on_eof();
         } else if !at_end && was && loaded {
-            self.inner().ended = false;
+            // Watching on: its resources are no longer waiting either (or
+            // the next update would offer them again mid-lecture).
+            let mut inner = self.inner();
+            inner.ended = false;
+            inner.now.resources_waiting = false;
         }
     }
 
@@ -879,6 +886,24 @@ mod tests {
         session.on_eof();
         assert!(session.play_on_if_ended());
         assert_eq!(session.now_playing().1.title, "Third");
+        assert!(!session.has_ended());
+    }
+
+    #[test]
+    fn seeking_back_from_the_end_stops_offering_the_resources() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library_with(&["001 First.mp4", "001 First exercises.pdf", "002 Second.mp4"]);
+        let config = settings::shared(AppConfig { pause_at_resources: true, ..AppConfig::default() });
+        let session = Session::new(mpv, db, config);
+        session.open(&lectures[0]).unwrap();
+
+        // At the end (as the event thread sees it): its resources are offered.
+        session.track_end(true, true);
+        assert!(session.now_playing().1.resources_waiting);
+        assert!(session.has_ended());
+        // Seeking back: watching on, nothing waiting, whatever updates next.
+        session.track_end(false, true);
+        assert!(!session.now_playing().1.resources_waiting);
         assert!(!session.has_ended());
     }
 

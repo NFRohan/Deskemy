@@ -268,6 +268,7 @@ impl CoursePage {
     /// without recording a visit.
     pub fn show(&self, ui: &AppWindow, course_id: &str) {
         *self.id.borrow_mut() = Some(course_id.to_string());
+        *self.pairing.borrow_mut() = None;
         let detail = queries::get_course_detail(&self.conn(), course_id).ok().flatten();
         let open = detail.as_ref().and_then(|c| {
             let next = next_lecture(c)?.id.clone();
@@ -559,20 +560,26 @@ impl CoursePage {
         ui.global::<Course>().set_pair_rows(model(pair_rows(&p.course, query, p.current.as_deref())));
     }
 
-    fn pairing_resource(&self) -> Option<String> {
+    /// The dialog's resource, while the dialog is up (closing it doesn't
+    /// tell us; a pick from it can only come while it is).
+    fn pairing_resource(&self, ui: &AppWindow) -> Option<String> {
+        if ui.global::<Course>().get_dialog() != "pair" {
+            *self.pairing.borrow_mut() = None;
+            return None;
+        }
         self.pairing.borrow().as_ref().map(|p| p.resource.clone())
     }
 
     /// Pair the dialog's resource with a lecture, or (None) with none.
     pub fn pair_with(&self, ui: &AppWindow, lecture: Option<&str>) {
-        let Some(resource) = self.pairing_resource() else { return };
+        let Some(resource) = self.pairing_resource(ui) else { return };
         let paired = queries::pair_resource(&self.conn(), &resource, lecture);
         self.pair_done(ui, paired);
     }
 
     /// Back to the importer's placement.
     pub fn pair_reset(&self, ui: &AppWindow) {
-        let Some(resource) = self.pairing_resource() else { return };
+        let Some(resource) = self.pairing_resource(ui) else { return };
         let reset = queries::unpair_resource(&self.conn(), &resource);
         self.pair_done(ui, reset);
     }

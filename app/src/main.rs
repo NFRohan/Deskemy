@@ -372,7 +372,7 @@ fn main() -> Result<(), slint::PlatformError> {
     importing.start_watching(&ui, player.session().clone());
     wire_import(&ui, &importing);
     wire_window_events(&ui, &importing);
-    let viewer = pdf::Viewer::new();
+    let viewer = pdf::Viewer::new(db.clone());
     pdf::register(&viewer);
     wire_pdf(&ui, &viewer);
     let mini = mini::MiniPlayer::new(&ui, config.clone());

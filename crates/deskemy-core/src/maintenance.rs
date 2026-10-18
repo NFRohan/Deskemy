@@ -1,7 +1,7 @@
 //! Library maintenance and storage upkeep — the Settings page's actions,
 //! shared by both frontends.
 
-use crate::db::queries;
+use crate::db::{lock, queries};
 use crate::domain::StorageStats;
 use crate::error::Result;
 use crate::paths::DB_FILE;
@@ -22,10 +22,6 @@ pub struct ReconcileReport {
 pub struct GcReport {
     pub removed: i64,
     pub freed_bytes: i64,
-}
-
-fn lock(db: &Mutex<Connection>) -> std::sync::MutexGuard<'_, Connection> {
-    db.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Check every lecture's file on disk and flag courses with missing files as
