@@ -113,8 +113,10 @@ struct Inner {
 enum Remembered {
     /// By language ("" for none) and title: the same in every lecture.
     Track { lang: String, title: Option<String> },
-    /// By number only (recorded before 2.1): read once in the file it was
-    /// picked in, and remembered by language from then on.
+    /// By number only (recorded before 2.1, which didn't keep which lecture
+    /// it was picked in): read once, in the first file the course plays
+    /// (usually its Continue Watching lecture, where it likely was picked),
+    /// and remembered by language from then on. A pick in 2.1 replaces it.
     Number(i64),
 }
 

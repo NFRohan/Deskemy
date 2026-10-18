@@ -46,18 +46,18 @@ impl Player {
         let mpv = Arc::new(Mpv::new().map_err(|e| e.to_string())?);
         // GPU decode by default; DESKEMY_HWDEC overrides (e.g. `no` to compare).
         let hwdec = std::env::var("DESKEMY_HWDEC").unwrap_or_else(|_| "auto-safe".into());
-        for (name, value) in [("vo", "libmpv"), ("hwdec", hwdec.as_str())] {
+        // keep-open: at the end of a file, pause on its last frame rather
+        // than unload it. A lecture that stops there (autoplay off, its
+        // resources offered) keeps its picture, times and tracks, and
+        // `eof-reached` says it's there (`Session::track_end`): without it, no
+        // lecture would ever end, so it's required.
+        for (name, value) in [("vo", "libmpv"), ("hwdec", hwdec.as_str()), ("keep-open", "yes")] {
             mpv.set_option(name, value)
                 .map_err(|e| format!("mpv option {name}={value}: {e}"))?;
         }
         // Nice-to-haves: some libmpv builds lack e.g. `osc` (no Lua), so a
         // missing one is logged rather than fatal.
         for (name, value) in [
-            // At the end of a file, pause on its last frame rather than unload
-            // it: a lecture that stops there (autoplay off, its resources
-            // offered) keeps its picture, times and tracks. `eof-reached`
-            // says it's there (`Session::track_end`).
-            ("keep-open", "yes"),
             ("idle", "yes"),
             // Pick up sidecar subtitles (e.g. Udemy .srt) matching the video.
             ("sub-auto", "fuzzy"),
@@ -945,8 +945,9 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             shown_file = Some(np.file.clone());
         }
 
-        // Re-read tracks only when their fingerprint moves: a file loaded, a
-        // sidecar subtitle attached late, or a pick took effect.
+        // Re-read tracks only when their fingerprint moves: another file, its
+        // tracks loaded, a sidecar subtitle attached late, or a pick took
+        // effect.
         let signature = tracks::signature(mpv);
         let menus = (shown_tracks.as_ref() != Some(&signature)).then(|| {
             shown_tracks = Some(signature);

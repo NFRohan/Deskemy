@@ -19,6 +19,7 @@ use crate::scanner::{FileKind, FilesystemScanner, ScannedFile, ScannedTree, Scan
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 use structure::{clean_folder_title, clean_title, leading_number, sort_key};
 
 pub struct Importer {
@@ -226,8 +227,29 @@ impl Importer {
         Ok(ImportPlan { scan, sections })
     }
 
-    /// Phase 3 (brief lock): persist the plan — replace any prior import of the
-    /// same folder and restore preserved user data. Fast (writes only).
+    /// Phase 3, as every import does it: persist the plan under a brief lock,
+    /// then index the course's subtitle text (reading the files without the
+    /// lock), so search finds it straight away. A failed index is logged; the
+    /// import stands.
+    pub fn persist_and_index(
+        &self,
+        db: &Mutex<Connection>,
+        root_id: Option<&str>,
+        snap: &ImportSnapshot,
+        plan: &ImportPlan,
+    ) -> Result<String> {
+        // The guard ends with this statement: indexing locks again.
+        let id = self.persist(&mut db.lock().unwrap_or_else(|e| e.into_inner()), root_id, snap, plan)?;
+        match crate::maintenance::index_course_subtitles(db, &id) {
+            Ok(cues) => tracing::debug!(course = %id, cues, "indexed subtitles"),
+            Err(e) => tracing::warn!(course = %id, error = %e, "index subtitles"),
+        }
+        Ok(id)
+    }
+
+    /// Persist the plan (brief lock): replace any prior import of the same
+    /// folder and restore preserved user data. Fast (writes only). Imports go
+    /// through `persist_and_index`.
     pub fn persist(
         &self,
         conn: &mut Connection,

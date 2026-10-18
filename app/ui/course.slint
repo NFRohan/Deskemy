@@ -888,7 +888,12 @@ component PairRowView inherits Rectangle {
     accessible-label: root.entry.title;
     accessible-enabled: !root.entry.heading;
     accessible-checked: root.entry.current;
-    accessible-action-default => { Course.pair-with(root.entry.id); }
+    accessible-action-default => {
+        // A heading pairs with nothing ("" would mean no lecture).
+        if !root.entry.heading {
+            Course.pair-with(root.entry.id);
+        }
+    }
     touch := TouchArea {
         enabled: !root.entry.heading;
         mouse-cursor: pointer;

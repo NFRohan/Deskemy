@@ -92,10 +92,7 @@ pub fn batch_label(n: usize, total: usize) -> String {
 }
 
 fn lectures_label(n: i64) -> String {
-    match n {
-        1 => "Imported · 1 lecture".into(),
-        n => format!("Imported · {n} lectures"),
-    }
+    format!("Imported · {}", crate::career::count(n, "lecture"))
 }
 
 type Staged = Arc<Mutex<Option<(PathBuf, ImportSnapshot, ImportPlan)>>>;
@@ -387,8 +384,7 @@ impl Importing {
                 });
                 let progress = |done: usize, all: usize| set_row(&weak, *row, 1, progress_label(done, all));
                 let imported = probe(&importer, &db, folder, clean, progress).and_then(|(preview, snap, plan)| {
-                    // Bound first: the db guard ends with this statement.
-                    let persisted = importer.persist(&mut db.lock().unwrap_or_else(|e| e.into_inner()), None, &snap, &plan);
+                    let persisted = importer.persist_and_index(&db, None, &snap, &plan);
                     persisted.map(|id| (id, preview.lectures)).map_err(|e| e.to_string())
                 });
                 match imported {
@@ -396,7 +392,6 @@ impl Importing {
                         if let Some(w) = watcher.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
                             w.watch(folder);
                         }
-                        index_subtitles(&db, &id);
                         tracing::info!(course = %id, folder = %folder.display(), "imported (batch)");
                         set_row(&weak, *row, 2, lectures_label(lectures));
                         let w = weak.clone();
@@ -459,15 +454,12 @@ impl Importing {
         import.set_importing(true);
         let (importer, db, watcher, weak) = (self.importer.clone(), self.db.clone(), self.watcher.clone(), ui.as_weak());
         std::thread::spawn(move || {
-            // Phase 3: a brief lock to write it all.
-            let result = importer
-                .persist(&mut db.lock().unwrap_or_else(|e| e.into_inner()), None, &snap, &plan)
-                .map_err(|e| e.to_string());
-            if let Ok(id) = &result {
+            // Phase 3: a brief lock to write it all, then its subtitles indexed.
+            let result = importer.persist_and_index(&db, None, &snap, &plan).map_err(|e| e.to_string());
+            if result.is_ok() {
                 if let Some(w) = watcher.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
                     w.watch(&folder);
                 }
-                index_subtitles(&db, id);
             }
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(ui) = weak.upgrade() else { return };
@@ -596,15 +588,6 @@ fn set_row(weak: &slint::Weak<AppWindow>, row: usize, state: i32, status: String
     });
 }
 
-
-/// Make a just-imported course's subtitles searchable (they were only indexed
-/// from Settings before).
-pub fn index_subtitles(db: &Db, course_id: &str) {
-    match deskemy_core::maintenance::index_course_subtitles(db, course_id) {
-        Ok(cues) => tracing::debug!(course = course_id, cues, "indexed subtitles"),
-        Err(e) => tracing::warn!(course = course_id, error = %e, "index subtitles"),
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -223,8 +223,15 @@ pub struct CoursePage {
     id: RefCell<Option<String>>,
     expanded: RefCell<HashSet<String>>,
     image: RefCell<Option<(String, slint::Image)>>,
-    /// The resource in the pairing dialog, and the lecture it's with now.
-    pairing: RefCell<Option<(String, Option<String>)>>,
+    pairing: RefCell<Option<Pairing>>,
+}
+
+/// The pairing dialog's resource, the lecture it's with now, and the course
+/// it lists (loaded once; the filter narrows it as you type).
+struct Pairing {
+    resource: String,
+    current: Option<String>,
+    course: CourseDetail,
 }
 
 impl CoursePage {
@@ -542,32 +549,35 @@ impl CoursePage {
         page.set_pair_query("".into());
         page.set_pair_error("".into());
         page.set_pair_rows(model(pair_rows(&c, "", current.as_deref())));
-        *self.pairing.borrow_mut() = Some((resource.to_string(), current));
+        *self.pairing.borrow_mut() = Some(Pairing { resource: resource.to_string(), current, course: c });
         page.set_dialog("pair".into());
     }
 
     pub fn pair_filter(&self, ui: &AppWindow, query: &str) {
-        let Some(course) = self.id() else { return };
-        let current = self.pairing.borrow().as_ref().and_then(|(_, lecture)| lecture.clone());
-        let Some(c) = queries::get_course_detail(&self.conn(), &course).ok().flatten() else { return };
-        ui.global::<Course>().set_pair_rows(model(pair_rows(&c, query, current.as_deref())));
+        let pairing = self.pairing.borrow();
+        let Some(p) = pairing.as_ref() else { return };
+        ui.global::<Course>().set_pair_rows(model(pair_rows(&p.course, query, p.current.as_deref())));
+    }
+
+    fn pairing_resource(&self) -> Option<String> {
+        self.pairing.borrow().as_ref().map(|p| p.resource.clone())
     }
 
     /// Pair the dialog's resource with a lecture, or (None) with none.
     pub fn pair_with(&self, ui: &AppWindow, lecture: Option<&str>) {
-        let Some((resource, _)) = self.pairing.borrow().clone() else { return };
+        let Some(resource) = self.pairing_resource() else { return };
         let paired = queries::pair_resource(&self.conn(), &resource, lecture);
-        self.pair_done(ui, paired.map_err(|e| e.to_string()));
+        self.pair_done(ui, paired);
     }
 
     /// Back to the importer's placement.
     pub fn pair_reset(&self, ui: &AppWindow) {
-        let Some((resource, _)) = self.pairing.borrow().clone() else { return };
+        let Some(resource) = self.pairing_resource() else { return };
         let reset = queries::unpair_resource(&self.conn(), &resource);
-        self.pair_done(ui, reset.map_err(|e| e.to_string()));
+        self.pair_done(ui, reset);
     }
 
-    fn pair_done(&self, ui: &AppWindow, result: Result<(), String>) {
+    fn pair_done(&self, ui: &AppWindow, result: deskemy_core::error::Result<()>) {
         let page = ui.global::<Course>();
         match result {
             Ok(()) => {
@@ -577,7 +587,14 @@ impl CoursePage {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "pair resource");
-                page.set_pair_error(format!("Couldn't pair it: {e}").into());
+                let message = match e {
+                    // Rescanned while the dialog was open: new ids.
+                    deskemy_core::error::DeskemyError::NotFound(_) => {
+                        "The course changed on disk meanwhile. Close this and try again.".to_string()
+                    }
+                    e => format!("Couldn't pair it: {e}"),
+                };
+                page.set_pair_error(message.into());
             }
         }
     }

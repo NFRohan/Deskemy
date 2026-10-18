@@ -93,7 +93,7 @@ pub fn first_lecture_path(conn: &Connection, course_id: &str) -> Result<Option<S
         .optional()?)
 }
 
-/// Repoint a course and its lecture/attachment file paths from `old_folder` to
+/// Repoint a course and its lecture/attachment/subtitle file paths from `old_folder` to
 /// `new_folder` (a moved or renamed course folder). Rewrites only the path
 /// prefix and keeps every id, so progress, bookmarks, tags, and track membership
 /// are preserved untouched.
@@ -111,6 +111,11 @@ pub fn relocate_course(
     conn.execute(
         "UPDATE attachments SET file_path = ?2 || substr(file_path, length(?3) + 1)
            WHERE course_id = ?1",
+        params![course_id, new_folder, old_folder],
+    )?;
+    conn.execute(
+        "UPDATE subtitles SET file_path = ?2 || substr(file_path, length(?3) + 1)
+          WHERE lecture_id IN (SELECT id FROM lectures WHERE course_id = ?1)",
         params![course_id, new_folder, old_folder],
     )?;
     conn.execute(
@@ -592,17 +597,27 @@ pub fn pair_resource(conn: &Connection, attachment_id: &str, lecture_id: Option<
         ),
         None => None,
     };
-    conn.execute(
+    let paired = conn.execute(
         "INSERT INTO resource_pairings (course_id, resource_path, lecture_path)
          SELECT course_id, file_path, ?2 FROM attachments WHERE id = ?1
          ON CONFLICT (course_id, resource_path) DO UPDATE SET lecture_path = excluded.lecture_path",
         params![attachment_id, lecture_path],
     )?;
+    if paired == 0 {
+        return Err(DeskemyError::NotFound(format!("resource {attachment_id}")));
+    }
     Ok(())
 }
 
 /// Back to the importer's placement.
 pub fn unpair_resource(conn: &Connection, attachment_id: &str) -> Result<()> {
+    // Gone (a rescan re-imported the course under new ids): say so, rather
+    // than seem to have done it.
+    let exists: bool =
+        conn.query_row("SELECT EXISTS (SELECT 1 FROM attachments WHERE id = ?1)", params![attachment_id], |r| r.get(0))?;
+    if !exists {
+        return Err(DeskemyError::NotFound(format!("resource {attachment_id}")));
+    }
     conn.execute(
         "DELETE FROM resource_pairings
           WHERE (course_id, resource_path) = (SELECT course_id, file_path FROM attachments WHERE id = ?1)",

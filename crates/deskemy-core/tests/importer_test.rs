@@ -244,6 +244,7 @@ fn relocate_course_rewrites_paths_and_keeps_progress() {
     let s = course.join("01 - Intro");
     fs::create_dir_all(&s).unwrap();
     touch(&s.join("001 First.mp4"));
+    touch(&s.join("001 First.en.srt"));
     touch(&s.join("002 Second.mp4"));
 
     let mut conn = db::open_in_memory().unwrap();
@@ -271,6 +272,12 @@ fn relocate_course_rewrites_paths_and_keeps_progress() {
         lec_after.file_path.strip_prefix(new_folder).unwrap(),
         "relative suffix unchanged",
     );
+
+    // Subtitle files too (search reindexes from them).
+    let subtitle: String = conn
+        .query_row("SELECT file_path FROM subtitles WHERE lecture_id = ?1", [lec_id.as_str()], |r| r.get(0))
+        .unwrap();
+    assert!(subtitle.starts_with(new_folder) && subtitle.ends_with("001 First.en.srt"), "{subtitle}");
 
     let (pos, completed, _) = db::queries::get_progress(&conn, &lec_id).unwrap();
     assert!(completed && (pos - 90.0).abs() < 0.01, "progress preserved");
@@ -597,7 +604,11 @@ fn resources_paired_by_hand_stay_paired() {
     assert!(db::queries::pair_resource(&conn, &pdf.id, Some("not-a-lecture")).is_err());
 
     // A re-import (new ids) keeps both.
+    let stale = pdf.id.clone();
     let id = importer.import_course(&mut conn, None, &course).unwrap();
+    // The old ids are gone: pairing them says so rather than doing nothing.
+    assert!(db::queries::pair_resource(&conn, &stale, None).is_err());
+    assert!(db::queries::unpair_resource(&conn, &stale).is_err());
     let next_id = detail(&conn, &id).sections[1].lectures[0].id.clone();
     assert_eq!(find(&conn, &id, "cheatsheet.pdf").lecture_id, Some(next_id));
     assert!(find(&conn, &id, "01 Lesson.pdf").paired);

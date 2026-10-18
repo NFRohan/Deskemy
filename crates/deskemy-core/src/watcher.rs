@@ -137,16 +137,10 @@ pub fn rescan(host: &dyn RescanHost, paths: &[PathBuf]) -> bool {
                 continue;
             }
         };
-        // Bound first: a lock taken in the match's scrutinee would be held
-        // through its arms, and indexing below locks again (a deadlock).
-        let persisted = importer.persist(&mut lock(host.db()), root_id.as_deref(), &snap, &plan);
-        match persisted {
-            Ok(id) => {
+        match importer.persist_and_index(host.db(), root_id.as_deref(), &snap, &plan) {
+            Ok(_) => {
                 changed = true;
                 tracing::info!(folder = %folder.display(), "auto-rescan re-imported course");
-                if let Err(e) = crate::maintenance::index_course_subtitles(host.db(), &id) {
-                    tracing::warn!(folder = %folder.display(), error = %e, "auto-rescan subtitle index");
-                }
             }
             Err(e) => tracing::warn!(folder = %folder.display(), error = %e, "auto-rescan re-import failed"),
         }

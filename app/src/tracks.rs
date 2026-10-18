@@ -126,8 +126,10 @@ pub struct Tracks {
 
 /// Cheap fingerprint polled every tick; the full lists are only re-read when
 /// it changes (a file loaded, a sidecar subtitle attached, a pick was made).
-pub fn signature(mpv: &Mpv) -> [Option<String>; 6] {
-    ["track-list/count", "chapters", "sid", "aid", "chapter", "speed"]
+/// The path is in it: the next lecture can have the same counts, and its
+/// tracks must be read for its remembered subtitle.
+pub fn signature(mpv: &Mpv) -> [Option<String>; 7] {
+    ["path", "track-list/count", "chapters", "sid", "aid", "chapter", "speed"]
         .map(|name| mpv.get_property_string(name))
 }
 
