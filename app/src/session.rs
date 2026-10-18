@@ -209,6 +209,11 @@ impl Session {
         self.load_current(Start::Beginning)
     }
 
+    /// The lecture played to its end and nothing was loaded after it.
+    pub fn has_ended(&self) -> bool {
+        self.inner().ended
+    }
+
     /// Play again after reaching the end (mpv is idle by then).
     pub fn replay_if_ended(&self) -> bool {
         if !self.inner().ended {
@@ -833,7 +838,10 @@ mod tests {
         session.on_eof();
 
         assert_eq!(session.now_playing().1.title, "First", "stays on the lecture");
+        // Opening a resource (the PDF viewer) checks this to leave it ended.
+        assert!(session.has_ended());
         assert!(session.replay_if_ended());
+        assert!(!session.has_ended());
         assert!(!session.replay_if_ended(), "only once the lecture has ended");
     }
 

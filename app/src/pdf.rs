@@ -7,7 +7,7 @@
 //! and the UI lets go of pages far out of view. Without PDFium, PDFs open in
 //! the system's PDF app as before.
 
-use crate::{AppWindow, Pdf, PdfPage, Playback};
+use crate::{AppWindow, Course, Pdf, PdfPage, Playback, ResourceItem};
 use slint::{ComponentHandle, Model, Rgba8Pixel, SharedPixelBuffer};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -115,43 +115,69 @@ struct State {
     view: (f32, f32, f32),
 }
 
+/// Where a resource was opened: ticking it off in the viewer goes back there,
+/// so that list shows it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Opener {
+    Course,
+    Player,
+}
+
 pub struct Viewer {
     shared: Arc<Shared>,
     state: RefCell<State>,
     started: RefCell<bool>,
+    /// The open PDF's resource id, and where it was opened.
+    resource: RefCell<Option<(String, Opener)>>,
 }
 
 impl Viewer {
     pub fn new() -> std::rc::Rc<Self> {
-        std::rc::Rc::new(Viewer { shared: Arc::default(), state: RefCell::default(), started: RefCell::new(false) })
+        std::rc::Rc::new(Viewer { shared: Arc::default(), state: RefCell::default(), started: RefCell::new(false), resource: RefCell::default() })
     }
 
     /// Open a resource: a PDF in the viewer (when PDFium is here), anything
     /// else in its default app.
-    pub fn open_resource(&self, ui: &AppWindow, path: &str) {
-        if !is_pdf(path) || library().is_none() {
-            crate::open_resource(path);
+    pub fn open_resource(&self, ui: &AppWindow, item: &ResourceItem, from: Opener) {
+        if !is_pdf(&item.path) || library().is_none() {
+            crate::open_resource(&item.path);
             return;
         }
-        self.open(ui, path);
+        self.open(ui, &item.path);
+        *self.resource.borrow_mut() = Some((item.id.to_string(), from));
+        let pdf = ui.global::<Pdf>();
+        pdf.set_resource(item.id.clone());
+        pdf.set_done(item.done);
+    }
+
+    /// Tick the open resource off (or not), in the list it was opened from.
+    pub fn mark_done(&self, ui: &AppWindow, done: bool) {
+        let Some((id, from)) = self.resource.borrow().clone() else { return };
+        match from {
+            Opener::Course => ui.global::<Course>().invoke_toggle_resource(id.into(), done),
+            Opener::Player => ui.global::<Playback>().invoke_toggle_resource(id.into(), done),
+        }
+        ui.global::<Pdf>().set_done(done);
     }
 
     fn open(&self, ui: &AppWindow, path: &str) {
         self.start(ui);
         // From the player: pause, and leave fullscreen or the mini player for
-        // the full window.
+        // the full window. A lecture that has ended stays ended (toggling
+        // pause would play it again), with its end card up for the way back.
         if ui.get_playing() {
             let playback = ui.global::<Playback>();
-            if !playback.get_paused() {
-                playback.invoke_toggle_pause();
-            }
+            playback.invoke_pause();
             if playback.get_mini() {
                 playback.invoke_toggle_mini();
             } else if playback.get_fullscreen() {
                 playback.invoke_toggle_fullscreen();
             }
-            playback.set_open_menu("".into());
+            if playback.get_open_menu() != "exercise" {
+                playback.set_open_menu("".into());
+            }
         }
+        *self.resource.borrow_mut() = None;
         let generation = {
             let mut state = self.state.borrow_mut();
             let generation = state.generation + 1;
@@ -174,6 +200,8 @@ impl Viewer {
         pdf.set_zoom(1.0);
         pdf.set_scroll_y(0.0);
         pdf.set_error("".into());
+        pdf.set_resource("".into());
+        pdf.set_done(false);
         pdf.set_loading(true);
         pdf.set_open(true);
         tracing::info!(%path, "pdf open");
@@ -196,6 +224,7 @@ impl Viewer {
             work.renders.clear();
         }
         self.shared.wake.notify_one();
+        *self.resource.borrow_mut() = None;
         let pdf = ui.global::<Pdf>();
         pdf.set_open(false);
         pdf.set_pages(crate::course_panel::model(Vec::new()));
@@ -475,6 +504,8 @@ fn render(
 pub fn sample(ui: &AppWindow, path: &str, page_width: f32) {
     let pdf = ui.global::<Pdf>();
     pdf.set_name(Path::new(path).file_name().unwrap_or_default().to_string_lossy().to_string().into());
+    // As a course's resource, with its "Mark as done".
+    pdf.set_resource("sample".into());
     pdf.set_open(true);
     let shown = bind().and_then(|pdfium| {
         let (doc, aspects) = load(&pdfium, Path::new(path))?;

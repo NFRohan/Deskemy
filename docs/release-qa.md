@@ -297,6 +297,8 @@ one users get.
   - A long PDF of your own: scroll, PgUp/PgDn, Home/End, the arrows; the page number follows; memory stays flat while scrolling through it (Task Manager).
   - **Open in your PDF app** opens it outside. Back, Esc and the mouse's back button close the viewer.
   - From the player (Resources panel, and the end-of-lecture card with "Pause on exercises and resources"): the video pauses, and fullscreen or the mini player gives way to the full window. Closing the viewer returns to the paused player, and Space resumes it.
+  - From the end-of-lecture card: closing the viewer comes back to the card, the lecture still at its end (not playing again from 0:00).
+  - **Mark as done** ticks the resource off, and the list it was opened from shows it ticked (course page, Resources panel, end-of-lecture card); **Done** unticks it.
   - A file that isn't a PDF but ends in `.pdf`, or a password-protected one, says so, with **Open in your PDF app** still there.
   - The portable zip and both installers contain `pdfium.dll`; renaming it away makes PDFs open in your PDF app instead.
 - [ ] Pairing a resource by hand (hover a resource row, the link button):

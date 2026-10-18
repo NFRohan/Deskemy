@@ -98,7 +98,7 @@ component ResourceEntry inherits Rectangle {
     touch := TouchArea {
         mouse-cursor: pointer;
         // Opens with the system's default app for the file.
-        clicked => { Playback.open-resource(root.item.path); }
+        clicked => { Playback.open-resource(root.item); }
     }
 
     HorizontalLayout {

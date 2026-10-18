@@ -91,7 +91,7 @@ export global Course {
     callback toggle-favorite();
     callback add-tag(string);
     callback remove-tag(string);
-    callback open-resource(string);
+    callback open-resource(ResourceItem);
     /// Mark a resource done (true) or not.
     callback toggle-resource(string, bool);
     callback pick-cover();
@@ -347,7 +347,7 @@ component CurriculumResource inherits Rectangle {
     background: touch.has-hover || pair.hovered ? Theme.surface-container : transparent;
     touch := TouchArea {
         mouse-cursor: pointer;
-        clicked => { Course.open-resource(root.item.path); }
+        clicked => { Course.open-resource(root.item); }
     }
     HorizontalLayout {
         padding-left: 16px;
@@ -839,7 +839,7 @@ export component CoursePage inherits Flickable {
                             }
                             res-touch := TouchArea {
                                 mouse-cursor: pointer;
-                                clicked => { Course.open-resource(item.path); }
+                                clicked => { Course.open-resource(item); }
                             }
                             HorizontalLayout {
                                 padding-left: 16px;

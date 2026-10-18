@@ -730,15 +730,15 @@ fn wire_course(
 /// The PDF viewer, and every way a resource opens (PDFs go to the viewer).
 fn wire_pdf(ui: &AppWindow, viewer: &std::rc::Rc<pdf::Viewer>) {
     let (v, weak) = (viewer.clone(), ui.as_weak());
-    ui.global::<Course>().on_open_resource(move |path| {
+    ui.global::<Course>().on_open_resource(move |item| {
         if let Some(ui) = weak.upgrade() {
-            v.open_resource(&ui, &path);
+            v.open_resource(&ui, &item, pdf::Opener::Course);
         }
     });
     let (v, weak) = (viewer.clone(), ui.as_weak());
-    ui.global::<Playback>().on_open_resource(move |path| {
+    ui.global::<Playback>().on_open_resource(move |item| {
         if let Some(ui) = weak.upgrade() {
-            v.open_resource(&ui, &path);
+            v.open_resource(&ui, &item, pdf::Opener::Player);
         }
     });
     let pdf = ui.global::<Pdf>();
@@ -746,6 +746,12 @@ fn wire_pdf(ui: &AppWindow, viewer: &std::rc::Rc<pdf::Viewer>) {
     pdf.on_close(move || {
         if let Some(ui) = weak.upgrade() {
             v.close(&ui);
+        }
+    });
+    let (v, weak) = (viewer.clone(), ui.as_weak());
+    pdf.on_mark_done(move |done| {
+        if let Some(ui) = weak.upgrade() {
+            v.mark_done(&ui, done);
         }
     });
     let v = viewer.clone();

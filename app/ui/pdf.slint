@@ -26,8 +26,13 @@ export global Pdf {
     in property <float> zoom: 1;
     /// The view's scroll position (a Flickable's content-y: 0 or less).
     in-out property <length> scroll-y;
+    /// The course resource this is ("" for none), and whether it's done.
+    in property <string> resource;
+    in property <bool> done;
 
     callback close();
+    /// Mark the resource done (true) or not.
+    callback mark-done(bool);
     callback open-outside();
     /// Zoom in (1) or out (-1); 0 fits the width again.
     callback zoom-by(int);
@@ -199,6 +204,14 @@ export component PdfViewer inherits Rectangle {
                         icon: @image-url("icons/file-text.svg");
                         text: "Open in your PDF app";
                         clicked => { Pdf.open-outside(); }
+                    }
+                    // Tick it off here, as in the course's list.
+                    if Pdf.resource != "": ToolButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Pdf.done ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
+                        text: Pdf.done ? "Done" : "Mark as done";
+                        label: Pdf.done ? "Mark as not done" : "Mark as done";
+                        clicked => { Pdf.mark-done(!Pdf.done); }
                     }
                 }
                 Rectangle {

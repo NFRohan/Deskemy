@@ -187,7 +187,10 @@ export global Playback {
     callback refresh-panel();
     callback toggle-section(string);
     callback open-lecture(string);
-    callback open-resource(string);
+    callback open-resource(ResourceItem);
+    /// Pause, if playing. Unlike toggle-pause, never "watch again" once the
+    /// lecture has ended.
+    callback pause();
     /// Mark a resource done (true) or not.
     callback toggle-resource(string, bool);
     /// The ended lecture's resources, when autoplay stopped at them.
@@ -1435,7 +1438,7 @@ export component PlayerOverlay inherits Rectangle {
                             background: row-touch.has-hover ? #ffffff14 : #ffffff08;
                             row-touch := TouchArea {
                                 mouse-cursor: pointer;
-                                clicked => { Playback.open-resource(item.path); }
+                                clicked => { Playback.open-resource(item); }
                             }
                             HorizontalLayout {
                                 padding-left: 10px;
