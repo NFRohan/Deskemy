@@ -47,18 +47,51 @@ pub fn steady_chapters(
 }
 
 /// A language tag's family, to match "pt", "pt-BR", "por" and "POR" alike:
-/// its first part, lowercase, with the common three-letter codes (Matroska's)
+/// its first part, lowercase, with ISO 639-2 three-letter codes (Matroska's)
 /// as their two-letter ones.
 pub fn language_family(tag: &str) -> String {
     let primary = tag.split(['-', '_']).next().unwrap_or_default().to_lowercase();
-    const THREE: &[(&str, &str)] = &[
-        ("eng", "en"), ("por", "pt"), ("spa", "es"), ("fre", "fr"), ("fra", "fr"), ("ger", "de"), ("deu", "de"),
-        ("ita", "it"), ("rus", "ru"), ("chi", "zh"), ("zho", "zh"), ("jpn", "ja"), ("kor", "ko"), ("ara", "ar"),
-        ("hin", "hi"), ("tur", "tr"), ("pol", "pl"), ("dut", "nl"), ("nld", "nl"), ("ind", "id"), ("vie", "vi"),
-        ("ben", "bn"), ("ukr", "uk"), ("per", "fa"), ("fas", "fa"), ("heb", "he"), ("tha", "th"), ("swe", "sv"),
-    ];
-    THREE.iter().find(|(three, _)| *three == primary).map_or(primary, |(_, two)| two.to_string())
+    match ISO_639_2.binary_search_by(|(three, _)| three.cmp(&primary.as_str())) {
+        Ok(i) => ISO_639_2[i].1.to_string(),
+        Err(_) => primary,
+    }
 }
+
+/// Every ISO 639-2 code (bibliographic and terminology) with a two-letter
+/// ISO 639-1 one, sorted, from the Library of Congress list
+/// (loc.gov/standards/iso639-2/ISO-639-2_utf-8.txt).
+#[rustfmt::skip]
+const ISO_639_2: &[(&str, &str)] = &[
+        ("aar", "aa"), ("abk", "ab"), ("afr", "af"), ("aka", "ak"), ("alb", "sq"), ("amh", "am"), ("ara", "ar"),
+        ("arg", "an"), ("arm", "hy"), ("asm", "as"), ("ava", "av"), ("ave", "ae"), ("aym", "ay"), ("aze", "az"),
+        ("bak", "ba"), ("bam", "bm"), ("baq", "eu"), ("bel", "be"), ("ben", "bn"), ("bis", "bi"), ("bod", "bo"),
+        ("bos", "bs"), ("bre", "br"), ("bul", "bg"), ("bur", "my"), ("cat", "ca"), ("ces", "cs"), ("cha", "ch"),
+        ("che", "ce"), ("chi", "zh"), ("chu", "cu"), ("chv", "cv"), ("cor", "kw"), ("cos", "co"), ("cre", "cr"),
+        ("cym", "cy"), ("cze", "cs"), ("dan", "da"), ("deu", "de"), ("div", "dv"), ("dut", "nl"), ("dzo", "dz"),
+        ("ell", "el"), ("eng", "en"), ("epo", "eo"), ("est", "et"), ("eus", "eu"), ("ewe", "ee"), ("fao", "fo"),
+        ("fas", "fa"), ("fij", "fj"), ("fin", "fi"), ("fra", "fr"), ("fre", "fr"), ("fry", "fy"), ("ful", "ff"),
+        ("geo", "ka"), ("ger", "de"), ("gla", "gd"), ("gle", "ga"), ("glg", "gl"), ("glv", "gv"), ("gre", "el"),
+        ("grn", "gn"), ("guj", "gu"), ("hat", "ht"), ("hau", "ha"), ("heb", "he"), ("her", "hz"), ("hin", "hi"),
+        ("hmo", "ho"), ("hrv", "hr"), ("hun", "hu"), ("hye", "hy"), ("ibo", "ig"), ("ice", "is"), ("ido", "io"),
+        ("iii", "ii"), ("iku", "iu"), ("ile", "ie"), ("ina", "ia"), ("ind", "id"), ("ipk", "ik"), ("isl", "is"),
+        ("ita", "it"), ("jav", "jv"), ("jpn", "ja"), ("kal", "kl"), ("kan", "kn"), ("kas", "ks"), ("kat", "ka"),
+        ("kau", "kr"), ("kaz", "kk"), ("khm", "km"), ("kik", "ki"), ("kin", "rw"), ("kir", "ky"), ("kom", "kv"),
+        ("kon", "kg"), ("kor", "ko"), ("kua", "kj"), ("kur", "ku"), ("lao", "lo"), ("lat", "la"), ("lav", "lv"),
+        ("lim", "li"), ("lin", "ln"), ("lit", "lt"), ("ltz", "lb"), ("lub", "lu"), ("lug", "lg"), ("mac", "mk"),
+        ("mah", "mh"), ("mal", "ml"), ("mao", "mi"), ("mar", "mr"), ("may", "ms"), ("mkd", "mk"), ("mlg", "mg"),
+        ("mlt", "mt"), ("mon", "mn"), ("mri", "mi"), ("msa", "ms"), ("mya", "my"), ("nau", "na"), ("nav", "nv"),
+        ("nbl", "nr"), ("nde", "nd"), ("ndo", "ng"), ("nep", "ne"), ("nld", "nl"), ("nno", "nn"), ("nob", "nb"),
+        ("nor", "no"), ("nya", "ny"), ("oci", "oc"), ("oji", "oj"), ("ori", "or"), ("orm", "om"), ("oss", "os"),
+        ("pan", "pa"), ("per", "fa"), ("pli", "pi"), ("pol", "pl"), ("por", "pt"), ("pus", "ps"), ("que", "qu"),
+        ("roh", "rm"), ("ron", "ro"), ("rum", "ro"), ("run", "rn"), ("rus", "ru"), ("sag", "sg"), ("san", "sa"),
+        ("sin", "si"), ("slk", "sk"), ("slo", "sk"), ("slv", "sl"), ("sme", "se"), ("smo", "sm"), ("sna", "sn"),
+        ("snd", "sd"), ("som", "so"), ("sot", "st"), ("spa", "es"), ("sqi", "sq"), ("srd", "sc"), ("srp", "sr"),
+        ("ssw", "ss"), ("sun", "su"), ("swa", "sw"), ("swe", "sv"), ("tah", "ty"), ("tam", "ta"), ("tat", "tt"),
+        ("tel", "te"), ("tgk", "tg"), ("tgl", "tl"), ("tha", "th"), ("tib", "bo"), ("tir", "ti"), ("ton", "to"),
+        ("tsn", "tn"), ("tso", "ts"), ("tuk", "tk"), ("tur", "tr"), ("twi", "tw"), ("uig", "ug"), ("ukr", "uk"),
+        ("urd", "ur"), ("uzb", "uz"), ("ven", "ve"), ("vie", "vi"), ("vol", "vo"), ("wel", "cy"), ("wln", "wa"),
+        ("wol", "wo"), ("xho", "xh"), ("yid", "yi"), ("yor", "yo"), ("zha", "za"), ("zho", "zh"), ("zul", "zu"),
+];
 
 /// The track that shows a remembered subtitle choice in this file: the same
 /// language tag, else the same language family ("pt-BR" for "pt"), its title
@@ -255,6 +288,23 @@ mod tests {
         assert_eq!(pick_subtitle("en", Some("Forced"), &two), Some(1));
         assert_eq!(language_family("POR"), "pt");
         assert_eq!(language_family("zh_Hans"), "zh");
+    }
+
+    #[test]
+    fn three_letter_codes_are_every_iso_language() {
+        // Both of ISO 639-2's codes, where a language has two.
+        for (tag, two) in [("cze", "cs"), ("ces", "cs"), ("gre", "el"), ("ell", "el"), ("rum", "ro"), ("ron", "ro")] {
+            assert_eq!(language_family(tag), two, "{tag}");
+        }
+        for (tag, two) in [("hun", "hu"), ("dan", "da"), ("fin", "fi"), ("nor", "no"), ("tgl", "tl"), ("swa", "sw")] {
+            assert_eq!(language_family(tag), two, "{tag}");
+        }
+        assert_eq!(pick_subtitle("cs", None, &[track(1, Some("en"), None, None), track(2, Some("CES"), None, None)]), Some(2));
+        // No two-letter code (or not a code at all): kept as it is.
+        assert_eq!(language_family("fil"), "fil");
+        assert_eq!(language_family("und"), "und");
+        // `language_family` binary-searches it.
+        assert!(ISO_639_2.windows(2).all(|w| w[0].0 < w[1].0));
     }
 
     #[test]
