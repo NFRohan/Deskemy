@@ -94,6 +94,8 @@ struct Inner {
     revision: u64,
     /// Reached the end without advancing; play restarts the lecture.
     ended: bool,
+    /// mpv sits at the end of the file (kept open there, paused).
+    at_end: bool,
     last_save: Option<Instant>,
     last_tick: Option<Instant>,
     /// Real seconds watched since the last flush to `daily_activity`.
@@ -344,6 +346,20 @@ impl Session {
                 self.save(&mut inner, position, false);
             }
             self.flush_watch(&mut inner);
+        }
+    }
+
+    /// From the player's event thread, each tick: whether mpv sits at the end
+    /// of the file (`eof-reached`: it keeps the file open there, paused, on
+    /// its last frame), and whether a file is loaded. Getting there ends the
+    /// lecture (`on_eof`); seeking back from there un-ends it, so play goes on
+    /// from that point rather than from the start.
+    pub fn track_end(&self, at_end: bool, loaded: bool) {
+        let was = std::mem::replace(&mut self.inner().at_end, at_end);
+        if at_end && !was {
+            self.on_eof();
+        } else if !at_end && was && loaded {
+            self.inner().ended = false;
         }
     }
 
@@ -993,6 +1009,70 @@ mod tests {
     fn shown_language(t: &crate::tracks::Tracks) -> Option<String> {
         let sid = t.sid?;
         t.subtitles.iter().find(|s| s.id == sid)?.lang.clone()
+    }
+
+    /// Poll mpv as the player's event thread does, until `done` or 15 s.
+    fn watch_until(session: &Session, mpv: &Mpv, done: impl Fn() -> bool) {
+        let deadline = Instant::now() + std::time::Duration::from_secs(15);
+        while !done() {
+            assert!(Instant::now() < deadline, "timed out");
+            let at_end = mpv.get_property_string("eof-reached").as_deref() == Some("yes");
+            session.track_end(at_end, mpv.get_f64("time-pos").is_some());
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+
+    #[test]
+    fn a_lecture_that_ends_stays_open_on_its_last_frame() {
+        let Some(mpv) = headless_mpv() else { return };
+        let _ = mpv.set_property("sub-auto", "fuzzy");
+        mpv.set_property("keep-open", "yes").unwrap();
+        let Some((_tmp, db, lectures)) = library_with_subtitles(&[("001 First", &["en"]), ("002 Second", &[])]) else {
+            return;
+        };
+        // Autoplay stops here, as at a lecture with resources.
+        let config = AppConfig { autoplay_next: false, ..AppConfig::default() };
+        let session = Session::new(mpv.clone(), db.clone(), settings::shared(config));
+        session.open(&lectures[0]).unwrap();
+        mpv.set_property("speed", "4").unwrap();
+        watch_until(&session, &mpv, || session.has_ended());
+
+        // Done, and still there: its picture, times and subtitle track, paused.
+        assert!(queries::get_progress(&db.lock().unwrap(), &lectures[0]).unwrap().1, "marked done");
+        assert_eq!(session.now_playing().1.title, "First");
+        assert!(mpv.get_f64("time-pos").is_some_and(|t| t > 2.0), "at its end, not unloaded");
+        assert_eq!(mpv.get_property_string("pause").as_deref(), Some("yes"));
+        assert!(!crate::tracks::read(&mpv).subtitles.is_empty(), "its tracks stay");
+
+        // Seeking back un-ends it: play goes on from there, not from 0:00.
+        mpv.command(&["seek", "1", "absolute"]).unwrap();
+        watch_until(&session, &mpv, || !session.has_ended());
+        assert!(!session.replay_if_ended());
+
+        // At the end again, play watches it from the start.
+        mpv.set_property("pause", "no").unwrap();
+        watch_until(&session, &mpv, || session.has_ended());
+        assert!(session.replay_if_ended());
+        assert_eq!(session.now_playing().1.title, "First");
+        assert_eq!(mpv.get_property_string("pause").as_deref(), Some("no"));
+    }
+
+    #[test]
+    fn autoplay_goes_on_from_a_lecture_kept_open_at_its_end() {
+        let Some(mpv) = headless_mpv() else { return };
+        mpv.set_property("keep-open", "yes").unwrap();
+        let Some((_tmp, db, lectures)) = library_with_subtitles(&[("001 First", &[]), ("002 Second", &[])]) else {
+            return;
+        };
+        let session = Session::new(mpv.clone(), db.clone(), settings::shared(AppConfig::default()));
+        session.open(&lectures[0]).unwrap();
+        mpv.set_property("speed", "4").unwrap();
+        watch_until(&session, &mpv, || session.now_playing().1.title == "Second");
+        // Playing (mpv paused at the first's end), done once, from 0:00.
+        assert_eq!(mpv.get_property_string("pause").as_deref(), Some("no"));
+        assert!(queries::get_progress(&db.lock().unwrap(), &lectures[0]).unwrap().1);
+        assert!(!queries::get_progress(&db.lock().unwrap(), &lectures[1]).unwrap().1, "not counted done too");
+        assert!(!session.has_ended());
     }
 
     #[test]

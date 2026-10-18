@@ -339,6 +339,7 @@ one users get.
 - [ ] Course panel: Content and Resources tabs, playing from the panel, ticking resources.
 - [ ] Playback info (I) shows live numbers.
 - [ ] "Pause on exercises and resources" on: at the end of a lecture with resources, "Before the next lecture" appears, with Stay here / Next lecture.
+  - Click off the card (or Stay here): the lecture stays on its last frame, paused, with its times, subtitle button and panel as before. Play watches it again from 0:00; seeking back first plays on from there.
 - [ ] Default speed:
   - Changing it in Settings applies to a course with no saved speed.
   - A course's own saved speed wins until "Use default".
@@ -464,6 +465,7 @@ caught it.
 | A video whose path is over 260 characters imported as unplayable (1.x–2.0.2) | §2 import preview (1 unplayable, not 2); Player → lecture 013 |
 | The subtitle language changed or went off in the next lecture (#11) | QA Course lecture 2 ("Two Subtitle Languages"): pick the second language, then step through the lectures: each one with that language shows it, the others show none; a restart keeps it |
 | A track menu left open came back with the next lecture, in any course; the subtitle button looked open whenever subtitles were on (2.1 dev) | Player: open the subtitle menu, then Next lecture, then Back and play another course: it's closed each time. Subtitles on show an underline, and the round highlight only while the menu is open |
+| An ended lecture looked stuck: 0:00 / -0:00, no subtitle button, a black picture once the panel opened, and play restarted it (2.1 dev; mpv unloaded the file at its end) | Player → "Pause on exercises and resources": click off the card; the lecture stays on its last frame, paused, with its times and tracks |
 | Add Folder did nothing when the dialog couldn't open (Linux, #10) | Linux only: no session bus and no zenity shows a message above Add Folder |
 | Two copies on one library could lose each other's writes (2.0–2.0.2) | §7 single copy |
 | `--verify-update` in PowerShell printed nothing, which looked like a pass (2.0.2 QA) | §3, `\| Write-Output` |

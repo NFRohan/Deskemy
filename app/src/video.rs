@@ -8,8 +8,7 @@ use crate::{course_panel, stats, tracks};
 use crate::{AppWindow, BookmarkRow, MenuItem, Playback};
 use crate::settings::Config;
 use deskemy_core::mpv::{
-    Mpv, MpvEventEndFile, MpvRenderContext, NativeDisplay, MPV_END_FILE_REASON_EOF, MPV_EVENT_END_FILE,
-    MPV_EVENT_FILE_LOADED, MPV_EVENT_PLAYBACK_RESTART, MPV_EVENT_SHUTDOWN,
+    Mpv, MpvRenderContext, NativeDisplay, MPV_EVENT_FILE_LOADED, MPV_EVENT_PLAYBACK_RESTART, MPV_EVENT_SHUTDOWN,
     MPV_RENDER_UPDATE_FRAME,
 };
 use glow::HasContext;
@@ -54,8 +53,11 @@ impl Player {
         // Nice-to-haves: some libmpv builds lack e.g. `osc` (no Lua), so a
         // missing one is logged rather than fatal.
         for (name, value) in [
-            // End-of-file must fire END_FILE so the lecture completes/advances.
-            ("keep-open", "no"),
+            // At the end of a file, pause on its last frame rather than unload
+            // it: a lecture that stops there (autoplay off, its resources
+            // offered) keeps its picture, times and tracks. `eof-reached`
+            // says it's there (`Session::track_end`).
+            ("keep-open", "yes"),
             ("idle", "yes"),
             // Pick up sidecar subtitles (e.g. Udemy .srt) matching the video.
             ("sub-auto", "fuzzy"),
@@ -865,6 +867,8 @@ struct State {
     position: Option<f64>,
     duration: f64,
     paused: bool,
+    /// Paused at the end of the file (kept open there).
+    at_end: bool,
     volume: f64,
     muted: bool,
     speed: f64,
@@ -877,6 +881,7 @@ impl State {
             position: mpv.get_f64("time-pos"),
             duration: mpv.get_f64("duration").unwrap_or(0.0),
             paused: flag("pause"),
+            at_end: flag("eof-reached"),
             volume: mpv.get_f64("volume").unwrap_or(100.0),
             muted: flag("mute"),
             speed: mpv.get_f64("speed").unwrap_or(1.0),
@@ -906,18 +911,12 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
                     let decoder = mpv.get_property_string("hwdec-current");
                     tracing::info!(decoder = decoder.as_deref().unwrap_or("software"), "decoding");
                 }
-                MPV_EVENT_END_FILE => {
-                    let data = unsafe { (*event).data } as *const MpvEventEndFile;
-                    // Only a real end of file — not `stop` or a replacing loadfile.
-                    if !data.is_null() && unsafe { (*data).reason } == MPV_END_FILE_REASON_EOF {
-                        session.on_eof();
-                    }
-                }
                 _ => {}
             }
         }
 
         let s = State::sample(mpv);
+        session.track_end(s.at_end, s.position.is_some());
         session.tick(s.position, s.duration, s.paused);
         // The mini player keeps the video's shape; being that shape, the
         // video fills it (mpv keeping the aspect rounded 782.2px down to 782
