@@ -219,12 +219,18 @@ impl Session {
         self.inner().ended
     }
 
-    /// Play again after reaching the end (mpv is idle by then).
-    pub fn replay_if_ended(&self) -> bool {
-        if !self.inner().ended {
+    /// Play, once the lecture has ended (autoplay off, its resources offered,
+    /// or the sleep timer): go on to the next lecture, as autoplay would
+    /// have; the course's last lecture plays again.
+    pub fn play_on_if_ended(&self) -> bool {
+        let (ended, has_next) = {
+            let inner = self.inner();
+            (inner.ended, inner.index + 1 < inner.items.len())
+        };
+        if !ended {
             return false;
         }
-        self.load_current(Start::Beginning).is_ok()
+        if has_next { self.step(1) } else { self.load_current(Start::Beginning) }.is_ok()
     }
 
     fn load_current(&self, from: Start) -> Result<(), String> {
@@ -828,7 +834,8 @@ mod tests {
         let (_, now) = session.now_playing();
         assert_eq!(now.title, "First", "stays on the lecture with the exercise");
         assert!(now.resources_waiting);
-        assert!(session.replay_if_ended(), "and play watches it again");
+        assert!(session.play_on_if_ended(), "and play goes on");
+        assert_eq!(session.now_playing().1.title, "Second");
 
         // Lectures without resources advance as usual…
         session.open(&lectures[1]).unwrap();
@@ -844,7 +851,7 @@ mod tests {
     }
 
     #[test]
-    fn without_autoplay_the_last_position_is_kept_and_play_restarts() {
+    fn without_autoplay_the_last_position_is_kept_and_play_goes_on() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();
         let config = AppConfig {
@@ -860,9 +867,17 @@ mod tests {
         assert_eq!(session.now_playing().1.title, "First", "stays on the lecture");
         // Opening a resource (the PDF viewer) checks this to leave it ended.
         assert!(session.has_ended());
-        assert!(session.replay_if_ended());
+        assert!(session.play_on_if_ended());
+        assert_eq!(session.now_playing().1.title, "Second", "play goes on to the next lecture");
         assert!(!session.has_ended());
-        assert!(!session.replay_if_ended(), "only once the lecture has ended");
+        assert!(!session.play_on_if_ended(), "only once the lecture has ended");
+
+        // The course's last lecture has no next one: it plays again.
+        session.open(&lectures[2]).unwrap();
+        session.on_eof();
+        assert!(session.play_on_if_ended());
+        assert_eq!(session.now_playing().1.title, "Third");
+        assert!(!session.has_ended());
     }
 
     #[test]
@@ -1044,16 +1059,17 @@ mod tests {
         assert_eq!(mpv.get_property_string("pause").as_deref(), Some("yes"));
         assert!(!crate::tracks::read(&mpv).subtitles.is_empty(), "its tracks stay");
 
-        // Seeking back un-ends it: play goes on from there, not from 0:00.
+        // Seeking back un-ends it: play goes on from there.
         mpv.command(&["seek", "1", "absolute"]).unwrap();
         watch_until(&session, &mpv, || !session.has_ended());
-        assert!(!session.replay_if_ended());
+        assert!(!session.play_on_if_ended());
+        assert_eq!(session.now_playing().1.title, "First");
 
-        // At the end again, play watches it from the start.
+        // At the end again, play goes on to the next lecture, playing.
         mpv.set_property("pause", "no").unwrap();
         watch_until(&session, &mpv, || session.has_ended());
-        assert!(session.replay_if_ended());
-        assert_eq!(session.now_playing().1.title, "First");
+        assert!(session.play_on_if_ended());
+        assert_eq!(session.now_playing().1.title, "Second");
         assert_eq!(mpv.get_property_string("pause").as_deref(), Some("no"));
     }
 

@@ -575,8 +575,9 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
 
     let (s, m) = (session.clone(), mpv.clone());
     playback.on_toggle_pause(move || {
-        // After the last lecture ends mpv is idle; play means "watch again".
-        if !s.replay_if_ended() {
+        // At the end of a lecture autoplay stopped at, play goes on to the
+        // next one.
+        if !s.play_on_if_ended() {
             run(&m, &["cycle", "pause"]);
         }
     });
