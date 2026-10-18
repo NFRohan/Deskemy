@@ -22,6 +22,8 @@ const SAVE_EVERY: Duration = Duration::from_secs(5);
 /// Header / "Up next" text for the loaded lecture.
 #[derive(Clone, Default)]
 pub struct NowPlaying {
+    /// The file playing: a new one closes the menus left open.
+    pub file: String,
     pub title: String,
     pub section: String,
     /// The course ("" and "" for a bare file).
@@ -186,6 +188,7 @@ impl Session {
             sleep: inner.sleep,
             revision: inner.revision + 1,
             now: NowPlaying {
+                file: path.clone(),
                 title: file_title(&path),
                 ..NowPlaying::default()
             },
@@ -286,6 +289,7 @@ impl Session {
             None => (file_title(&item.path), String::new(), String::new(), String::new()),
         };
         inner.now = NowPlaying {
+            file: item.path.clone(),
             title,
             section,
             course,

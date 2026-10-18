@@ -684,6 +684,8 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
             set_cursor_visible(&ui, true);
             ui.window().set_fullscreen(false);
             ui.global::<Playback>().set_fullscreen(false);
+            // Nothing left open for the next lecture played.
+            ui.global::<Playback>().set_open_menu("".into());
             ui.set_playing(false);
             // Progress changed while watching.
             ui.invoke_refresh_library();
@@ -887,6 +889,7 @@ impl State {
 /// machine awake while playing, and pushes state to the overlay ~5×/s.
 fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint::Weak<AppWindow>) {
     let mut shown_revision = u64::MAX;
+    let mut shown_file = None;
     let mut shown_tracks = None;
     let mut known_chapters = None;
     let mut awake = false;
@@ -937,6 +940,10 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             shown_revision = revision;
             now_playing
         });
+        let new_file = now_playing.as_ref().is_some_and(|np| shown_file.as_ref() != Some(&np.file));
+        if let Some(np) = &now_playing {
+            shown_file = Some(np.file.clone());
+        }
 
         // Re-read tracks only when their fingerprint moves: a file loaded, a
         // sidecar subtitle attached late, or a pick took effect.
@@ -987,6 +994,11 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             let playback = ui.global::<Playback>();
             if let Some(menus) = menus {
                 menus.apply(&playback);
+            }
+            // Another lecture: the last one's menus close (an open bookmark
+            // dialog stays, as playback paused for it).
+            if new_file && playback.get_open_menu() != "bookmark" {
+                playback.set_open_menu("".into());
             }
             if let Some(items) = waiting {
                 playback.set_prompt_items(course_panel::model(items));
