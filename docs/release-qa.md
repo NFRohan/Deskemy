@@ -357,6 +357,7 @@ one users get.
 - [ ] It's always on top. Dragging moves it with no snapping to edges.
 - [ ] Resizing keeps the video's shape; the 4:3 and vertical lectures reshape it.
 - [ ] Controls appear on hover; the progress line shows at rest.
+- [ ] Back-to-full-player and close sit together at the top right, set in from the edges: resizing from the top-left (and top-right) corner doesn't hit them.
 - [ ] × closes the player. Closing and reopening the app restores the mini player where it was.
 - [ ] The resources chip appears with "Pause on exercises and resources".
 

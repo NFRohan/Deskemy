@@ -101,19 +101,13 @@ export component MiniPlayer inherits Rectangle {
                 animate opacity { duration: 150ms; }
                 background: @linear-gradient(180deg, #000000b3 0%, #00000040 35%, #00000040 60%, #000000cc 100%);
 
-                // As Edge's picture-in-picture: back to the full player on the
-                // left, close (leave the player) on the right.
-                IconButton {
-                    x: 4px;
-                    y: 2px;
-                    icon: @image-url("icons/m-open-in-full.svg");
-                    icon-size: 18px;
-                    clicked => { Playback.toggle-mini(); }
-                }
+                // The title, then back to the full player and close (leave the
+                // player) together on the right, set in from the edges: the
+                // corners are where the window is grabbed to resize it.
                 Text {
-                    x: 44px;
-                    y: 11px;
-                    width: parent.width - 88px;
+                    x: 12px;
+                    y: 15px;
+                    width: parent.width - 104px;
                     text: Playback.title;
                     color: #ffffff;
                     font-size: 12px;
@@ -121,8 +115,15 @@ export component MiniPlayer inherits Rectangle {
                     overflow: elide;
                 }
                 IconButton {
-                    x: parent.width - self.width - 4px;
-                    y: 2px;
+                    x: parent.width - 2 * self.width - 10px;
+                    y: 6px;
+                    icon: @image-url("icons/m-open-in-full.svg");
+                    icon-size: 18px;
+                    clicked => { Playback.toggle-mini(); }
+                }
+                IconButton {
+                    x: parent.width - self.width - 8px;
+                    y: 6px;
                     icon: @image-url("icons/m-close.svg");
                     icon-size: 20px;
                     clicked => { Playback.back(); }
