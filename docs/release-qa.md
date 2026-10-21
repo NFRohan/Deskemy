@@ -90,7 +90,7 @@ $pages = "", "favorites", "history", "bookmarks", "stats", "settings", "settings
          "import-preview", "import-scanning", "import-batch", "import-batch-running", "drop",
          "search:quokka", "search:ornitorrinco", "search:pangolin",
          "tracks", "tracks-create", "track", "track-add", "track-edit", "track-delete",
-         "course", "course-cover", "course-delete", "course-pair:Configuring", "course-scrolled",
+         "course", "course-cover", "course-delete", "course-pair:Configuring", "course-scrolled", "library-scrolled",
          "update:library", "update:settings-downloading"
 foreach ($p in $pages) { & $exe --snapshot "$out\page-$($p -replace '[:]','_').png" $p | Out-Null }
 $menus = "", "speed", "sub", "audio", "chapters", "sleep", "bookmark", "shortcuts", "stats",
@@ -100,7 +100,7 @@ $env:DESKEMY_SNAPSHOT_WIDTH = 900; $env:DESKEMY_SNAPSHOT_HEIGHT = 600
 foreach ($p in "", "course", "stats", "settings") { & $exe --snapshot "$out\min-page-$p.png" $p | Out-Null }
 & $exe --snapshot-player "$out\min-player.png" "" | Out-Null
 Remove-Item Env:DESKEMY_SNAPSHOT_WIDTH, Env:DESKEMY_SNAPSHOT_HEIGHT, Env:DESKEMY_SNAPSHOT_COURSE
-"$((Get-ChildItem $out -Filter *.png).Count) images (expect 56)"
+"$((Get-ChildItem $out -Filter *.png).Count) images (expect 57)"
 ```
 
 Check what the real import gave:
@@ -289,7 +289,7 @@ one users get.
 - [ ] Missing folder: rename the course folder.
   - Settings → Check for missing files flags it, and the course shows a missing-folder banner.
   - **Locate folder** with the wrong folder is refused; with the renamed one it works.
-- [ ] Scroll down the course page, play a lecture, then come back (Back, Esc, or × on the mini player): the page is where you left it. Opening the course again from the library starts at the top.
+- [ ] Scroll down the course page, play a lecture, then come back (Back, Esc, or × on the mini player): the page is where you left it. Opening the course again from the library starts at the top. The library does the same (play from Continue Watching or a card, come back); a new search, sort or filter starts it at the top.
 - [ ] Remove from library: the course is gone, and the files are still on disk.
 - [ ] Re-import the same folder: the preview says Re-import, and progress is kept.
 - [ ] PDF viewer: click `8.1 Slides.pdf` on the course page.

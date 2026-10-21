@@ -237,6 +237,11 @@ fn main() -> Result<(), slint::PlatformError> {
                 Err(e) => ui.global::<Import>().set_error(e.into()),
             }
         }
+        // "library-scrolled": the library as it's found back from a video,
+        // scrolled down.
+        if page.as_deref() == Some("library-scrolled") {
+            ui.global::<Library>().set_scroll_y(-120.0);
+        }
         // "pdf:<file>": the PDF viewer on a real PDF, its first pages rendered.
         if let Some(file) = page.as_deref().and_then(|p| p.strip_prefix("pdf:")) {
             let width = std::env::var("DESKEMY_SNAPSHOT_WIDTH").ok().and_then(|w| w.parse::<f32>().ok()).unwrap_or(1280.0);
@@ -340,6 +345,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let (weak, page) = (ui.as_weak(), library.clone());
     ui.global::<Library>().on_apply(move || {
         if let Some(ui) = weak.upgrade() {
+            // Another list: from its top.
+            ui.global::<Library>().set_scroll_y(0.0);
             page.apply(&ui);
         }
     });
@@ -679,6 +686,8 @@ fn wire_course(
         if p.delete(&ui) {
             let course = ui.global::<Course>();
             course.set_dialog("".into());
+            // One card fewer: from the top, not past the end.
+            ui.global::<Library>().set_scroll_y(0.0);
             let nav = ui.global::<Nav>();
             nav.set_page("library".into());
             nav.set_crumbs(course_panel::model(vec!["Library".into()]));

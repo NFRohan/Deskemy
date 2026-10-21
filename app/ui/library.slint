@@ -43,6 +43,10 @@ export struct SelectOption {
 
 /// The page's data (from Rust) and its filters (edited here, applied in Rust).
 export global Library {
+    /// Where the page is scrolled to (its content-y: 0 or less). Kept here,
+    /// as the page is rebuilt after each video (and each visit): it comes
+    /// back where it was. A new search, sort or filter starts at the top.
+    in-out property <length> scroll-y;
     in property <int> total;
     in property <Hero> hero;
     in property <[CourseCard]> cards;
@@ -395,6 +399,7 @@ export component CourseGrid inherits Rectangle {
 }
 
 export component LibraryPage inherits Flickable {
+    content-y <=> Library.scroll-y;
     // Scrolls vertically only: the content is exactly as wide as the view.
     content-width: self.width;
     content-height: page.preferred-height;
