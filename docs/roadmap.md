@@ -14,14 +14,20 @@ checklist live in [slint-port.md](slint-port.md).
   mixed-DPI monitors (#8), Snap Layouts, resources in lecture order, mouse
   back anywhere in the player, chapters kept (#6). First release run through
   [release-qa.md](release-qa.md); Windows 11 checks still to do.
+- **2.1.0** (2026-10-21) — the PDF viewer, drag & drop import (Add Folder
+  tells a folder of courses apart), manual resource pairing, the subtitle
+  language kept by language (#11), lectures kept on their last frame at the
+  end, scroll kept on the course page and library; with the 2.0.3 fixes
+  (#10, long paths, single copy, subtitles indexed on import).
 
 ## Order of work
 
 1. **Keep the Windows build solid.** Real users find what testing doesn't:
    fix what they report first ([Open issues](#open-issues),
    [Windows polish](#windows-polish)).
-2. **2.0.3 fixes** — found by 2.0.2's QA run and #10 ([2.0.3](#203)); done, and shipping with 2.1 rather than on their own.
-3. **2.1** — drag & drop import, manual resource pairing, the PDF viewer
+2. ~~**2.0.3 fixes**~~ — found by 2.0.2's QA run and #10 ([2.0.3](#203));
+   released with 2.1.0 rather than on their own.
+3. ~~**2.1**~~ — released as 2.1.0: drag & drop import, manual resource pairing, the PDF viewer
    ([2.1](#21)). Versions follow semver: fixes and small touches are patch
    releases; new features are the next minor.
 4. ~~Retire the Tauri app~~ — done: removed, 1.x docs in `docs/archive/`.
