@@ -41,6 +41,10 @@ export struct PairRow {
 /// The open course (from Rust) and what the page can do with it.
 export global Course {
     in property <bool> found: true;
+    /// Where the page is scrolled to (its content-y: 0 or less). Kept here,
+    /// as the page is rebuilt after each video: back from one, it's where it
+    /// was. Opening a course starts at the top.
+    in-out property <length> scroll-y;
     in property <string> id;
     in property <string> title;
     in property <image> thumbnail;
@@ -403,6 +407,7 @@ component SectionHeading inherits HorizontalLayout {
 }
 
 export component CoursePage inherits Flickable {
+    content-y <=> Course.scroll-y;
     content-width: self.width;
     content-height: page.preferred-height;
 

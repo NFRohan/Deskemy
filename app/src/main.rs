@@ -275,7 +275,8 @@ fn main() -> Result<(), slint::PlatformError> {
             snapshot::sample_tracks(&ui, &tracks, page);
         }
         // "course", or "course-cover" / "course-delete" with that dialog open;
-        // "course-pair[:<name>]" pairs the resource named so (the first one).
+        // "course-pair[:<name>]" pairs the resource named so (the first one);
+        // "course-scrolled", as it's found back from a video, scrolled down.
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
             snapshot::sample_course(&ui, &db, &course);
             let dialog = page.strip_prefix("course-").unwrap_or_default();
@@ -290,6 +291,7 @@ fn main() -> Result<(), slint::PlatformError> {
                         course.pair_open(&ui, &a.id);
                     }
                 }
+                None if dialog == "scrolled" => ui.global::<Course>().set_scroll_y(-320.0),
                 None => ui.global::<Course>().set_dialog(dialog.into()),
             }
         }

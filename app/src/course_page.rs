@@ -277,6 +277,7 @@ impl CoursePage {
         *self.expanded.borrow_mut() = open.into_iter().collect();
 
         let title = detail.as_ref().map_or_else(|| "Course".into(), |c| c.title.clone());
+        ui.global::<Course>().set_scroll_y(0.0);
         let nav = ui.global::<Nav>();
         nav.set_page("course".into());
         nav.set_crumbs(model(vec!["Library".into(), title.into()]));
