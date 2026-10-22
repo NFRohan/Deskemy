@@ -1,9 +1,10 @@
 # Builds and tests the Slint app and the shared core on Linux (GH #7), with the
 # distribution's libmpv. The session tests drive a real, headless mpv.
 #
-# CI only: it publishes nothing (no release, no binaries; the one artifact is
-# a UI screenshot). Linux isn't released until it's been reviewed and tested
-# (docs/roadmap.md, Linux); releases are Windows-only, see docs/releasing.md.
+# CI only: it publishes nothing. Its artifacts are a UI screenshot and the
+# AppImage, unsigned (package.ps1 signs it for a release; docs/linux-port.md).
+# Linux isn't released until it's been reviewed and tested (docs/roadmap.md,
+# Linux); releases are Windows-only, see docs/releasing.md.
 name: Slint app on Linux
 
 on:
@@ -72,3 +73,47 @@ jobs:
           name: linux-snapshot
           path: ${{ runner.temp }}/library.png
           if-no-files-found: ignore
+
+  # The AppImage: libmpv, its libraries and PDFium bundled
+  # (app/scripts/package-appimage.sh). No GTK: rfd uses the desktop portal.
+  appimage:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             libmpv-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+          key: appimage
+
+      - name: PDFium
+        run: sh app/scripts/get-pdfium.sh
+
+      - name: AppImage
+        run: sh app/scripts/package-appimage.sh
+
+      # Every bundled library resolves, and the app starts from the AppImage
+      # (an offscreen frame: no display here).
+      - name: Smoke test
+        env:
+          DESKEMY_DATA_DIR: ${{ runner.temp }}/deskemy-data
+        run: |
+          image=$(ls app/target/packages/*.AppImage)
+          cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/$image" --appimage-extract >/dev/null
+          if ldd squashfs-root/usr/bin/deskemy squashfs-root/usr/lib/*.so* | grep "not found"; then exit 1; fi
+          APPIMAGE_EXTRACT_AND_RUN=1 "$GITHUB_WORKSPACE/$image" --snapshot "$RUNNER_TEMP/appimage.png"
+          test -s "$RUNNER_TEMP/appimage.png"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deskemy-appimage
+          path: app/target/packages/*.AppImage
+          if-no-files-found: error
