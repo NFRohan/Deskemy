@@ -28,11 +28,14 @@ pub const ENDPOINT: &str = "https://github.com/NFRohan/Deskemy/releases/latest/d
 pub const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1NEM0QUJGNTNGQjdENTMKUldSVGZmdFR2MHBNTmZ4aUZYOFNxOXZKT0pTS0ZUbTdmUElvZkNGOFZuNzI1SFRjYTBWTzFqTnYK";
 pub const RELEASES_URL: &str = "https://github.com/NFRohan/Deskemy/releases/latest";
 /// NSIS: passive install (a progress bar, no questions), then relaunch.
+#[cfg(windows)]
 pub const INSTALLER_ARGS: [&str; 2] = ["/P", "/R"];
 /// msiexec, as the Tauri updater runs it: passive, then relaunch
 /// (`AUTOLAUNCHAPP`, see installer/main.wxs).
+#[cfg(windows)]
 pub const MSI_ARGS: [&str; 3] = ["/passive", "/promptrestart", "AUTOLAUNCHAPP=True"];
 /// The Tauri MSI's upgrade code, which ours keeps (installer/main.wxs).
+#[cfg(windows)]
 pub const MSI_UPGRADE_CODE: &str = "{12314604-E9F6-5440-BB59-4983D4418E47}";
 /// The manifest entry MSI installs read.
 pub const MSI_TARGET: &str = "windows-x86_64-msi";
@@ -114,6 +117,7 @@ pub fn installed_by_msi() -> bool {
 }
 
 /// Two folders are the same, ignoring case and a trailing separator.
+#[cfg(windows)]
 fn same_dir(a: &Path, b: &Path) -> bool {
     let norm = |p: &Path| {
         let p = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
@@ -551,6 +555,7 @@ Connection: close
         assert!(check_with(&format!("{base}/latest.json"), &pubkey, "2.0.0", None).unwrap().is_none());
     }
 
+    #[cfg(windows)]
     #[test]
     fn same_dir_ignores_case_and_trailing_separators() {
         let dir = tempfile::tempdir().unwrap();

@@ -122,6 +122,7 @@ pub fn keep_aspect(r: Rect, edge: u32, aspect: f64, min: (i32, i32)) -> Rect {
 }
 
 /// The mini player's minimum size in physical pixels at a monitor's DPI.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn min_at_dpi(dpi: u32) -> (i32, i32) {
     let scale = dpi.max(1) as f64 / 96.0;
     ((MIN.0 as f64 * scale).round() as i32, (MIN.1 as f64 * scale).round() as i32)
@@ -133,6 +134,7 @@ pub fn min_at_dpi(dpi: u32) -> (i32, i32) {
 /// to the minimum at that DPI. Taking Windows' rectangle as it is matters:
 /// winit nudges the window off it, the drag pulls it back over the first
 /// monitor, and the scale flips back and forth (GH #8).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn on_new_monitor(suggested: Rect, dpi: u32, aspect: f64) -> Rect {
     keep_aspect(suggested, 2, aspect, min_at_dpi(dpi))
 }
