@@ -25,11 +25,10 @@ jobs:
         run: |
           sudo apt-get update
           # libmpv: playback + probing. fontconfig / xkbcommon / wayland: Slint's
-          # winit backend. gtk3: native file dialogs (rfd). ffmpeg: the tests'
-          # videos (without it, the tests that play one skip).
+          # winit backend. ffmpeg: the tests' videos (without it, the tests that
+          # play one skip). No GTK: file dialogs go through the desktop portal.
           sudo apt-get install -y --no-install-recommends \
-            libmpv-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev \
-            libgtk-3-dev ffmpeg
+            libmpv-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev ffmpeg
 
       - uses: dtolnay/rust-toolchain@stable
 
