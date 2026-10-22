@@ -148,7 +148,10 @@ fn main() -> Result<(), slint::PlatformError> {
         _ => {
             let renderer = std::env::var("DESKEMY_RENDERER").unwrap_or_else(|_| "skia-opengl".into());
             tracing::info!(%renderer, "renderer");
-            slint::BackendSelector::new().renderer_name(renderer).require_opengl().select()?;
+            let backend = slint::BackendSelector::new().renderer_name(renderer).require_opengl();
+            #[cfg(target_os = "linux")]
+            let backend = prefer_x11(backend);
+            backend.select()?;
             None
         }
     };
@@ -897,6 +900,27 @@ pub(crate) fn bring_to_front(hwnd: windows_sys::Win32::Foundation::HWND) -> bool
 
 #[cfg(not(windows))]
 fn log_launch_window(_: &AppWindow) {}
+
+/// On Linux, run on X11 (XWayland on a Wayland desktop) where there is one.
+/// Wayland lets an app neither keep its window on top nor place it, so the
+/// mini player would be an ordinary window there, and winit has no drag &
+/// drop on Wayland. DESKEMY_WAYLAND=1 runs on Wayland anyway. Chosen here
+/// rather than by unsetting WAYLAND_DISPLAY, which the apps Deskemy opens
+/// (the PDF app, the browser) would inherit.
+#[cfg(target_os = "linux")]
+fn prefer_x11(backend: slint::BackendSelector) -> slint::BackendSelector {
+    use slint::winit_030::winit::event_loop::EventLoop;
+    use slint::winit_030::winit::platform::x11::EventLoopBuilderExtX11;
+    let wayland_asked = std::env::var_os("DESKEMY_WAYLAND").is_some_and(|v| v == "1");
+    if wayland_asked || std::env::var_os("DISPLAY").is_none() {
+        tracing::info!(wayland_asked, "window system: as the session has it");
+        return backend;
+    }
+    tracing::info!("window system: X11");
+    let mut event_loop = EventLoop::<slint::winit_030::SlintEvent>::with_user_event();
+    event_loop.with_x11();
+    backend.with_winit_event_loop_builder(event_loop)
+}
 
 /// The executable name of the process that started this one.
 #[cfg(windows)]
