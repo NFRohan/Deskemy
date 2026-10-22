@@ -7,6 +7,10 @@
 #   latest.json                           the update manifest, when signed
 #   SHA256SUMS.txt                        checksums of the installers and zip
 #
+# With the Linux AppImage CI built (Deskemy_<version>_x86_64.AppImage, the
+# deskemy-appimage artifact) put in app/target/packages first, it's signed
+# here too and goes in latest.json and SHA256SUMS.txt. The key stays here.
+#
 # Signing: set CARGO_PACKAGER_SIGN_PRIVATE_KEY (the key, or a path to it) and
 # CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD — the same minisign key the Tauri
 # releases were signed with (TAURI_SIGNING_PRIVATE_KEY). See docs/releasing.md.
@@ -59,11 +63,21 @@ Remove-Item -Force $zip -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
 Remove-Item -Recurse -Force $stage
 
-# 3. latest.json: read by the Tauri 1.x updater and this app's, from
+# 3. The Linux AppImage, if it's here: signed with the same key.
+$appImageName = "Deskemy_${version}_x86_64.AppImage"
+$appImage = Join-Path $out $appImageName
+if (-not (Test-Path $appImage)) {
+    Write-Host "No $appImageName in $out`: this release is Windows-only."
+} elseif ($env:CARGO_PACKAGER_SIGN_PRIVATE_KEY) {
+    cargo packager signer sign $appImage
+    if ($LASTEXITCODE) { throw "signing $appImageName failed" }
+}
+
+# 4. latest.json: read by the Tauri 1.x updater and this app's, from
 #    releases/latest/download/latest.json. MSI installs read
 #    windows-x86_64-msi (both updaters), the rest windows-x86_64 — each
-#    updates its own kind of install in place. `format` is for cargo-packager's
-#    updater; the Tauri one ignores it.
+#    updates its own kind of install in place; an AppImage reads linux-x86_64.
+#    `format` is for cargo-packager's updater; the Tauri one ignores it.
 $download = "https://github.com/NFRohan/Deskemy/releases/download/v$version"
 if ((Test-Path "$setup.sig") -and (Test-Path "$msi.sig")) {
     $manifest = [ordered]@{
@@ -83,6 +97,13 @@ if ((Test-Path "$setup.sig") -and (Test-Path "$msi.sig")) {
             }
         }
     }
+    if (Test-Path "$appImage.sig") {
+        $manifest.platforms["linux-x86_64"] = [ordered]@{
+            signature = (Get-Content -Raw "$appImage.sig").Trim()
+            url       = "$download/$appImageName"
+            format    = "appimage"
+        }
+    }
     # UTF-8 without a BOM (Windows PowerShell 5.1's Set-Content can't).
     $json = $manifest | ConvertTo-Json -Depth 5
     [System.IO.File]::WriteAllText((Join-Path (Resolve-Path $out).Path "latest.json"), $json, (New-Object System.Text.UTF8Encoding $false))
@@ -90,9 +111,9 @@ if ((Test-Path "$setup.sig") -and (Test-Path "$msi.sig")) {
     Write-Warning "No signing key set: the installers are unsigned and there's no latest.json (the updaters need both)."
 }
 
-# 4. SHA256SUMS.txt for the downloads, as earlier releases published.
+# 5. SHA256SUMS.txt for the downloads, as earlier releases published.
 #    This version's only: an earlier version's installers may still be there.
-$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|msi|zip)$' -and $_.Name -like "*_${version}_*" } | Sort-Object Name | ForEach-Object {
+$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|msi|zip|AppImage)$' -and $_.Name -like "*_${version}_*" } | Sort-Object Name | ForEach-Object {
     "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
 }
 [System.IO.File]::WriteAllText((Join-Path (Resolve-Path $out).Path "SHA256SUMS.txt"), (($sums -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
