@@ -42,6 +42,10 @@ jobs:
         working-directory: crates/deskemy-core
         run: cargo test
 
+      # The PDF viewer's renderer, staged beside the binary by build.rs.
+      - name: PDFium
+        run: sh app/scripts/get-pdfium.sh
+
       - name: App build and tests
         working-directory: app
         # The session tests skip without libmpv; here it's installed, so a

@@ -29,7 +29,7 @@ pub fn is_pdf(path: &str) -> bool {
 }
 
 /// Where PDFium is: beside the exe (a test's exe sits a folder below). Not
-/// there (Linux, for now), PDFs open in the system's PDF app.
+/// there, PDFs open in the system's PDF app.
 fn library() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
