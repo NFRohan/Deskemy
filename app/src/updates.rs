@@ -6,8 +6,10 @@
 //!
 //! The installer is downloaded and verified in the background, then the app
 //! shuts down cleanly (saving playback) and `main` hands over to it; it
-//! relaunches Deskemy when done. A portable copy can't replace its own files,
-//! so it's pointed at the release page instead.
+//! relaunches Deskemy when done. On Linux the update is a new AppImage, put
+//! in place of the running one before Deskemy relaunches from it. A portable
+//! copy can't replace its own files, nor can a binary built from source, so
+//! they're pointed at the release page instead.
 //!
 //! An MSI install updates with the MSI (the manifest's `windows-x86_64-msi`,
 //! as the Tauri updater does), the NSIS one with the setup: each replaces its
@@ -137,6 +139,12 @@ pub fn check_with(endpoint: &str, pubkey: &str, current: &str, target: Option<&s
     let updater = builder.build().map_err(|e| e.to_string())?;
     match updater.check() {
         Ok(update) => Ok(update),
+        // A release without a Linux build (one from before the AppImage was
+        // published). On Windows a missing entry is a broken release: an error.
+        Err(cargo_packager_updater::Error::TargetNotFound(target)) if cfg!(target_os = "linux") => {
+            tracing::info!(target, "the published release has no build for this platform: up to date");
+            Ok(None)
+        }
         // Every manifest this app's releases publish has `format`; one without
         // is a 1.x (Tauri) release's, never newer than this build.
         Err(e) if e.to_string().contains("missing field `format`") => {
@@ -149,7 +157,10 @@ pub fn check_with(endpoint: &str, pubkey: &str, current: &str, target: Option<&s
 
 /// Download (verifying the signature) and save the installer.
 pub fn download(update: &Update, progress: impl Fn(u64, Option<u64>)) -> Result<PathBuf, String> {
-    if !matches!(update.format, UpdateFormat::Nsis | UpdateFormat::Wix) {
+    if cfg!(target_os = "linux") && !matches!(update.format, UpdateFormat::AppImage) {
+        return Err(format!("this build installs AppImage updates, not {}", update.format));
+    }
+    if cfg!(windows) && !matches!(update.format, UpdateFormat::Nsis | UpdateFormat::Wix) {
         return Err(format!("this build installs .exe or .msi updates, not {}", update.format));
     }
     let received = std::cell::Cell::new(0u64);
@@ -169,14 +180,29 @@ pub fn download(update: &Update, progress: impl Fn(u64, Option<u64>)) -> Result<
     Ok(path)
 }
 
-/// "Deskemy_2.1.0_x64-setup.exe" / "Deskemy_2.1.0_x64_en-US.msi" — as the
-/// packager names them.
+/// "Deskemy_2.1.0_x64-setup.exe" / "Deskemy_2.1.0_x64_en-US.msi" /
+/// "Deskemy_2.1.0_x86_64.AppImage" — as the packaging names them.
 pub fn installer_name(version: &str, format: UpdateFormat) -> String {
     let version = version.trim_start_matches('v');
     match format {
         UpdateFormat::Wix => format!("Deskemy_{version}_x64_en-US.msi"),
+        UpdateFormat::AppImage => format!("Deskemy_{version}_x86_64.AppImage"),
         _ => format!("Deskemy_{version}_x64-setup.exe"),
     }
+}
+
+/// The AppImage this copy runs from (its runtime says so in APPIMAGE).
+fn appimage() -> Option<PathBuf> {
+    std::env::var_os("APPIMAGE").map(PathBuf::from).filter(|p| p.is_file())
+}
+
+/// Whether this copy can update itself: an installed copy on Windows, an
+/// AppImage on Linux. Not a portable copy, nor a binary built from source.
+fn updates_in_place() -> bool {
+    if deskemy_core::paths::portable_data_dir().is_some() {
+        return false;
+    }
+    cfg!(windows) || (cfg!(target_os = "linux") && appimage().is_some())
 }
 
 /// Verify `data` against a signature in the updater's form (base64-wrapped
@@ -209,6 +235,7 @@ pub fn percent(received: u64, total: Option<u64>) -> i32 {
 }
 
 /// Run a downloaded installer. Called by `main` after the app has shut down.
+#[cfg(windows)]
 pub fn run_installer(path: &Path) -> std::io::Result<()> {
     let is_msi = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("msi"));
     let mut command = if is_msi {
@@ -221,6 +248,33 @@ pub fn run_installer(path: &Path) -> std::io::Result<()> {
         setup
     };
     command.spawn().map(|_| ())
+}
+
+/// Put a downloaded AppImage in place of the running one, then relaunch from
+/// it. Called by `main` after the app has shut down.
+#[cfg(target_os = "linux")]
+pub fn run_installer(path: &Path) -> std::io::Result<()> {
+    let current = appimage().ok_or_else(|| std::io::Error::other("not running from an AppImage"))?;
+    put_in_place(path, &current)?;
+    std::process::Command::new(&current).spawn().map(|_| ())
+}
+
+/// Copy `new` beside `current`, then rename it over it: never a half-written
+/// AppImage, and the running one keeps its own file until it exits. The name
+/// stays, so shortcuts to it do too.
+#[cfg(target_os = "linux")]
+fn put_in_place(new: &Path, current: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let name = current.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let staged = current.with_file_name(format!(".{name}.update"));
+    std::fs::copy(new, &staged)?;
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))?;
+    std::fs::rename(&staged, current)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn run_installer(_path: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::other("updates install on Windows and Linux only"))
 }
 
 /// The update flow: the update found by the last check.
@@ -279,7 +333,7 @@ impl Updater {
 
     /// Download and verify the update, then restart into its installer.
     pub fn install(&self, ui: &AppWindow) {
-        if deskemy_core::paths::portable_data_dir().is_some() {
+        if !updates_in_place() {
             if let Err(e) = open::that_detached(RELEASES_URL) {
                 tracing::warn!(error = %e, "open the release page");
             }
@@ -421,7 +475,7 @@ Connection: close
         .into_bytes()
     }
 
-    // latest.json has Windows entries only: no update is offered elsewhere.
+    // Windows builds install the setup and the MSI (Linux: an_appimage_gets_the_appimage).
     #[cfg(windows)]
     #[test]
     fn checks_downloads_and_verifies_an_update() {
@@ -493,7 +547,7 @@ Connection: close
         assert!(!installed_by_msi());
     }
 
-    // latest.json has Windows entries only: no update is offered elsewhere.
+    // Windows builds install the setup and the MSI (Linux: an_appimage_gets_the_appimage).
     #[cfg(windows)]
     #[test]
     fn a_tampered_installer_is_refused() {
@@ -542,8 +596,47 @@ Connection: close
     fn names_and_progress() {
         assert_eq!(installer_name("v2.1.0", UpdateFormat::Nsis), "Deskemy_2.1.0_x64-setup.exe");
         assert_eq!(installer_name("2.1.0", UpdateFormat::Wix), "Deskemy_2.1.0_x64_en-US.msi");
+        assert_eq!(installer_name("2.1.0", UpdateFormat::AppImage), "Deskemy_2.1.0_x86_64.AppImage");
         assert_eq!(percent(50, Some(200)), 25);
         assert_eq!(percent(500, Some(200)), 100);
         assert_eq!(percent(50, None), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_appimage_gets_the_appimage() {
+        let appimage = b"pretend AppImage".to_vec();
+        let (pubkey, signature) = sign(&appimage);
+        let base = serve(|base| {
+            let linux = format!(
+                r#"{{"version":"9.9.9","platforms":{{"linux-x86_64":{{"signature":"{signature}","url":"{base}/deskemy.AppImage","format":"appimage"}}}}}}"#
+            );
+            vec![("/latest.json", linux.into_bytes()), ("/deskemy.AppImage", appimage.clone())]
+        });
+        let update = check_with(&format!("{base}/latest.json"), &pubkey, "2.0.0", None).unwrap().expect("an update");
+        let path = download(&update, |_, _| {}).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), appimage);
+        assert_eq!(path.file_name().unwrap(), "Deskemy_9.9.9_x86_64.AppImage");
+        let _ = std::fs::remove_file(&path);
+
+        // A release with Windows builds only: nothing for this copy.
+        let base = serve(|base| vec![("/latest.json", manifest(base, "9.9.9", &signature))]);
+        assert!(check_with(&format!("{base}/latest.json"), &pubkey, "2.0.0", None).unwrap().is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_update_takes_the_appimages_place() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let (current, new) = (dir.path().join("Deskemy.AppImage"), dir.path().join("download"));
+        std::fs::write(&current, "old").unwrap();
+        std::fs::write(&new, "new").unwrap();
+
+        put_in_place(&new, &current).unwrap();
+        assert_eq!(std::fs::read_to_string(&current).unwrap(), "new");
+        assert_eq!(std::fs::metadata(&current).unwrap().permissions().mode() & 0o777, 0o755);
+        let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names.len(), 2, "nothing staged is left behind: {names:?}");
     }
 }
