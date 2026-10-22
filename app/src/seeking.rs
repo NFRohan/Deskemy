@@ -45,7 +45,7 @@ impl Seeker {
     }
 
     pub fn by(&self, delta: f64) {
-        self.show(|p| (f64::from(p.get_position()) + delta).clamp(0.0, f64::from(p.get_duration())));
+        self.show(|p| (f64::from(p.get_live_position()) + delta).clamp(0.0, f64::from(p.get_duration())));
         seek_by(&self.mpv, delta);
     }
 

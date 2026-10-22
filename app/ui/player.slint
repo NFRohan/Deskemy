@@ -101,9 +101,23 @@ export global Playback {
     in property <string> clock;
     in property <string> ends-at;
     in property <string> up-next;
+    /// The last reading of the position, ~5×/s while playing.
     in property <float> position;
     in property <float> duration;
     in property <bool> paused;
+    /// The playback speed (1 = normal), for `live-position`.
+    in property <float> rate: 1;
+    /// When `position` was last read, by the animation clock.
+    property <duration> position-read-at;
+    changed position => { self.position-read-at = animation-tick(); }
+    // Playing again: carry on from now, not from the reading before the pause.
+    changed paused => { self.position-read-at = animation-tick(); }
+    /// The position at this frame: while playing, the last reading carried
+    /// on by the time since, so the seek bar glides between readings instead
+    /// of stepping. Never more than 0.3 s past a reading, so a late one (or
+    /// an animation clock that was idle) can't run it far ahead.
+    out property <float> live-position: paused ? position
+        : min(duration, position + rate * clamp((animation-tick() - position-read-at) / 1s, 0, 0.3));
     in property <float> volume: 100;
     in property <bool> muted;
     in property <bool> fullscreen;
@@ -780,7 +794,7 @@ export component PlayerOverlay inherits Rectangle {
                 HorizontalLayout {
                     spacing: 14px;
                     Text {
-                        text: root.time(seek-bar.dragging ? seek-bar.preview * Playback.duration : Playback.position);
+                        text: root.time(seek-bar.dragging ? seek-bar.preview * Playback.duration : Playback.live-position);
                         color: #ffffff;
                         font-size: 13px;
                         vertical-alignment: center;
@@ -790,11 +804,11 @@ export component PlayerOverlay inherits Rectangle {
                         horizontal-stretch: 1;
                         thickness: 6px;
                         thumb: 16px;
-                        value: Playback.duration > 0 ? Playback.position / Playback.duration : 0;
+                        value: Playback.duration > 0 ? Playback.live-position / Playback.duration : 0;
                         committed(v) => { Playback.seek(v * Playback.duration); }
                     }
                     Text {
-                        text: "-" + root.time(max(0, Playback.duration - Playback.position));
+                        text: "-" + root.time(max(0, Playback.duration - Playback.live-position));
                         color: #ffffff;
                         font-size: 13px;
                         vertical-alignment: center;

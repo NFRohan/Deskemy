@@ -1025,6 +1025,7 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
             }
             playback.set_duration(s.duration as f32);
             playback.set_paused(s.paused);
+            playback.set_rate(s.speed as f32);
             playback.set_volume(s.volume as f32);
             playback.set_muted(s.muted);
             playback.set_clock(clock.into());

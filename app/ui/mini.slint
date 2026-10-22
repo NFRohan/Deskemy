@@ -31,7 +31,7 @@ component Picture inherits TouchArea {
 
 export component MiniPlayer inherits Rectangle {
     property <bool> shown: hover.has-hover || seek.dragging;
-    property <float> progress: Playback.duration > 0 ? Playback.position / Playback.duration : 0;
+    property <float> progress: Playback.duration > 0 ? Playback.live-position / Playback.duration : 0;
 
     // Take the keys once the switch has settled too: the full player's
     // closing menus could otherwise leave focus nowhere.
