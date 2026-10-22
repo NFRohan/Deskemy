@@ -13,6 +13,7 @@ mod mini;
 mod pages;
 mod pdf;
 mod search;
+mod seeking;
 mod session;
 mod settings;
 mod snapshot;
