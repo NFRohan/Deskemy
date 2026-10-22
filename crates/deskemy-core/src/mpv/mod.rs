@@ -128,7 +128,8 @@ struct Fns {
 unsafe impl Send for Fns {}
 unsafe impl Sync for Fns {}
 
-static FNS: OnceLock<Option<Fns>> = OnceLock::new();
+/// libmpv's entry points, or why it couldn't be loaded.
+static FNS: OnceLock<std::result::Result<Fns, String>> = OnceLock::new();
 
 /// The windowing system's display, for the OpenGL render context. Only X11
 /// (an Xlib `Display*`) and Wayland (a `wl_display*`) need one.
@@ -202,13 +203,19 @@ fn candidates() -> Vec<PathBuf> {
     v
 }
 
-unsafe fn load() -> Result<Fns> {
+unsafe fn load() -> std::result::Result<Fns, String> {
     let mut last = String::from("no candidates");
+    // A libmpv that's there but won't load (a library it needs is missing)
+    // says more than the candidates that aren't there: keep its error.
+    let mut found = false;
     for path in candidates() {
         let lib = match libloading::Library::new(&path) {
             Ok(l) => l,
             Err(e) => {
-                last = format!("{}: {e}", path.display());
+                if !found {
+                    found = path.exists();
+                    last = format!("{}: {e}", path.display());
+                }
                 continue;
             }
         };
@@ -216,7 +223,7 @@ unsafe fn load() -> Result<Fns> {
             ($n:literal) => {{
                 let s: libloading::Symbol<_> = lib
                     .get(concat!($n, "\0").as_bytes())
-                    .map_err(|e| DeskemyError::Player(format!("libmpv symbol {}: {e}", $n)))?;
+                    .map_err(|e| format!("libmpv symbol {}: {e}", $n))?;
                 *s
             }};
         }
@@ -245,6 +252,7 @@ unsafe fn load() -> Result<Fns> {
         let render_context_update = opt_sym!("mpv_render_context_update");
         let render_context_report_swap = opt_sym!("mpv_render_context_report_swap");
         let render_context_free = opt_sym!("mpv_render_context_free");
+        tracing::info!(path = %path.display(), "libmpv loaded");
         return Ok(Fns {
             create,
             initialize,
@@ -265,8 +273,8 @@ unsafe fn load() -> Result<Fns> {
             _lib: lib,
         });
     }
-    Err(DeskemyError::Player(format!(
-        "{} not found. {} Or set DESKEMY_LIBMPV to its path. Last attempt — {last}",
+    Err(format!(
+        "{} couldn't be loaded ({last}). {} Or set DESKEMY_LIBMPV to its path.",
         DLL_NAMES[0],
         if cfg!(windows) {
             "Get mpv's shared library (the 'libmpv' build, not just the player) and place \
@@ -276,13 +284,13 @@ unsafe fn load() -> Result<Fns> {
         } else {
             "Install your distribution's libmpv package (e.g. libmpv2)."
         }
-    )))
+    ))
 }
 
 fn fns() -> Result<&'static Fns> {
-    FNS.get_or_init(|| unsafe { load().ok() })
+    FNS.get_or_init(|| unsafe { load() }.inspect_err(|why| tracing::warn!("{why}")))
         .as_ref()
-        .ok_or_else(|| DeskemyError::Player("libmpv is not available".into()))
+        .map_err(|why| DeskemyError::Player(why.clone()))
 }
 
 /// Whether libmpv could be loaded (checked once, cached).
