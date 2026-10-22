@@ -7,10 +7,12 @@ use crate::settings::{self, Config};
 use deskemy_core::db::{queries, Connection};
 use deskemy_core::domain::{Attachment, Bookmark, CourseDetail};
 use deskemy_core::importer::structure::clean_title;
-use deskemy_core::mpv::{self, Mpv};
+use deskemy_core::error::DeskemyError;
+use deskemy_core::mpv::{self, Mpv, MPV_ERROR_INVALID_PARAMETER};
 use deskemy_core::playback::{resume_start, watched_enough};
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -131,6 +133,9 @@ pub struct Session {
     config: Config,
     // Lock order: `inner`, then `db`. Never the other way around.
     inner: Mutex<Inner>,
+    /// This mpv predates 0.38: `loadfile` takes its options third (see
+    /// `load_at`). Found on the first resume.
+    old_loadfile: AtomicBool,
 }
 
 impl Session {
@@ -140,6 +145,7 @@ impl Session {
             db,
             config,
             inner: Mutex::new(Inner::default()),
+            old_loadfile: AtomicBool::new(false),
         }
     }
 
@@ -238,6 +244,26 @@ impl Session {
         if has_next { self.step(1) } else { self.load_current(Start::Beginning) }.is_ok()
     }
 
+    /// Load `file` to play from `start` seconds. The start goes in loadfile's
+    /// options, whose place changed in mpv 0.38, which put an index argument
+    /// ahead of them: 4th since, 3rd before (0.37 is Ubuntu 24.04's). Each
+    /// refuses the other's form as an invalid parameter, so the first refusal
+    /// switches to the older form for good. Setting `start` as a property
+    /// isn't a way round it: newer mpv applies it to the file playing.
+    fn load_at(&self, file: &str, start: f64) -> deskemy_core::error::Result<()> {
+        let options = format!("start={start}");
+        if !self.old_loadfile.load(Ordering::Relaxed) {
+            match self.mpv.command(&["loadfile", file, "replace", "0", &options]) {
+                Err(DeskemyError::Mpv(MPV_ERROR_INVALID_PARAMETER)) => {
+                    tracing::info!("mpv before 0.38: loadfile's options go third");
+                    self.old_loadfile.store(true, Ordering::Relaxed);
+                }
+                loaded => return loaded,
+            }
+        }
+        self.mpv.command(&["loadfile", file, "replace", &options])
+    }
+
     fn load_current(&self, from: Start) -> Result<(), String> {
         let mut inner = self.inner();
         let item = inner.items.get(inner.index).cloned().ok_or("empty playlist")?;
@@ -265,13 +291,8 @@ impl Session {
         let _ = queries::set_last_lecture(&db, &course_id, &item.lecture_id);
         drop(db);
 
-        // loadfile <url> [<flags> [<index> [<options>]]] — options is the 4th arg.
         let file = mpv::file_arg(&item.path);
-        let loaded = if start > 1.0 {
-            self.mpv.command(&["loadfile", &file, "replace", "0", &format!("start={start}")])
-        } else {
-            self.mpv.command(&["loadfile", &file])
-        };
+        let loaded = if start > 1.0 { self.load_at(&file, start) } else { self.mpv.command(&["loadfile", &file]) };
         loaded.map_err(|e| e.to_string())?;
         let _ = self.mpv.set_property("pause", "no");
         let _ = self.mpv.set_property("speed", &speed.to_string());
@@ -747,9 +768,6 @@ mod tests {
     }
 
     #[test]
-    // Resuming loads with `loadfile <url> replace 0 start=…`: the index
-    // argument is mpv 0.38+, and Ubuntu 24.04 has 0.37 (roadmap, Linux).
-    #[cfg_attr(not(windows), ignore = "resume needs mpv 0.38's loadfile; see the roadmap's Linux list")]
     fn no_position_or_leaving_the_player_never_wipes_progress() {
         let Some(mpv) = headless_mpv() else { return };
         let (_tmp, db, lectures) = library();

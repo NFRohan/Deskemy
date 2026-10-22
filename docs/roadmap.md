@@ -165,12 +165,9 @@ the `linux-port` branch).
 - Build and test on Ubuntu: `.github/workflows/slint-linux.yml` (CI only — it
   publishes nothing; releases stay Windows-only until Linux is reviewed).
 - Run it: playback with `hwdec=auto-safe` (VA-API), on X11 and Wayland.
-- **Resume needs mpv 0.38** (found by CI): a lecture with a saved position
-  loads with `loadfile <url> replace 0 start=…`, and the index argument
-  (`0`) is new in 0.38. Ubuntu 24.04 has 0.37, so resuming fails there
-  (mpv error -4). Use the named-argument form, or set `start` as a property
-  before `loadfile` (and reset it for loads without one). Then un-ignore
-  `no_position_or_leaving_the_player_never_wipes_progress` on Linux.
+- [x] **Resume on mpv before 0.38** (found by CI): the index argument
+  `loadfile` gained in 0.38 made 0.37 (Ubuntu 24.04) refuse a resume. On
+  that refusal the older form is used from then on ([linux-port.md](linux-port.md), issue 2).
 - Keep-awake during playback (freedesktop ScreenSaver inhibit; macOS:
   IOPMAssertion) — Windows only today.
 - rfd's backend: GTK 3 (default) or the XDG portal.
