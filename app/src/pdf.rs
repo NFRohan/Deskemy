@@ -28,14 +28,15 @@ pub fn is_pdf(path: &str) -> bool {
     Path::new(path).extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
 }
 
-/// Where PDFium is: beside the exe (a test's exe sits a folder below). Not
-/// there, PDFs open in the system's PDF app.
+/// Where PDFium is: beside the exe (a test's exe sits a folder below), or in
+/// a bundle's lib/ beside its bin/ (the AppImage). Not there, PDFs open in the
+/// system's PDF app.
 fn library() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     let name = pdfium_render::prelude::Pdfium::pdfium_platform_library_name();
-    let found = [Some(dir), dir.parent()].into_iter().flatten().map(|d| d.join(&name)).find(|p| p.is_file());
-    found
+    let dirs = [Some(dir.to_path_buf()), dir.parent().map(Path::to_path_buf), Some(dir.join("../lib"))];
+    dirs.into_iter().flatten().map(|d| d.join(&name)).find(|p| p.is_file())
 }
 
 /// Each page's top and height, at a page width.

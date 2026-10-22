@@ -158,6 +158,8 @@ fn candidate_dirs() -> Vec<PathBuf> {
         if let Some(d) = exe.parent() {
             dirs.push(d.to_path_buf()); // app: target/<profile>/ (or install dir)
             dirs.push(d.join("..")); // examples: target/<profile>/examples/
+            #[cfg(unix)]
+            dirs.push(d.join("../lib")); // a bundle's bin/ and lib/ (the AppImage)
         }
     }
     // A system mpv anywhere on PATH.
