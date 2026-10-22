@@ -670,6 +670,7 @@ mod tests {
     use deskemy_core::config::AppConfig;
     use deskemy_core::importer::Importer;
     use deskemy_core::media::stub::StubProber;
+    use crate::testing::{headless_mpv, make_video};
 
     /// A three-lecture course on disk, imported into a scratch database.
     fn library() -> (tempfile::TempDir, Db, Vec<String>) {
@@ -694,39 +695,6 @@ mod tests {
             .map(|(id, _)| id)
             .collect();
         (tmp, Arc::new(Mutex::new(conn)), lectures)
-    }
-
-    /// A real mpv core with no video/audio output, or None without libmpv.
-    /// With DESKEMY_REQUIRE_LIBMPV set (CI, release QA) a missing or broken
-    /// libmpv fails the test instead of skipping it.
-    fn headless_mpv() -> Option<Arc<Mpv>> {
-        let required = std::env::var_os("DESKEMY_REQUIRE_LIBMPV").is_some();
-        let skip = |why: &str| {
-            assert!(!required, "{why} (DESKEMY_REQUIRE_LIBMPV is set)");
-            eprintln!("{why} — skipping");
-        };
-        if !deskemy_core::mpv::is_available() {
-            skip("libmpv not found");
-            return None;
-        }
-        let mpv = match Mpv::new() {
-            Ok(mpv) => mpv,
-            Err(e) => {
-                skip(&format!("libmpv didn't start: {e}"));
-                return None;
-            }
-        };
-        for (name, value) in [("vo", "null"), ("ao", "null"), ("idle", "yes"), ("config", "no")] {
-            if let Err(e) = mpv.set_option(name, value) {
-                skip(&format!("mpv option {name}: {e}"));
-                return None;
-            }
-        }
-        if let Err(e) = mpv.initialize() {
-            skip(&format!("mpv didn't initialize: {e}"));
-            return None;
-        }
-        Some(Arc::new(mpv))
     }
 
     fn progress(db: &Db, lecture: &str) -> (f64, bool) {
@@ -997,13 +965,7 @@ mod tests {
         let course = tmp.path().join("Course");
         std::fs::create_dir_all(&course).unwrap();
         for (stem, langs) in lectures {
-            let video = course.join(format!("{stem}.mp4"));
-            let made = std::process::Command::new("ffmpeg")
-                .args(["-v", "error", "-f", "lavfi", "-i", "color=c=black:s=64x36:d=3", "-c:v", "mpeg4", "-y"])
-                .arg(&video)
-                .status();
-            if !made.is_ok_and(|s| s.success()) {
-                eprintln!("ffmpeg not available — skipping");
+            if !make_video(&course.join(format!("{stem}.mp4")), 3, 1) {
                 return None;
             }
             for lang in *langs {

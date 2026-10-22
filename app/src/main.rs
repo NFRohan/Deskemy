@@ -18,6 +18,8 @@ mod settings;
 mod snapshot;
 mod stats;
 mod stats_page;
+#[cfg(test)]
+mod testing;
 mod tracks;
 mod updates;
 mod video;
