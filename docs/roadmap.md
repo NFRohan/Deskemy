@@ -159,6 +159,9 @@ what's paired with the lecture.
 
 ## Linux
 
+The plan, bottlenecks and issues: [linux-port.md](linux-port.md) (work on
+the `linux-port` branch).
+
 - Build and test on Ubuntu: `.github/workflows/slint-linux.yml` (CI only — it
   publishes nothing; releases stay Windows-only until Linux is reviewed).
 - Run it: playback with `hwdec=auto-safe` (VA-API), on X11 and Wayland.
