@@ -19,7 +19,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: System libraries
         run: |
@@ -66,7 +66,7 @@ jobs:
           ./target/debug/deskemy --snapshot "$RUNNER_TEMP/library.png"
           test -s "$RUNNER_TEMP/library.png"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: linux-snapshot
@@ -79,7 +79,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: System libraries
         run: |
@@ -111,7 +111,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN=1 "$GITHUB_WORKSPACE/$image" --snapshot "$RUNNER_TEMP/appimage.png"
           test -s "$RUNNER_TEMP/appimage.png"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: deskemy-appimage
           path: app/target/packages/*.AppImage
