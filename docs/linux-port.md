@@ -228,10 +228,12 @@ matters:
   ffmpeg.
 - **The static AppImage runtime**, so it runs without libfuse2 installed
   (many distros no longer ship it).
-- **Leave the GPU stack to the host:** libGL, EGL, gbm, drm and the drivers.
-  Open question: libva. Bundling it risks a mismatch with the host's driver;
-  leaving it out fails where it isn't installed (rare on desktops). Test both
-  on the VM.
+- **Leave to the host only what the AppImage community's excludelist does**
+  (glibc, the GPU stack, the core X11 / Wayland / sound-server client
+  libraries, fonts), plus libva: host GPU drivers don't load into an older
+  libva. Everything else is bundled. A first cut that left every `libX*` to
+  the host failed on a fresh Fedora Workstation, which has no libXss or
+  libXpresent.
 - **Desktop integration:** a `.desktop` entry and icons at 128, 256 and
   512 px.
 - **CI uploads it as a build artifact** (not a release) until the beta.

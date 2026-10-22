@@ -18,17 +18,31 @@ work="$app/target/appimage"
 appdir="$work/Deskemy.AppDir"
 appimage="$out/Deskemy_${version}_x86_64.AppImage"
 
-# The host's own libraries, never bundled:
-# - glibc and the C++ runtime: they must be the host's, and every distro has them.
-# - The graphics stack (GL, EGL, gbm, drm) and VA-API / VDPAU: their drivers
-#   come from the host and must match its versions.
-# - The display and sound servers' client libraries (X11, xcb, Wayland,
-#   ALSA, PulseAudio, PipeWire, JACK): they speak the host server's protocol
-#   and read its configuration.
-# - fontconfig and FreeType: they read the host's font configuration.
-# glibc's short names match whole (libm isn't libmpv); the rest by prefix.
-GLIBC='(libc|libm|libdl|libpthread|librt|libresolv|libutil|libstdc\+\+|libgcc_s)\.so'
-HOST="^($GLIBC|ld-linux|libGL|libEGL|libOpenGL|libgbm|libdrm|libglapi|libva|libvdpau|libX|libxcb|libxkbcommon|libwayland|libasound|libpulse|libpipewire|libjack|libfontconfig|libfreetype)"
+# The host's own libraries, never bundled: the AppImage community's
+# excludelist (github.com/AppImageCommunity/pkg2appimage, as of 15a64c2),
+# what every desktop distro has and what has to be the host's own:
+# - glibc and the C++ runtime.
+# - The graphics stack (GL, EGL, gbm, drm): its drivers come from the host.
+# - The display and sound servers' core client libraries (X11, xcb, Wayland,
+#   ALSA, PipeWire, JACK): they speak the host server's protocol.
+# - fontconfig, FreeType, HarfBuzz, FriBidi and a few base libraries.
+# Plus VA-API: the host's GPU drivers only load into a libva at least as new
+# as the one they were built for, so a bundled one would lose hardware decoding.
+# Everything else is bundled, even what most desktops have: a fresh Fedora
+# Workstation has no libXss or libXpresent, which libmpv needs.
+HOST=" $(echo "
+    ld-linux-x86-64.so.2 libanl.so.1 libBrokenLocale.so.1 libc.so.6 libdl.so.2 libm.so.6
+    libmvec.so.1 libnss_compat.so.2 libnss_dns.so.2 libnss_files.so.2 libpthread.so.0
+    libresolv.so.2 librt.so.1 libthread_db.so.1 libutil.so.1 libstdc++.so.6 libgcc_s.so.1
+    libGL.so.1 libEGL.so.1 libGLdispatch.so.0 libGLX.so.0 libOpenGL.so.0 libglapi.so.0
+    libdrm.so.2 libgbm.so.1 libxcb-dri2.so.0 libxcb-dri3.so.0
+    libX11.so.6 libX11-xcb.so.1 libxcb.so.1 libwayland-client.so.0
+    libasound.so.2 libjack.so.0 libpipewire-0.3.so.0
+    libfontconfig.so.1 libfreetype.so.6 libharfbuzz.so.0 libfribidi.so.0
+    libcom_err.so.2 libexpat.so.1 libgmp.so.10 libgpg-error.so.0 libICE.so.6 libSM.so.6
+    libusb-1.0.so.0 libuuid.so.1 libz.so.1
+    libva.so.2 libva-drm.so.2 libva-x11.so.2 libva-wayland.so.2
+" | tr -s "[:space:]" " ") "
 
 (cd "$app" && cargo build --release)
 binary="$app/target/release/deskemy"
@@ -48,7 +62,10 @@ cp -r "$app/target/release/licenses/." "$appdir/usr/share/doc/deskemy/"
 cp -L "$libmpv" "$appdir/usr/lib/libmpv.so.2"
 cp "$pdfium" "$appdir/usr/lib/libpdfium.so"
 for lib in $(ldd "$binary" "$libmpv" "$pdfium" | awk '$2 == "=>" && $3 ~ /^\// { print $3 }' | sort -u); do
-    basename "$lib" | grep -Eq "$HOST" || cp -Ln "$lib" "$appdir/usr/lib/"
+    case "$HOST" in
+        *" $(basename "$lib") "*) ;;
+        *) cp -Ln "$lib" "$appdir/usr/lib/" ;;
+    esac
 done
 
 # They find each other through their run paths, not LD_LIBRARY_PATH: every
