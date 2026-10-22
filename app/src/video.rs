@@ -4,7 +4,8 @@
 //! video. No native child window, no rect reporting, on any platform.
 
 use crate::session::{Db, Session, Sleep};
-use crate::{course_panel, seeking, stats, tracks};
+use crate::seeking::{Seeker, Seeks};
+use crate::{course_panel, stats, tracks};
 use crate::{AppWindow, BookmarkRow, MenuItem, Playback};
 use crate::settings::Config;
 use deskemy_core::mpv::{
@@ -83,7 +84,8 @@ impl Player {
         mpv.initialize().map_err(|e| e.to_string())?;
 
         let session = Arc::new(Session::new(mpv.clone(), db, config));
-        wire_controls(ui, &session, &mpv);
+        let seeks = Arc::new(Seeks::default());
+        wire_controls(ui, &session, &mpv, &seeks);
 
         // Playback info is only read from mpv while its overlay is open.
         let stats_open = Arc::new(AtomicBool::new(false));
@@ -101,7 +103,7 @@ impl Player {
             let (session, mpv, ui) = (session.clone(), mpv.clone(), ui.as_weak());
             std::thread::Builder::new()
                 .name("mpv-events".into())
-                .spawn(move || pump_events(&mpv, &session, &stats_open, ui))
+                .spawn(move || pump_events(&mpv, &session, &seeks, &stats_open, ui))
                 .map_err(|e| e.to_string())?
         };
 
@@ -565,8 +567,9 @@ impl Drop for GlState<'_> {
 }
 
 /// Route the overlay's actions to mpv and the session.
-fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
+fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeks: &Arc<Seeks>) {
     let playback = ui.global::<Playback>();
+    let seeker = Seeker::new(mpv, seeks, ui);
     let run = |mpv: &Arc<Mpv>, args: &[&str]| {
         if let Err(e) = mpv.command(args) {
             tracing::warn!(error = %e, ?args, "mpv command");
@@ -583,10 +586,10 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
     });
     let m = mpv.clone();
     playback.on_pause(move || run(&m, &["set", "pause", "yes"]));
-    let m = mpv.clone();
-    playback.on_seek(move |t| seeking::seek_to(&m, t.into()));
-    let m = mpv.clone();
-    playback.on_seek_by(move |d| seeking::seek_by(&m, d.into()));
+    let s = seeker.clone();
+    playback.on_seek(move |t| s.to(t.into()));
+    let s = seeker.clone();
+    playback.on_seek_by(move |d| s.by(d.into()));
     let m = mpv.clone();
     playback.on_toggle_mute(move || run(&m, &["cycle", "mute"]));
     let m = mpv.clone();
@@ -617,7 +620,7 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
     let s = session.clone();
     playback.on_sleep_off(move || s.set_sleep(Sleep::Off));
 
-    wire_bookmarks(ui, session, mpv);
+    wire_bookmarks(ui, session, mpv, seeker);
     wire_panel(ui, session);
 
     let (s, m) = (session.clone(), mpv.clone());
@@ -693,7 +696,7 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
 
 /// "Bookmark this moment": opening the dialog captures the position and
 /// pauses; closing resumes if it was playing (as in the Tauri player).
-fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
+fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeker: Seeker) {
     let playback = ui.global::<Playback>();
     // (position being bookmarked, resume on close) — UI thread only.
     let draft = Rc::new(Cell::new((0.0_f64, false)));
@@ -748,9 +751,9 @@ fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>) {
         done();
     });
 
-    let (m, done) = (mpv.clone(), close.clone());
+    let done = close.clone();
     playback.on_jump_to_bookmark(move |position| {
-        seeking::seek_to(&m, position.into());
+        seeker.to(position.into());
         done();
     });
 
@@ -888,7 +891,7 @@ impl State {
 /// The player's long-lived thread: drains mpv's events (they must be
 /// drained), drives the session (end of file, periodic saves), keeps the
 /// machine awake while playing, and pushes state to the overlay ~5×/s.
-fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint::Weak<AppWindow>) {
+fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &AtomicBool, ui: slint::Weak<AppWindow>) {
     let mut shown_revision = u64::MAX;
     let mut shown_file = None;
     let mut shown_tracks = None;
@@ -904,6 +907,7 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
                     tracing::info!(duration = ?mpv.get_f64("duration"), "file loaded");
                 }
                 MPV_EVENT_PLAYBACK_RESTART => {
+                    seeks.landed();
                     let decoder = mpv.get_property_string("hwdec-current");
                     tracing::info!(decoder = decoder.as_deref().unwrap_or("software"), "decoding");
                 }
@@ -911,6 +915,7 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             }
         }
 
+        let reading = seeks.reading();
         let s = State::sample(mpv);
         session.track_end(s.at_end, s.position.is_some());
         session.tick(s.position, s.duration, s.paused);
@@ -986,6 +991,7 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
             .filter(|np| np.resources_waiting)
             .map(|_| session.lecture_resources().iter().map(course_panel::resource_item).collect());
 
+        let seeks = seeks.clone();
         let _ = ui.upgrade_in_event_loop(move |ui| {
             let playback = ui.global::<Playback>();
             if let Some(menus) = menus {
@@ -1014,7 +1020,9 @@ fn pump_events(mpv: &Mpv, session: &Session, stats_open: &AtomicBool, ui: slint:
                     playback.invoke_refresh_panel();
                 }
             }
-            playback.set_position(s.position.unwrap_or(0.0) as f32);
+            if seeks.shows(reading) {
+                playback.set_position(s.position.unwrap_or(0.0) as f32);
+            }
             playback.set_duration(s.duration as f32);
             playback.set_paused(s.paused);
             playback.set_volume(s.volume as f32);
