@@ -515,6 +515,8 @@ Connection: close
         assert!(check_with(&endpoint, &pubkey, "9.9.9", None).unwrap().is_none());
     }
 
+    // MSI installs are Windows-only.
+    #[cfg(windows)]
     #[test]
     fn an_msi_install_gets_the_msi() {
         let msi = b"pretend msi".to_vec();
