@@ -197,12 +197,21 @@ fn appimage() -> Option<PathBuf> {
 }
 
 /// Whether this copy can update itself: an installed copy on Windows, an
-/// AppImage on Linux. Not a portable copy, nor a binary built from source.
+/// AppImage in a folder it can write to on Linux. Not a portable copy, nor a
+/// binary built from source.
 fn updates_in_place() -> bool {
     if deskemy_core::paths::portable_data_dir().is_some() {
         return false;
     }
-    cfg!(windows) || (cfg!(target_os = "linux") && appimage().is_some())
+    cfg!(windows) || (cfg!(target_os = "linux") && appimage().is_some_and(|p| p.parent().is_some_and(writable)))
+}
+
+/// Whether a file can be made in `dir` (tried, then removed).
+fn writable(dir: &Path) -> bool {
+    let probe = dir.join(".deskemy-update-probe");
+    let made = std::fs::File::create(&probe).is_ok();
+    let _ = std::fs::remove_file(&probe);
+    made
 }
 
 /// Verify `data` against a signature in the updater's form (base64-wrapped
@@ -251,12 +260,14 @@ pub fn run_installer(path: &Path) -> std::io::Result<()> {
 }
 
 /// Put a downloaded AppImage in place of the running one, then relaunch from
-/// it. Called by `main` after the app has shut down.
+/// it. Called by `main` after the app has shut down. Relaunched either way:
+/// with the update, or as it was if it couldn't be put in place.
 #[cfg(target_os = "linux")]
 pub fn run_installer(path: &Path) -> std::io::Result<()> {
     let current = appimage().ok_or_else(|| std::io::Error::other("not running from an AppImage"))?;
-    put_in_place(path, &current)?;
-    std::process::Command::new(&current).spawn().map(|_| ())
+    let placed = put_in_place(path, &current);
+    std::process::Command::new(&current).spawn()?;
+    placed
 }
 
 /// Copy `new` beside `current`, then rename it over it: never a half-written
@@ -267,9 +278,13 @@ fn put_in_place(new: &Path, current: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let name = current.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let staged = current.with_file_name(format!(".{name}.update"));
-    std::fs::copy(new, &staged)?;
-    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))?;
-    std::fs::rename(&staged, current)
+    let placed = std::fs::copy(new, &staged)
+        .and_then(|_| std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)))
+        .and_then(|()| std::fs::rename(&staged, current));
+    if placed.is_err() {
+        let _ = std::fs::remove_file(&staged);
+    }
+    placed
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
@@ -638,5 +653,18 @@ Connection: close
         assert_eq!(std::fs::metadata(&current).unwrap().permissions().mode() & 0o777, 0o755);
         let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(names.len(), 2, "nothing staged is left behind: {names:?}");
+
+        // A download that's gone: the AppImage stays as it was, nothing staged.
+        assert!(put_in_place(&dir.path().join("missing"), &current).is_err());
+        assert_eq!(std::fs::read_to_string(&current).unwrap(), "new");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn a_folder_is_writable_or_not() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(writable(dir.path()));
+        assert!(!writable(&dir.path().join("missing")));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "the probe is removed");
     }
 }
