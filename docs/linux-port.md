@@ -22,6 +22,15 @@ below pass. [roadmap.md](roadmap.md) keeps the summary; this is the detail.
 - **No release** until the Fedora VM pass and a test on at least one real
   machine (not a VM) are done.
 
+## Status
+
+- **Done on the branch (draft PR #12):** issues 1 to 11. CI builds and tests
+  on Ubuntu 24.04 and builds the AppImage as an artifact.
+- **Next:** the [Fedora VM pass](#fedora-vm-pass) with CI's AppImage and a
+  source build, then a real machine; then milestone 4 (the beta).
+- **Windows:** issues 1, 3 and 4 change it (seeks and the seek bar); they
+  need a Windows test build and a hand check before anything merges.
+
 ## Where things stand
 
 - **CI is green on Ubuntu 24.04** (`.github/workflows/slint-linux.yml`). It
@@ -229,14 +238,15 @@ matters:
 
 ### 10. Updates for the AppImage (Windows: no)
 
-- **Fix:** the packaging signs the AppImage with the release key, and
-  `latest.json` gets a `linux-x86_64` entry with format `appimage`
-  (cargo-packager-updater supports it: it swaps the file in place). The
-  updater runs only when Deskemy runs as an AppImage (`$APPIMAGE` is set);
-  a binary built from source or a future Flatpak doesn't self-update.
-- **Catch:** the swap needs a temporary file on the same drive as the
-  AppImage. When that fails (the updater's `TempDirNotOnSameMountPoint`
-  error), offer the download page instead.
+- **Fix:** `package.ps1` signs CI's AppImage with the release key (the key
+  never goes to CI), and `latest.json` gets a `linux-x86_64` entry with
+  format `appimage`. The app downloads and verifies it like the installers;
+  after shutting down it copies it beside the running AppImage and renames
+  it over it (never half-written; the name, and so any shortcut, stays),
+  then relaunches. Only a copy running as an AppImage (`$APPIMAGE` set) in
+  a folder it can write to does this; one built from source, a read-only
+  folder, or a future Flatpak gets the release page instead. A failed swap
+  leaves the old AppImage, and Deskemy relaunches either way.
 - **Releasing:** a Linux section in [releasing.md](releasing.md), and Linux
   checks in [release-qa.md](release-qa.md).
 - **Check:** rehearse with `DESKEMY_UPDATE_ENDPOINT`, as on Windows.
@@ -245,7 +255,8 @@ matters:
 
 - Correct the roadmap's Linux list: the `start` property route doesn't work
   (issue 2), and rfd's default is the portal, not GTK.
-- The Linux CI no longer needs `libgtk-3-dev`.
+- The Linux CI no longer needs `libgtk-3-dev` (the AppImage job builds
+  without it).
 - Text: the Skia patch for ClearType text is Windows-only; Linux gets
   greyscale antialiasing, which is normal there. Nothing to do.
 

@@ -162,22 +162,29 @@ what's paired with the lecture.
 The plan, bottlenecks and issues: [linux-port.md](linux-port.md) (work on
 the `linux-port` branch).
 
-- Build and test on Ubuntu: `.github/workflows/slint-linux.yml` (CI only — it
-  publishes nothing; releases stay Windows-only until Linux is reviewed).
-- Run it: playback with `hwdec=auto-safe` (VA-API), on X11 and Wayland.
+On the branch, waiting on the Fedora VM pass and a real machine:
+
+- [x] Build and test on Ubuntu 24.04 in CI (`.github/workflows/slint-linux.yml`),
+  real videos included; the AppImage built there as an artifact.
+- [x] Seeks land, and the seek bar glides and holds a seek's target (shared
+  with Windows).
 - [x] **Resume on mpv before 0.38** (found by CI): the index argument
   `loadfile` gained in 0.38 made 0.37 (Ubuntu 24.04) refuse a resume. On
-  that refusal the older form is used from then on ([linux-port.md](linux-port.md), issue 2).
-- Keep-awake during playback (freedesktop ScreenSaver inhibit; macOS:
-  IOPMAssertion) — Windows only today.
-- rfd's backend: GTK 3 (default) or the XDG portal.
-- Mini player: the portable path (Slint's position/size, `always-on-top`,
-  the window system's own drag) should do on X11. Wayland lets an app neither
-  place its window nor keep it on top, so there it's a small window wherever
-  it lands. The Windows-only parts (work area, SetWindowPos, DWM cloaking,
-  the app-driven drag, WM_DPICHANGED) are behind `cfg(windows)` in `mini.rs`.
-- Packaging: AppImage and/or Flatpak; the updater's Linux entry in
-  `latest.json`.
+  that refusal the older form is used from then on.
+- [x] Keep-awake during playback (org.freedesktop.ScreenSaver).
+- [x] X11 (XWayland) by default, for the mini player (on top, placed) and
+  drag & drop; `DESKEMY_WAYLAND=1` for native Wayland. The Windows-only
+  mini player parts (work area, SetWindowPos, DWM cloaking, the app-driven
+  drag, WM_DPICHANGED) stay behind `cfg(windows)` in `mini.rs`.
+- [x] A second launch brings the running window forward.
+- [x] PDFium (`libpdfium.so`) for the PDF viewer.
+- [x] The AppImage (libmpv, codecs and PDFium bundled), signed by
+  `package.ps1` with the release key, updating itself.
+- [ ] Run it: playback with `hwdec=auto-safe` (VA-API), on X11 and Wayland,
+  on a VM and a real machine (NVIDIA too). See linux-port.md's VM pass.
+- [ ] Flatpak, after the AppImage.
+
+File dialogs use rfd's default backend, the XDG desktop portal (no GTK).
 
 ## Feature ideas
 
