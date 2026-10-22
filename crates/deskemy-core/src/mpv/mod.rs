@@ -13,6 +13,10 @@ pub const MPV_FORMAT_INT64: c_int = 4;
 pub const MPV_FORMAT_FLAG: c_int = 3;
 pub const MPV_FORMAT_NONE: c_int = 0;
 
+// mpv_error (subset)
+/// A command's arguments don't fit it.
+pub const MPV_ERROR_INVALID_PARAMETER: c_int = -4;
+
 // mpv_event_id (subset)
 pub const MPV_EVENT_NONE: c_int = 0;
 pub const MPV_EVENT_SHUTDOWN: c_int = 1;
@@ -391,7 +395,7 @@ mod tests {
 
 fn check(rc: c_int) -> Result<()> {
     if rc < 0 {
-        Err(DeskemyError::Player(format!("mpv error code {rc}")))
+        Err(DeskemyError::Mpv(rc))
     } else {
         Ok(())
     }

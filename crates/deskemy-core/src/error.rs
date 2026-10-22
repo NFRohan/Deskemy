@@ -30,6 +30,10 @@ pub enum DeskemyError {
     #[error("player error: {0}")]
     Player(String),
 
+    /// A libmpv call that failed, with mpv's error code (`MPV_ERROR_*`).
+    #[error("player error: mpv error code {0}")]
+    Mpv(i32),
+
     #[error("not found: {0}")]
     NotFound(String),
 
@@ -48,7 +52,7 @@ impl DeskemyError {
             DeskemyError::Config(_) => "Config",
             DeskemyError::Import(_) => "Import",
             DeskemyError::Probe(_) => "Probe",
-            DeskemyError::Player(_) => "Player",
+            DeskemyError::Player(_) | DeskemyError::Mpv(_) => "Player",
             DeskemyError::NotFound(_) => "NotFound",
             DeskemyError::Other(_) => "Other",
         }
