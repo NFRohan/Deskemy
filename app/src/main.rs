@@ -108,7 +108,7 @@ fn main() -> Result<(), slint::PlatformError> {
         (_, Some(dir)) => match instance::claim(&dir) {
             instance::Claim::Ours(claim) => Some(claim),
             instance::Claim::Running(pid) => {
-                instance::show_running(pid);
+                instance::show_running(&dir, pid);
                 return Ok(());
             }
         },
@@ -157,6 +157,13 @@ fn main() -> Result<(), slint::PlatformError> {
     };
 
     let ui = AppWindow::new()?;
+    #[cfg(unix)]
+    if let Some(instance) = &instance {
+        let ui = ui.as_weak();
+        instance.listen(move || {
+            let _ = ui.upgrade_in_event_loop(|ui| show_window(&ui));
+        });
+    }
     let (db, config) = open_library(&ui);
     let prefs = std::rc::Rc::new(settings::SettingsPage::new(config.clone(), db.clone(), paths::data_dir()));
     // Theme, and what the player reads from config.
@@ -900,6 +907,16 @@ pub(crate) fn bring_to_front(hwnd: windows_sys::Win32::Foundation::HWND) -> bool
 
 #[cfg(not(windows))]
 fn log_launch_window(_: &AppWindow) {}
+
+/// Bring the window forward for a later launch (see instance.rs). X11 window
+/// managers generally let it take focus; Wayland only does with a token the
+/// launch didn't pass, so there it may just be marked in the dock.
+#[cfg(unix)]
+fn show_window(ui: &AppWindow) {
+    use slint::winit_030::WinitWindowAccessor;
+    ui.window().set_minimized(false);
+    ui.window().with_winit_window(|w| w.focus_window());
+}
 
 /// On Linux, run on X11 (XWayland on a Wayland desktop) where there is one.
 /// Wayland lets an app neither keep its window on top nor place it, so the

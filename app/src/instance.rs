@@ -5,19 +5,27 @@
 // get in each other's way.
 //
 // The claim is a lock on `instance.lock` in the data folder, which the OS
-// lets go of when the process ends, even in a crash. The holder writes its
-// process id to `instance.pid`, for the second launch to find its window.
+// lets go of when the process ends, even in a crash. On Windows the holder
+// writes its process id to `instance.pid`, for the second launch to find its
+// window and raise it. Elsewhere the holder listens on `instance.sock`, and
+// a second launch connecting to it asks it to show its window itself.
 
 use std::fs::{File, OpenOptions, TryLockError};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const LOCK_FILE: &str = "instance.lock";
 const PID_FILE: &str = "instance.pid";
+#[cfg(unix)]
+const SOCKET_FILE: &str = "instance.sock";
 
 /// This run's claim on the data folder; dropping it lets go (before the
 /// relaunch after a backup import, so the new run can take it).
 pub struct Instance {
-    _lock: Option<File>,
+    /// Held for the claim; read on unix (only the holder listens).
+    #[cfg_attr(not(unix), allow(dead_code))]
+    lock: Option<File>,
+    #[cfg_attr(not(unix), allow(dead_code))]
+    dir: PathBuf,
     /// Why there's no lock, for the log (which isn't set up yet at claim time).
     pub problem: Option<String>,
 }
@@ -29,7 +37,7 @@ pub enum Claim {
 }
 
 pub fn claim(dir: &Path) -> Claim {
-    let unlocked = |why: String| Claim::Ours(Instance { _lock: None, problem: Some(why) });
+    let unlocked = |why: String| Claim::Ours(Instance { lock: None, dir: dir.to_path_buf(), problem: Some(why) });
     let _ = std::fs::create_dir_all(dir);
     let opened = OpenOptions::new().create(true).truncate(false).write(true).open(dir.join(LOCK_FILE));
     let file = match opened {
@@ -44,7 +52,7 @@ pub fn claim(dir: &Path) -> Claim {
             if std::fs::write(&tmp, std::process::id().to_string()).is_ok() {
                 let _ = std::fs::rename(&tmp, dir.join(PID_FILE));
             }
-            Claim::Ours(Instance { _lock: Some(file), problem: None })
+            Claim::Ours(Instance { lock: Some(file), dir: dir.to_path_buf(), problem: None })
         }
         Err(TryLockError::WouldBlock) => Claim::Running(running_pid(dir)),
         Err(TryLockError::Error(e)) => unlocked(format!("can't lock {LOCK_FILE}: {e}")),
@@ -65,10 +73,50 @@ fn running_pid(dir: &Path) -> Option<u32> {
     None
 }
 
+#[cfg(unix)]
+impl Instance {
+    /// Answer later launches: each connection to the socket runs `show` (on
+    /// the listener's thread). Only the lock's holder listens.
+    pub fn listen(&self, show: impl Fn() + Send + 'static) {
+        if self.lock.is_none() {
+            return;
+        }
+        let path = self.dir.join(SOCKET_FILE);
+        // A socket left by an earlier run: the lock says that run is over.
+        let _ = std::fs::remove_file(&path);
+        let listener = match std::os::unix::net::UnixListener::bind(&path) {
+            Ok(listener) => listener,
+            Err(e) => {
+                tracing::warn!(error = %e, path = %path.display(), "a second launch can't show this window");
+                return;
+            }
+        };
+        let spawned = std::thread::Builder::new().name("instance".into()).spawn(move || {
+            for stream in listener.incoming() {
+                if stream.is_ok() {
+                    show();
+                }
+            }
+        });
+        if let Err(e) = spawned {
+            tracing::warn!(error = %e, "instance listener");
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Instance {
+    fn drop(&mut self) {
+        if self.lock.is_some() {
+            let _ = std::fs::remove_file(self.dir.join(SOCKET_FILE));
+        }
+    }
+}
+
 /// Bring the running copy's window forward (restored if minimized). Windows
 /// lets this process do it: the user just launched it.
 #[cfg(windows)]
-pub fn show_running(pid: Option<u32>) {
+pub fn show_running(_dir: &Path, pid: Option<u32>) {
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetWindow, GetWindowThreadProcessId, IsIconic, IsWindowVisible, ShowWindow, GW_OWNER,
@@ -136,10 +184,17 @@ fn is_deskemy(pid: u32) -> bool {
     ours.is_some() && ours == theirs
 }
 
-/// Elsewhere the window manager decides what comes forward; say why nothing
-/// opened, for a terminal launch.
-#[cfg(not(windows))]
-pub fn show_running(_: Option<u32>) {
+/// Ask the running copy to show its window (`Instance::listen`). If it can't
+/// be reached, say why nothing opened, for a terminal launch.
+#[cfg(unix)]
+pub fn show_running(dir: &Path, _pid: Option<u32>) {
+    if std::os::unix::net::UnixStream::connect(dir.join(SOCKET_FILE)).is_err() {
+        eprintln!("Deskemy is already running.");
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+pub fn show_running(_dir: &Path, _pid: Option<u32>) {
     eprintln!("Deskemy is already running.");
 }
 
@@ -170,5 +225,21 @@ mod tests {
         // Letting go frees it (the relaunch after a backup import).
         drop(first);
         assert!(matches!(claim(tmp.path()), Claim::Ours(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_second_launch_asks_the_first_to_show_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let Claim::Ours(first) = claim(tmp.path()) else { panic!("the first claim is ours") };
+        let (shown, asked) = std::sync::mpsc::channel();
+        first.listen(move || shown.send(()).unwrap());
+
+        let Claim::Running(pid) = claim(tmp.path()) else { panic!("the folder is taken") };
+        super::show_running(tmp.path(), pid);
+        asked.recv_timeout(std::time::Duration::from_secs(5)).expect("the first copy was asked");
+
+        drop(first);
+        assert!(!tmp.path().join(super::SOCKET_FILE).exists(), "letting go removes the socket");
     }
 }
