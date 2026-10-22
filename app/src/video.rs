@@ -5,7 +5,7 @@
 
 use crate::session::{Db, Session, Sleep};
 use crate::seeking::{Seeker, Seeks};
-use crate::{course_panel, stats, tracks};
+use crate::{awake, course_panel, stats, tracks};
 use crate::{AppWindow, BookmarkRow, MenuItem, Playback};
 use crate::settings::Config;
 use deskemy_core::mpv::{
@@ -932,7 +932,7 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
         let want_awake = !s.paused && session.is_loaded();
         if want_awake != awake {
             awake = want_awake;
-            set_keep_awake(awake);
+            awake::keep_awake(awake);
         }
 
         let (revision, now_playing) = session.now_playing();
@@ -1038,7 +1038,7 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
             playback.set_sleep_minutes(sleep_minutes);
         });
     }
-    set_keep_awake(false);
+    awake::keep_awake(false);
 }
 
 /// The overlay's menus, built on the event thread and applied on the UI one.
@@ -1092,24 +1092,3 @@ fn set_cursor_visible(ui: &AppWindow, visible: bool) {
     use slint::winit_030::WinitWindowAccessor;
     ui.window().with_winit_window(|w| w.set_cursor_visible(visible));
 }
-
-/// Keep the machine and display awake while a video is actually playing.
-/// mpv can't do this itself here: with vo=libmpv it has no window for its
-/// stop-screensaver to act on. Windows scopes the request to the calling
-/// thread, so this is only called from the long-lived event thread.
-#[cfg(windows)]
-fn set_keep_awake(on: bool) {
-    use windows_sys::Win32::System::Power::{
-        SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
-    };
-    let flags = if on {
-        ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
-    } else {
-        ES_CONTINUOUS
-    };
-    unsafe { SetThreadExecutionState(flags) };
-    tracing::debug!(on, "sleep inhibit");
-}
-
-#[cfg(not(windows))]
-fn set_keep_awake(_on: bool) {}
