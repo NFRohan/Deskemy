@@ -61,10 +61,12 @@ cp -r "$app/target/release/licenses/." "$appdir/usr/share/doc/deskemy/"
 # bundle it and PDFium, then everything the three of them link to.
 cp -L "$libmpv" "$appdir/usr/lib/libmpv.so.2"
 cp "$pdfium" "$appdir/usr/lib/libpdfium.so"
+# (A library can be listed twice, under /lib and /usr/lib: the first is kept.)
 for lib in $(ldd "$binary" "$libmpv" "$pdfium" | awk '$2 == "=>" && $3 ~ /^\// { print $3 }' | sort -u); do
+    name=$(basename "$lib")
     case "$HOST" in
-        *" $(basename "$lib") "*) ;;
-        *) cp -Ln "$lib" "$appdir/usr/lib/" ;;
+        *" $name "*) ;;
+        *) [ -e "$appdir/usr/lib/$name" ] || cp -L "$lib" "$appdir/usr/lib/" ;;
     esac
 done
 
