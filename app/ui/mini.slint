@@ -177,9 +177,9 @@ export component MiniPlayer inherits Rectangle {
                 background: #ffffffb3;
             }
 
-            // Autoplay stopped for this lecture's resources: they're in the
-            // full player.
-            if Playback.open-menu == "exercise": Rectangle {
+            // Autoplay stopped for this lecture's resources, or they're
+            // offered ahead of its end: they're in the full player.
+            if Playback.open-menu == "exercise" || Playback.resources-soon: Rectangle {
                 x: (parent.width - self.width) / 2;
                 y: parent.height - self.height - 34px;
                 width: chip.preferred-width;
@@ -190,7 +190,8 @@ export component MiniPlayer inherits Rectangle {
                     padding-left: 14px;
                     padding-right: 14px;
                     Text {
-                        text: "Resources waiting · open player";
+                        text: Playback.open-menu == "exercise" ? "Resources waiting · open player"
+                            : "Resources for this lecture · open player";
                         color: #111111;
                         font-size: 12px;
                         font-weight: 600;

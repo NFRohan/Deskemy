@@ -840,10 +840,10 @@ fn wire_panel(ui: &AppWindow, session: &Arc<Session>) {
     playback.on_toggle_resource(move |id, done| {
         s.set_resource_done(&id, done);
         refresh();
-        // The end-of-lecture card lists them too.
+        // The end-of-lecture card and the one ahead of it list them too.
         if let Some(ui) = weak.upgrade() {
             let playback = ui.global::<Playback>();
-            if playback.get_open_menu() == "exercise" {
+            if playback.get_open_menu() == "exercise" || playback.get_resources_soon() {
                 playback.set_prompt_items(course_panel::model(
                     s.lecture_resources().iter().map(course_panel::resource_item).collect(),
                 ));
@@ -898,6 +898,8 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
     let mut known_chapters = None;
     let mut awake = false;
     let mut filling = false;
+    // The lecture's resources are offered ahead of its end (as last shown).
+    let mut offered = false;
     loop {
         let event = mpv.wait_event(0.2);
         if !event.is_null() {
@@ -986,10 +988,14 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
         };
 
         // Autoplay stopped at a lecture's resources: offer them.
-        let waiting: Option<Vec<crate::ResourceItem>> = now_playing
-            .as_ref()
-            .filter(|np| np.resources_waiting)
-            .map(|_| session.lecture_resources().iter().map(course_panel::resource_item).collect());
+        let resources = || session.lecture_resources().iter().map(course_panel::resource_item).collect::<Vec<_>>();
+        let waiting = now_playing.as_ref().filter(|np| np.resources_waiting).map(|_| resources());
+        // Offered ahead of the end, or no longer: only as that changes, so
+        // putting them away (✕) holds until they're offered again.
+        let soon = now_playing.as_ref().filter(|np| np.resources_soon != offered).map(|np| {
+            offered = np.resources_soon;
+            offered.then(resources)
+        });
 
         let seeks = seeks.clone();
         let _ = ui.upgrade_in_event_loop(move |ui| {
@@ -1005,6 +1011,14 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
             if let Some(items) = waiting {
                 playback.set_prompt_items(course_panel::model(items));
                 playback.set_open_menu("exercise".into());
+            }
+            match soon {
+                Some(Some(items)) => {
+                    playback.set_prompt_items(course_panel::model(items));
+                    playback.set_resources_soon(true);
+                }
+                Some(None) => playback.set_resources_soon(false),
+                None => {}
             }
             if let Some(np) = now_playing {
                 playback.set_title(np.title.into());

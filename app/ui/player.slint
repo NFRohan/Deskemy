@@ -207,8 +207,12 @@ export global Playback {
     callback pause();
     /// Mark a resource done (true) or not.
     callback toggle-resource(string, bool);
-    /// The ended lecture's resources, when autoplay stopped at them.
+    /// The lecture's resources: when autoplay stopped at them, or offered
+    /// ahead of its end.
     in property <[ResourceItem]> prompt-items;
+    /// They're offered ahead of the lecture's end, as it plays on ("When to
+    /// offer them"); ✕ puts them away until they're offered again.
+    in-out property <bool> resources-soon;
 }
 
 export component IconButton inherits Rectangle {
@@ -1451,6 +1455,58 @@ export component PlayerOverlay inherits Rectangle {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Its resources, offered ahead of the lecture's end: in a corner,
+        // above the controls, as it plays on. Out of the way of any menu.
+        if Playback.resources-soon && Playback.open-menu == "": Rectangle {
+            width: 320px;
+            height: soon-card.preferred-height;
+            x: parent.width - self.width - 16px;
+            y: parent.height - self.height - 112px;
+            border-radius: 12px;
+            background: #16171bf2;
+            border-width: 1px;
+            border-color: #ffffff14;
+
+            TouchArea { }
+
+            soon-card := VerticalLayout {
+                padding: 12px;
+                padding-top: 6px;
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Image {
+                        source: @image-url("icons/paperclip.svg");
+                        width: 16px;
+                        height: 16px;
+                        y: (parent.height - self.height) / 2;
+                        colorize: #ffffff;
+                    }
+                    Text {
+                        text: Playback.prompt-items.length == 1 ? "A resource for this lecture"
+                            : Playback.prompt-items.length + " resources for this lecture";
+                        color: #ffffff;
+                        font-size: 14px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    IconButton {
+                        icon: @image-url("icons/x.svg");
+                        icon-size: 16px;
+                        accessible-role: button;
+                        accessible-label: "Dismiss";
+                        clicked => { Playback.resources-soon = false; }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 2px;
+                    for item in Playback.prompt-items: PromptRow { item: item; }
                 }
             }
         }

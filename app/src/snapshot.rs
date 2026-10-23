@@ -40,8 +40,9 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
     playback.set_course_title("Ultimate AWS Certified Solutions Architect Associate 2025".into());
     playback.set_course_id("sample".into());
     playback.set_clock("20:14".into());
-    // "exercise": the card autoplay stops at, with sample resources.
-    if menu == "exercise" {
+    // "exercise": the card autoplay stops at, with sample resources; "soon":
+    // the same, offered ahead of the end, in a corner.
+    if matches!(menu, "exercise" | "soon" | "mini-soon") {
         let item = |name: &str, done: bool| crate::ResourceItem {
             id: name.into(),
             name: name.into(),
@@ -140,6 +141,7 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
         }
         "stats" | "mini" => {}
         "mini-exercise" => playback.set_open_menu("exercise".into()),
+        "soon" | "mini-soon" => playback.set_resources_soon(true),
         // The speed menu for a course with its own saved speed.
         "speed-saved" => {
             playback.set_speed_default("1×".into());
