@@ -473,9 +473,12 @@ export component LibraryPage inherits Flickable {
                 accessible-label: "Continue " + Library.hero.lecture;
 
                 HorizontalLayout {
-                    // A third image, two thirds text.
+                    // A third image, two thirds text. A width, not stretch:
+                    // stretch only shares out what's spare, and a long
+                    // title asks for its whole one-line width, leaving the
+                    // image a sliver.
                     Rectangle {
-                        horizontal-stretch: 1;
+                        width: parent.width / 3;
                         background: @linear-gradient(135deg, Theme.surface-container-high 0%, Theme.surface-container-lowest 100%);
                         clip: true;
                         if Library.hero.has-image: Image {
@@ -495,7 +498,7 @@ export component LibraryPage inherits Flickable {
                         }
                     }
                     VerticalLayout {
-                        horizontal-stretch: 2;
+                        horizontal-stretch: 1;
                         padding: 24px;
                         spacing: 4px;
                         Text {
