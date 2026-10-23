@@ -264,6 +264,10 @@ export component Scrubber inherits Rectangle {
     /// Track height at rest (two pixels thicker under the pointer).
     in property <length> thickness: 3px;
     in property <length> thumb: 13px;
+    /// Bookmarks to mark along it, at their position out of `span` seconds:
+    /// pointing at one shows its label, clicking it commits its spot.
+    in property <[BookmarkRow]> marks;
+    in property <float> span;
 
     property <float> shown: max(0, min(1, touch.pressed ? root.preview : root.value));
     property <length> track: touch.has-hover || touch.pressed ? root.thickness + 2px : root.thickness;
@@ -310,6 +314,47 @@ export component Scrubber inherits Rectangle {
             if self.pressed {
                 root.preview = max(0, min(1, self.mouse-x / root.width));
                 root.changed(root.preview);
+            }
+        }
+    }
+
+    // Over the track's own touch area, so a mark takes the click.
+    for mark in root.marks: Rectangle {
+        property <float> at: max(0, min(1, mark.position / root.span));
+        visible: root.span > 0;
+        x: root.width * self.at - self.width / 2;
+        width: 12px;
+        height: root.height;
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 3px;
+            height: root.track + 4px;
+            border-radius: 1.5px;
+            background: #fbbf24;
+        }
+
+        mark-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.committed(parent.at); }
+        }
+
+        // Its label above the bar, kept within the bar's width.
+        if mark-touch.has-hover: Rectangle {
+            width: tip.preferred-width + 16px;
+            height: 26px;
+            x: max(-parent.x, min(root.width - parent.x - self.width, (parent.width - self.width) / 2));
+            y: -self.height - 6px;
+            border-radius: 6px;
+            background: #16171bf2;
+            border-width: 1px;
+            border-color: #ffffff14;
+            tip := Text {
+                text: mark.time + "  " + mark.label;
+                color: #ffffff;
+                font-size: 12px;
+                vertical-alignment: center;
             }
         }
     }
@@ -864,6 +909,8 @@ export component PlayerOverlay inherits Rectangle {
                         thickness: 6px;
                         thumb: 16px;
                         value: Playback.duration > 0 ? Playback.live-position / Playback.duration : 0;
+                        marks: Playback.bookmarks;
+                        span: Playback.duration;
                         committed(v) => { Playback.seek(v * Playback.duration); }
                     }
                     Text {
