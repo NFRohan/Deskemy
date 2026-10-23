@@ -103,7 +103,11 @@ export component SearchPage inherits Flickable {
                 font-size: Theme.body-md;
                 text <=> Search.query;
                 init => { self.focus(); }
-                edited => { debounce.restart(); }
+                // restart() alone does nothing to a timer that never ran.
+                edited => {
+                    debounce.running = true;
+                    debounce.restart();
+                }
                 accepted => {
                     debounce.running = false;
                     Search.run(self.text);
