@@ -9,7 +9,7 @@ use deskemy_core::domain::{Attachment, Bookmark, CourseDetail};
 use deskemy_core::importer::structure::clean_title;
 use deskemy_core::error::DeskemyError;
 use deskemy_core::mpv::{self, Mpv, MPV_ERROR_INVALID_PARAMETER};
-use deskemy_core::playback::{resume_start, watched_enough};
+use deskemy_core::playback::{heads_up_at, resume_start, watched_enough};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,6 +39,9 @@ pub struct NowPlaying {
     /// Autoplay stopped at the end of this lecture to offer its resources
     /// ("Pause on exercises and resources").
     pub resources_waiting: bool,
+    /// Its resources are offered ahead of its end, as it plays on ("When to
+    /// offer them"): from that point on, and not before it again.
+    pub resources_soon: bool,
     /// The course plays at its own saved speed rather than the default: the
     /// default's label ("1.25×"), for the speed menu's "Use default". Empty
     /// when the default applies.
@@ -91,6 +94,8 @@ struct Inner {
     /// None for a bare file opened outside the library (nothing is saved).
     lecture_id: Option<String>,
     duration: f64,
+    /// The lecture has resources to offer (read as it loads).
+    has_resources: bool,
     now: NowPlaying,
     /// Bumped whenever `now` changes, so the UI only re-reads it then.
     revision: u64,
@@ -337,6 +342,7 @@ impl Session {
             has_next: inner.index + 1 < inner.items.len(),
             in_library: true,
             resources_waiting: false,
+            resources_soon: false,
             speed_default: saved_speed
                 .filter(|s| !same_speed(*s, default_speed))
                 .map(|_| settings::speed_label(default_speed))
@@ -345,6 +351,7 @@ impl Session {
         inner.revision += 1;
         inner.lecture_id = Some(item.lecture_id);
         inner.duration = duration.unwrap_or(0.0);
+        inner.has_resources = !self.resources_of(&inner).is_empty();
         inner.ended = false;
         let now = Instant::now();
         inner.last_save = Some(now);
@@ -362,6 +369,7 @@ impl Session {
         if duration > 0.0 {
             inner.duration = duration;
         }
+        self.track_heads_up(&mut inner, position);
         let now = Instant::now();
         let elapsed = inner.last_tick.map_or(0.0, |t| now.duration_since(t).as_secs_f64());
         inner.last_tick = Some(now);
@@ -382,6 +390,21 @@ impl Session {
                 self.save(&mut inner, position, false);
             }
             self.flush_watch(&mut inner);
+        }
+    }
+
+    /// Offer the lecture's resources once it's past the heads-up point ("When
+    /// to offer them"); before it again (a seek back), no longer.
+    fn track_heads_up(&self, inner: &mut Inner, position: Option<f64>) {
+        let lead = {
+            let config = settings::lock(&self.config);
+            if config.pause_at_resources { config.resources_lead_secs } else { 0 }
+        };
+        let soon = inner.has_resources
+            && position.zip(heads_up_at(inner.duration, lead as f64)).is_some_and(|(pos, point)| pos >= point);
+        if soon != inner.now.resources_soon {
+            inner.now.resources_soon = soon;
+            inner.revision += 1;
         }
     }
 
@@ -423,8 +446,12 @@ impl Session {
             }
             let mut advance =
                 !sleep_here && settings::lock(&self.config).autoplay_next && inner.index + 1 < inner.items.len();
-            // Stop at a lecture with exercises / notes, to offer them first.
-            if advance && settings::lock(&self.config).pause_at_resources && !self.resources_of(&inner).is_empty() {
+            // Stop at a lecture with exercises / notes, to offer them first;
+            // not when they're all ticked off (worked through on the way).
+            if advance
+                && settings::lock(&self.config).pause_at_resources
+                && self.resources_of(&inner).iter().any(|a| !a.completed)
+            {
                 advance = false;
                 inner.now.resources_waiting = true;
             }
@@ -847,6 +874,51 @@ mod tests {
         session.open(&lectures[0]).unwrap();
         session.on_eof();
         assert_eq!(session.now_playing().1.title, "Second");
+    }
+
+    #[test]
+    fn resources_are_offered_ahead_of_the_end_when_asked() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library_with(&["001 First.mp4", "001 First exercises.pdf", "002 Second.mp4"]);
+        let config = settings::shared(AppConfig { pause_at_resources: true, resources_lead_secs: 30, ..AppConfig::default() });
+        let session = Session::new(mpv, db, config.clone());
+        let soon = || session.now_playing().1.resources_soon;
+
+        session.open(&lectures[0]).unwrap();
+        session.tick(Some(60.0), 100.0, false);
+        assert!(!soon(), "not yet: 30 s before the end is 70 s");
+        session.tick(Some(71.0), 100.0, false);
+        assert!(soon());
+        session.tick(Some(20.0), 100.0, false);
+        assert!(!soon(), "a seek back takes it away");
+        session.tick(Some(95.0), 100.0, false);
+        assert!(soon(), "and a jump past brings it at once");
+
+        // A lecture without resources has nothing to offer…
+        session.open(&lectures[1]).unwrap();
+        session.tick(Some(95.0), 100.0, false);
+        assert!(!soon());
+        // …and at the end is when a lecture with them offers them.
+        settings::lock(&config).resources_lead_secs = 0;
+        session.open(&lectures[0]).unwrap();
+        session.tick(Some(95.0), 100.0, false);
+        assert!(!soon());
+    }
+
+    #[test]
+    fn autoplay_goes_on_when_the_resources_are_all_ticked_off() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library_with(&["001 First.mp4", "001 First exercises.pdf", "002 Second.mp4"]);
+        let config = settings::shared(AppConfig { pause_at_resources: true, ..AppConfig::default() });
+        let session = Session::new(mpv, db, config);
+
+        session.open(&lectures[0]).unwrap();
+        let exercise = session.lecture_resources()[0].id.clone();
+        session.set_resource_done(&exercise, true);
+        session.on_eof();
+        let (_, now) = session.now_playing();
+        assert_eq!(now.title, "Second", "worked through already: nothing to stop for");
+        assert!(!now.resources_waiting);
     }
 
     #[test]

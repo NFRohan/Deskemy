@@ -39,9 +39,25 @@ pub fn resume_start(resume: bool, saved_pos: f64, completed: bool, duration: Opt
     }
 }
 
+/// Where a lecture's resources are offered ahead of its end: `lead` seconds
+/// before it, but never before halfway, so a short clip doesn't offer them as
+/// it starts. None without a lead, or with the length unknown (unprobed).
+pub fn heads_up_at(duration: f64, lead: f64) -> Option<f64> {
+    (lead > 0.0 && duration > 0.0).then(|| (duration - lead).max(duration / 2.0))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{resume_start, watched_enough};
+    use super::{heads_up_at, resume_start, watched_enough};
+
+    #[test]
+    fn heads_up_comes_lead_seconds_early_but_not_before_halfway() {
+        assert_eq!(heads_up_at(2400.0, 30.0), Some(2370.0));
+        assert_eq!(heads_up_at(120.0, 30.0), Some(90.0));
+        assert_eq!(heads_up_at(40.0, 60.0), Some(20.0), "a short clip: halfway");
+        assert_eq!(heads_up_at(600.0, 0.0), None, "no lead: only at the end");
+        assert_eq!(heads_up_at(0.0, 30.0), None, "length unknown");
+    }
 
     #[test]
     fn resumes_partway_through() {
