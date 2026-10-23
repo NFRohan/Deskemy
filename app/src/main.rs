@@ -114,8 +114,10 @@ fn main() -> Result<(), slint::PlatformError> {
         },
     };
 
+    // arboard (the clipboard) warns at every use on Linux under XWayland, the
+    // default, that the Wayland clipboard isn't there; X11's is used instead.
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("deskemy=debug,deskemy_core=debug,info"));
+        .unwrap_or_else(|_| EnvFilter::new("deskemy=debug,deskemy_core=debug,arboard=error,info"));
     match log_file() {
         Some(file) => tracing_subscriber::fmt()
             .with_env_filter(filter)
