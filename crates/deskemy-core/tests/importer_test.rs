@@ -362,6 +362,29 @@ fn repair_fixes_only_titles_the_old_cleaner_broke() {
 }
 
 #[test]
+fn search_limits_each_kind_on_its_own() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("Course");
+    let section = course.join("01 Pointers");
+    fs::create_dir_all(&section).unwrap();
+    for name in ["001 Pointers Intro.mp4", "002 Pointers Deep Dive.mp4", "003 Pointers Recap.mp4"] {
+        touch(&section.join(name));
+    }
+    touch(&section.join("pointers-notes.pdf"));
+    let mut conn = db::open_in_memory().unwrap();
+    Importer::new(Box::new(StubProber)).import_course(&mut conn, None, &course).unwrap();
+
+    // Three lectures match; one per kind still leaves room for the section
+    // and the resource.
+    let hits = db::queries::search(&conn, "pointers", 1).unwrap();
+    let mut kinds: Vec<&str> = hits.iter().map(|h| h.kind.as_str()).collect();
+    kinds.sort();
+    assert_eq!(kinds, vec!["attachment", "lecture", "section"]);
+    let lectures = db::queries::search(&conn, "pointers", 10).unwrap().into_iter().filter(|h| h.kind == "lecture").count();
+    assert_eq!(lectures, 3);
+}
+
+#[test]
 fn relocate_accepts_the_moved_folder_and_refuses_an_unrelated_one() {
     let tmp = tempfile::tempdir().unwrap();
     let course = tmp.path().join("Course");

@@ -777,22 +777,25 @@ fn fts_match_expr(input: &str, column: &str) -> Option<String> {
     (!terms.is_empty()).then(|| format!("{column} : ({})", terms.join(" ")))
 }
 
-/// Full-text search across indexed courses/sections/lectures/attachments,
-/// ranked by relevance.
-pub fn search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
+/// Full-text search across indexed courses/sections/lectures/attachments: at
+/// most `per_kind` hits of each kind, ranked by relevance within it, so many
+/// matches of one kind (every "notes.pdf") don't crowd out the others.
+pub fn search(conn: &Connection, query: &str, per_kind: i64) -> Result<Vec<SearchHit>> {
     let Some(expr) = fts_match_expr(query, "title") else {
         return Ok(Vec::new());
     };
     let mut stmt = conn.prepare(
-        "SELECT s.kind, s.entity_id, s.course_id, c.title, s.title
-           FROM search_index s
-           JOIN courses c ON c.id = s.course_id
-          WHERE search_index MATCH ?1
-          ORDER BY rank
-          LIMIT ?2",
+        "SELECT kind, entity_id, course_id, course_title, title
+           FROM (SELECT s.kind, s.entity_id, s.course_id, c.title AS course_title, s.title,
+                        row_number() OVER (PARTITION BY s.kind ORDER BY s.rank) AS n
+                   FROM search_index s
+                   JOIN courses c ON c.id = s.course_id
+                  WHERE search_index MATCH ?1)
+          WHERE n <= ?2
+          ORDER BY n",
     )?;
     let rows = stmt
-        .query_map(params![expr, limit], |r| {
+        .query_map(params![expr, per_kind], |r| {
             Ok(SearchHit {
                 kind: r.get(0)?,
                 entity_id: r.get(1)?,
