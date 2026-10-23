@@ -531,6 +531,12 @@ fn wire_search(
             search::run(&ui, &d, &query);
         }
     });
+    let weak = ui.as_weak();
+    search.on_show_all(move |kind| {
+        if let Some(ui) = weak.upgrade() {
+            search::show_all(&ui, &kind);
+        }
+    });
     // Lectures play (resuming), sections open their course there, resources
     // open as from the course page; a course opens its page.
     let (s, page, v, d, weak) = (session.clone(), course.clone(), viewer.clone(), db.clone(), ui.as_weak());

@@ -9,8 +9,18 @@ export struct SearchRow {
     id: string,
     course: string,
     title: string,
-    /// "Lecture · Course" (just the kind for a course).
+    /// Its course ("" for a course).
     context: string,
+}
+
+/// Title hits of one kind, best first.
+export struct SearchGroup {
+    kind: string,
+    /// "LECTURES · 12".
+    heading: string,
+    rows: [SearchRow],
+    /// Every row shown, not just the first few.
+    all: bool,
 }
 
 export struct SubtitleRow {
@@ -27,21 +37,49 @@ export struct SubtitleRow {
 
 export global Search {
     in-out property <string> query;
-    in property <[SearchRow]> results;
+    /// Courses, sections, lectures, resources: the kinds with hits.
+    in property <[SearchGroup]> groups;
     in property <[SubtitleRow]> subtitles;
     /// A search has run for the current query.
     in property <bool> searched;
 
     callback run(string);
-    /// A hit was picked: lectures play, everything else opens its course.
+    /// A hit was picked: lectures play, sections and resources open, a course
+    /// opens its page.
     callback open(SearchRow);
     callback play-at(string, float);
+    /// Show every hit of a group (its kind).
+    callback show-all(string);
+}
+
+/// A group of results' heading: its icon and name.
+component GroupHeading inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> text;
+    spacing: 8px;
+    alignment: start;
+    Image {
+        source: root.icon;
+        width: 14px;
+        height: 14px;
+        y: (parent.height - self.height) / 2;
+        colorize: Theme.on-surface-variant;
+    }
+    Text {
+        text: root.text;
+        color: Theme.on-surface-variant;
+        font-size: Theme.label-md;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
 }
 
 export component SearchPage inherits Flickable {
     content-width: self.width;
     content-height: page.preferred-height;
     property <length> page-width: min(self.width - 48px, 768px);
+    /// Rows a group shows before "Show all".
+    property <int> shown: 6;
 
     // Search as you type, a beat after the last key (as the Tauri page).
     debounce := Timer {
@@ -123,58 +161,81 @@ export component SearchPage inherits Flickable {
             }
         }
 
-        if Search.results.length > 0: Rectangle {
-            height: hits.preferred-height;
-            border-radius: 8px;
-            border-width: 1px;
-            border-color: Theme.outline-variant;
-            clip: true;
-            hits := VerticalLayout {
-                for hit[i] in Search.results: VerticalLayout {
-                    if i > 0: Rectangle {
-                        height: 1px;
-                        background: Theme.outline-variant;
+        for group in Search.groups: box := VerticalLayout {
+            property <image> icon: group.kind == "course" ? @image-url("icons/library.svg")
+                : group.kind == "section" ? @image-url("icons/list-video.svg")
+                : group.kind == "attachment" ? @image-url("icons/paperclip.svg")
+                : @image-url("icons/play.svg");
+            spacing: 8px;
+            GroupHeading {
+                icon: box.icon;
+                text: group.heading;
+            }
+            Rectangle {
+                height: hits.preferred-height;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Theme.outline-variant;
+                clip: true;
+                hits := VerticalLayout {
+                    for hit[i] in group.rows: VerticalLayout {
+                        if i > 0 && (group.all || i < root.shown): Rectangle {
+                            height: 1px;
+                            background: Theme.outline-variant;
+                        }
+                        if group.all || i < root.shown: Rectangle {
+                            height: 56px;
+                            background: hit-touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
+                            accessible-role: button;
+                            accessible-label: hit.title;
+                            hit-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Search.open(hit); }
+                            }
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                spacing: 12px;
+                                Image {
+                                    source: box.icon;
+                                    width: 18px;
+                                    height: 18px;
+                                    y: (parent.height - self.height) / 2;
+                                    colorize: Theme.on-surface-variant;
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    Text {
+                                        text: hit.title;
+                                        color: Theme.on-surface;
+                                        font-size: Theme.body-md;
+                                        overflow: elide;
+                                    }
+                                    if hit.context != "": Text {
+                                        text: hit.context;
+                                        color: Theme.on-surface-variant;
+                                        font-size: Theme.label-sm;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
                     }
-                    Rectangle {
-                        height: 56px;
-                        background: hit-touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
-                        accessible-role: button;
-                        accessible-label: hit.title;
-                        hit-touch := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { Search.open(hit); }
-                        }
-                        HorizontalLayout {
-                            padding-left: 16px;
-                            padding-right: 16px;
-                            spacing: 12px;
-                            Image {
-                                source: hit.kind == "course" ? @image-url("icons/library.svg")
-                                    : hit.kind == "section" ? @image-url("icons/list-video.svg")
-                                    : hit.kind == "attachment" ? @image-url("icons/paperclip.svg")
-                                    : @image-url("icons/play.svg");
-                                width: 18px;
-                                height: 18px;
-                                y: (parent.height - self.height) / 2;
-                                colorize: Theme.on-surface-variant;
-                            }
-                            VerticalLayout {
-                                horizontal-stretch: 1;
-                                alignment: center;
-                                Text {
-                                    text: hit.title;
-                                    color: Theme.on-surface;
-                                    font-size: Theme.body-md;
-                                    overflow: elide;
-                                }
-                                Text {
-                                    text: hit.context;
-                                    color: Theme.on-surface-variant;
-                                    font-size: Theme.label-sm;
-                                    overflow: elide;
-                                }
-                            }
-                        }
+                }
+            }
+            if !group.all && group.rows.length > root.shown: HorizontalLayout {
+                alignment: start;
+                Text {
+                    text: "Show all " + group.rows.length;
+                    color: more-touch.has-hover ? Theme.on-surface : Theme.primary;
+                    font-size: Theme.label-md;
+                    font-weight: 600;
+                    accessible-role: button;
+                    accessible-label: self.text;
+                    more-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Search.show-all(group.kind); }
                     }
                 }
             }
@@ -182,23 +243,9 @@ export component SearchPage inherits Flickable {
 
         if Search.subtitles.length > 0: VerticalLayout {
             spacing: 8px;
-            HorizontalLayout {
-                spacing: 8px;
-                alignment: start;
-                Image {
-                    source: @image-url("icons/captions.svg");
-                    width: 14px;
-                    height: 14px;
-                    y: (parent.height - self.height) / 2;
-                    colorize: Theme.on-surface-variant;
-                }
-                Text {
-                    text: "IN LECTURE SUBTITLES";
-                    color: Theme.on-surface-variant;
-                    font-size: Theme.label-md;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
+            GroupHeading {
+                icon: @image-url("icons/captions.svg");
+                text: "IN LECTURE SUBTITLES";
             }
             Rectangle {
                 height: spoken.preferred-height;
@@ -265,7 +312,7 @@ export component SearchPage inherits Flickable {
             }
         }
 
-        if Search.searched && Search.results.length == 0 && Search.subtitles.length == 0: Text {
+        if Search.searched && Search.groups.length == 0 && Search.subtitles.length == 0: Text {
             text: "No matches for \"" + Search.query + "\".";
             color: Theme.on-surface-variant;
             font-size: Theme.body-sm;
