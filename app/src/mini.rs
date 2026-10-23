@@ -585,11 +585,20 @@ fn set_locked_aspect(ui: &AppWindow, aspect: Option<f64>) {
 #[cfg(target_os = "linux")]
 fn aspect_hint(ui: &AppWindow, aspect: Option<f64>) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use slint::winit_030::WinitWindowAccessor;
     use x11rb::properties::{AspectRatio, WmSizeHints};
+    // winit queues its own changes to the hints (the minimum size, just set)
+    // without sending them; sent after ours, they'd drop the aspect. A round
+    // trip on its connection (asking where the window is) has the server
+    // apply them first.
+    ui.window().with_winit_window(|w| w.outer_position().ok());
     let window = match ui.window().window_handle().window_handle().map(|h| h.as_raw()) {
         Ok(RawWindowHandle::Xlib(h)) => h.window as u32,
         Ok(RawWindowHandle::Xcb(h)) => h.window.get(),
-        _ => return,
+        other => {
+            tracing::debug!(handle = ?other, "mini: no X11 window for the aspect hint");
+            return;
+        }
     };
     let set = || -> Result<(), Box<dyn std::error::Error>> {
         let (conn, _) = x11rb::connect(None)?;
@@ -601,8 +610,9 @@ fn aspect_hint(ui: &AppWindow, aspect: Option<f64>) {
         hints.set_normal_hints(&conn, window)?.check()?;
         Ok(())
     };
-    if let Err(e) = set() {
-        tracing::warn!(error = %e, "mini: aspect hint");
+    match set() {
+        Ok(()) => tracing::debug!(?aspect, window, "mini: aspect hint"),
+        Err(e) => tracing::warn!(error = %e, "mini: aspect hint"),
     }
 }
 
