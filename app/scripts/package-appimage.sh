@@ -6,7 +6,7 @@
 #
 #   sh app/scripts/get-pdfium.sh && sh app/scripts/package-appimage.sh
 #
-# Needs libmpv (the system's, bundled), patchelf and curl. A binary runs where
+# Needs libmpv (the system's, bundled), patchelf, curl and file. A binary runs where
 # glibc is at least as new as the build machine's: build on the oldest distro
 # to support (CI: Ubuntu 24.04).
 
