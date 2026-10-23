@@ -166,6 +166,7 @@ impl Session {
     /// Open a lecture at `start` seconds (a bookmark, or history's "watch
     /// again" from 0); `None` resumes where it was left.
     pub fn open_at(&self, lecture_id: &str, start: Option<f64>) -> Result<(), String> {
+        let asked = Instant::now();
         self.save_now();
         let (course_id, items) = {
             let db = self.db();
@@ -184,7 +185,10 @@ impl Session {
                 .collect();
             inner.course_id = Some(course_id);
         }
-        self.load_current(start.map_or(Start::Resume, Start::At))
+        let loaded = self.load_current(start.map_or(Start::Resume, Start::At));
+        // From the click to mpv having the file (the UI waits on this).
+        tracing::debug!(ms = asked.elapsed().as_millis() as u64, "lecture opened");
+        loaded
     }
 
     /// Play a file that isn't in the library. Nothing is persisted.
