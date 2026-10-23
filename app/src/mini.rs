@@ -354,7 +354,7 @@ impl MiniPlayer {
     fn exit(&self, ui: &AppWindow, back_to_fullscreen: bool) {
         self.remember(ui);
         self.follow.stop();
-        LOCKED_ASPECT.store(0, Ordering::Relaxed);
+        set_locked_aspect(ui, None);
         let Some(saved) = self.saved.take() else {
             ui.global::<Playback>().set_mini(false);
             return;
@@ -430,9 +430,9 @@ impl MiniPlayer {
         }
     }
 
-    /// Keep the window at `aspect` while it's resized (the WM_SIZING hook).
+    /// Keep the window at `aspect` while it's resized.
     fn lock_aspect(&self, ui: &AppWindow, aspect: f64, min: (i32, i32)) {
-        LOCKED_ASPECT.store((aspect as f32).to_bits(), Ordering::Relaxed);
+        set_locked_aspect(ui, Some(aspect));
         MIN_PHYSICAL.store(((min.0 as u64) << 32) | min.1 as u64, Ordering::Relaxed);
         if !self.hooked.get() {
             self.hooked.set(hook_resizing(ui));
@@ -448,7 +448,7 @@ impl MiniPlayer {
             let aspect = video_aspect();
             let locked = f32::from_bits(LOCKED_ASPECT.load(Ordering::Relaxed)) as f64;
             if locked > 0.0 && (aspect / locked - 1.0).abs() > 0.01 {
-                LOCKED_ASPECT.store((aspect as f32).to_bits(), Ordering::Relaxed);
+                set_locked_aspect(&ui, Some(aspect));
                 let r = rect(&ui);
                 place(&ui, fit_aspect(r, aspect, work_area_at(&ui, r), min));
                 tracing::debug!(aspect, "mini: video shape changed");
@@ -564,10 +564,50 @@ fn hook_resizing(ui: &AppWindow) -> bool {
     unsafe { SetWindowSubclass(hwnd, Some(on_sizing), 0x6d696e69, 0) != 0 }
 }
 
+/// Elsewhere there's nothing to hook: X11 window managers keep the aspect
+/// themselves (`aspect_hint`).
 #[cfg(not(windows))]
 fn hook_resizing(_: &AppWindow) -> bool {
-    false
+    true
 }
+
+/// The aspect the window keeps while it's resized, or none (not mini).
+/// Windows keeps it in the WM_SIZING hook, which reads `LOCKED_ASPECT`.
+fn set_locked_aspect(ui: &AppWindow, aspect: Option<f64>) {
+    LOCKED_ASPECT.store(aspect.map_or(0, |a| (a as f32).to_bits()), Ordering::Relaxed);
+    aspect_hint(ui, aspect);
+}
+
+/// X11: ask the window manager to keep the window at `aspect` (or no longer)
+/// through its size hints, which GNOME and KDE honor. winit reads the hints
+/// back before it changes them (the minimum size), so the aspect stays. Wayland
+/// has no such request: there the window resizes freely.
+#[cfg(target_os = "linux")]
+fn aspect_hint(ui: &AppWindow, aspect: Option<f64>) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use x11rb::properties::{AspectRatio, WmSizeHints};
+    let window = match ui.window().window_handle().window_handle().map(|h| h.as_raw()) {
+        Ok(RawWindowHandle::Xlib(h)) => h.window as u32,
+        Ok(RawWindowHandle::Xcb(h)) => h.window.get(),
+        _ => return,
+    };
+    let set = || -> Result<(), Box<dyn std::error::Error>> {
+        let (conn, _) = x11rb::connect(None)?;
+        let mut hints = WmSizeHints::get_normal_hints(&conn, window)?.reply()?.unwrap_or_default();
+        hints.aspect = aspect.map(|a| {
+            let ratio = AspectRatio::new((a * 10_000.0).round() as i32, 10_000);
+            (ratio, ratio)
+        });
+        hints.set_normal_hints(&conn, window)?.check()?;
+        Ok(())
+    };
+    if let Err(e) = set() {
+        tracing::warn!(error = %e, "mini: aspect hint");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn aspect_hint(_: &AppWindow, _: Option<f64>) {}
 
 #[cfg(windows)]
 unsafe extern "system" fn on_sizing(
