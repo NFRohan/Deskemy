@@ -154,7 +154,12 @@ export component TitleBar inherits Rectangle {
                     clicked => { root.back(); }
                 }
             }
+            // Short of room, each crumb gives up width in proportion to its
+            // own, down to 80px: a long course name shortens before "Library"
+            // or a section.
             for crumb[i] in root.crumbs: HorizontalLayout {
+                horizontal-stretch: self.preferred-width / 1px;
+                max-width: self.preferred-width;
                 spacing: 6px;
                 if i > 0: Text {
                     text: "/";
@@ -166,6 +171,7 @@ export component TitleBar inherits Rectangle {
                     property <bool> link: i < root.crumbs.length - 1 && i < root.targets.length
                         && root.targets[i] != "";
                     text: crumb;
+                    min-width: min(self.preferred-width, 80px);
                     color: i == root.crumbs.length - 1 || (self.link && crumb-touch.has-hover)
                         ? Theme.on-surface : Theme.on-surface-variant;
                     font-size: Theme.label-md;
