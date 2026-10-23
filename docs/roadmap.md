@@ -19,6 +19,11 @@ checklist live in [slint-port.md](slint-port.md).
   language kept by language (#11), lectures kept on their last frame at the
   end, scroll kept on the course page and library; with the 2.0.3 fixes
   (#10, long paths, single copy, subtitles indexed on import).
+- **2.1.1** (2026-10-24) — Windows: resource popup timing (a corner card
+  before a lecture ends), bookmarks on the seek bar, search grouped by kind
+  and as you type, sections in the player's title bar, exact skips and a
+  seek bar that glides. Built on the linux-port branch; Linux itself is held
+  for more testing.
 
 ## Order of work
 
