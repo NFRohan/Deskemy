@@ -311,6 +311,61 @@ export component Scrubber inherits Rectangle {
     }
 }
 
+/// A resource offered with its lecture (the end card, the heads-up card):
+/// click to open it, its circle to tick it off.
+component PromptRow inherits Rectangle {
+    in property <ResourceItem> item;
+    height: 38px;
+    border-radius: 8px;
+    background: row-touch.has-hover ? #ffffff14 : #ffffff08;
+    row-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Playback.open-resource(root.item); }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        Rectangle {
+            width: 16px;
+            accessible-role: button;
+            accessible-label: root.item.done ? "Mark as not done" : "Mark as done";
+            Image {
+                source: root.item.done ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
+                width: 16px;
+                height: 16px;
+                colorize: root.item.done ? #ffffffcc : tick-touch.has-hover ? #ffffffb3 : #ffffff4d;
+            }
+            tick-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Playback.toggle-resource(root.item.id, !root.item.done); }
+            }
+        }
+        Image {
+            source: @image-url("icons/file-text.svg");
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: #ffffffb3;
+        }
+        Text {
+            text: root.item.name;
+            color: root.item.done ? #ffffff99 : #ffffffdd;
+            font-size: 13px;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Text {
+            text: "Open";
+            color: #ffffffb3;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
 component Chip inherits Rectangle {
     in property <string> text;
     in property <bool> selected;
@@ -1457,57 +1512,7 @@ export component PlayerOverlay inherits Rectangle {
                     }
                     VerticalLayout {
                         spacing: 2px;
-                        for item in Playback.prompt-items: Rectangle {
-                            height: 38px;
-                            border-radius: 8px;
-                            background: row-touch.has-hover ? #ffffff14 : #ffffff08;
-                            row-touch := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { Playback.open-resource(item); }
-                            }
-                            HorizontalLayout {
-                                padding-left: 10px;
-                                padding-right: 10px;
-                                spacing: 10px;
-                                Rectangle {
-                                    width: 16px;
-                                    accessible-role: button;
-                                    accessible-label: item.done ? "Mark as not done" : "Mark as done";
-                                    Image {
-                                        source: item.done ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
-                                        width: 16px;
-                                        height: 16px;
-                                        colorize: item.done ? #ffffffcc : tick-touch.has-hover ? #ffffffb3 : #ffffff4d;
-                                    }
-                                    tick-touch := TouchArea {
-                                        mouse-cursor: pointer;
-                                        clicked => { Playback.toggle-resource(item.id, !item.done); }
-                                    }
-                                }
-                                Image {
-                                    source: @image-url("icons/file-text.svg");
-                                    width: 16px;
-                                    height: 16px;
-                                    y: (parent.height - self.height) / 2;
-                                    colorize: #ffffffb3;
-                                }
-                                Text {
-                                    text: item.name;
-                                    color: item.done ? #ffffff99 : #ffffffdd;
-                                    font-size: 13px;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
-                                }
-                                Text {
-                                    text: "Open";
-                                    color: #ffffffb3;
-                                    font-size: 12px;
-                                    font-weight: 600;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
+                        for item in Playback.prompt-items: PromptRow { item: item; }
                     }
                     HorizontalLayout {
                         alignment: end;
