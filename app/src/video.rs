@@ -696,24 +696,26 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeks: 
 
 /// "Bookmark this moment": opening the dialog captures the position and
 /// pauses; closing resumes if it was playing (as in the Tauri player).
+/// The playing lecture's bookmarks, for the bookmark dialog and the seek bar.
+fn bookmark_rows(session: &Session) -> Vec<BookmarkRow> {
+    session
+        .bookmarks()
+        .into_iter()
+        .map(|b| BookmarkRow {
+            id: b.id.into(),
+            time: tracks::clock(b.position_seconds).into(),
+            label: b.label.unwrap_or_else(|| "Bookmark".into()).into(),
+            position: b.position_seconds as f32,
+        })
+        .collect()
+}
+
 fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeker: Seeker) {
     let playback = ui.global::<Playback>();
     // (position being bookmarked, resume on close) — UI thread only.
     let draft = Rc::new(Cell::new((0.0_f64, false)));
 
-    let show = |playback: &Playback, session: &Session| {
-        let rows: Vec<BookmarkRow> = session
-            .bookmarks()
-            .into_iter()
-            .map(|b| BookmarkRow {
-                id: b.id.into(),
-                time: tracks::clock(b.position_seconds).into(),
-                label: b.label.unwrap_or_else(|| "Bookmark".into()).into(),
-                position: b.position_seconds as f32,
-            })
-            .collect();
-        playback.set_bookmarks(slint::ModelRc::new(slint::VecModel::from(rows)));
-    };
+    let show = |playback: &Playback, session: &Session| playback.set_bookmarks(course_panel::model(bookmark_rows(session)));
     let close = {
         let (draft, m, weak) = (draft.clone(), mpv.clone(), ui.as_weak());
         move || {
@@ -742,11 +744,15 @@ fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeker
         playback.set_open_menu("bookmark".into());
     });
 
-    let (s, d, done) = (session.clone(), draft.clone(), close.clone());
+    let (s, d, done, weak) = (session.clone(), draft.clone(), close.clone(), ui.as_weak());
     playback.on_save_bookmark(move |label| {
         let label = label.trim();
         if let Err(e) = s.add_bookmark(d.get().0, (!label.is_empty()).then_some(label)) {
             tracing::warn!(error = %e, "add bookmark");
+        }
+        // The seek bar marks it at once.
+        if let Some(ui) = weak.upgrade() {
+            show(&ui.global::<Playback>(), &s);
         }
         done();
     });
@@ -946,6 +952,8 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
         if let Some(np) = &now_playing {
             shown_file = Some(np.file.clone());
         }
+        // Another lecture: its bookmarks, for the seek bar.
+        let bookmarks = new_file.then(|| bookmark_rows(session));
 
         // Re-read tracks only when their fingerprint moves: another file, its
         // tracks loaded, a sidecar subtitle attached late, or a pick took
@@ -1007,6 +1015,9 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
             // dialog stays, as playback paused for it).
             if new_file && playback.get_open_menu() != "bookmark" {
                 playback.set_open_menu("".into());
+            }
+            if let Some(rows) = bookmarks {
+                playback.set_bookmarks(course_panel::model(rows));
             }
             if let Some(items) = waiting {
                 playback.set_prompt_items(course_panel::model(items));
