@@ -29,6 +29,8 @@ pub fn lock(config: &Config) -> MutexGuard<'_, AppConfig> {
 pub const THEMES: [(&str, &str); 3] = [("dark", "Dark"), ("light", "Light"), ("system", "System")];
 pub const SPEEDS: [f64; 7] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 pub const GOALS: [i64; 6] = [15, 30, 45, 60, 90, 120];
+/// How early a lecture's resources are offered, in seconds before its end.
+pub const LEADS: [u32; 4] = [0, 10, 30, 60];
 
 /// "1.25×".
 pub fn speed_label(speed: f64) -> String {
@@ -37,6 +39,15 @@ pub fn speed_label(speed: f64) -> String {
 
 fn goal_label(minutes: i64) -> String {
     format!("{minutes} min")
+}
+
+/// "At the end", "30 s before", "1 min before".
+fn lead_label(secs: u32) -> String {
+    match secs {
+        0 => "At the end".into(),
+        s if s % 60 == 0 => format!("{} min before", s / 60),
+        s => format!("{s} s before"),
+    }
 }
 
 /// Apply one change from the page to a config. Returns false for an unknown
@@ -59,6 +70,10 @@ pub fn apply(config: &mut AppConfig, key: &str, value: &str) -> bool {
         "auto-rescan" => config.auto_rescan = on,
         "resources-inline" => config.resources_inline = on,
         "pause-at-resources" => config.pause_at_resources = on,
+        "resources-lead" => match value.parse::<u32>() {
+            Ok(secs) if LEADS.contains(&secs) => config.resources_lead_secs = secs,
+            _ => return false,
+        },
         "mini-return-here" => config.mini_return_here = on,
         _ => return false,
     }
@@ -328,6 +343,7 @@ impl SettingsPage {
         prefs.set_themes(options(THEMES.iter().map(|(v, l)| (v.to_string(), l.to_string())).collect()));
         prefs.set_speeds(options(SPEEDS.iter().map(|s| (s.to_string(), speed_label(*s))).collect()));
         prefs.set_goals(options(GOALS.iter().map(|m| (m.to_string(), goal_label(*m))).collect()));
+        prefs.set_leads(options(LEADS.iter().map(|s| (s.to_string(), lead_label(*s))).collect()));
 
         prefs.set_theme(c.theme.clone().into());
         let theme = THEMES.iter().find(|(v, _)| *v == c.theme).map_or("Dark", |(_, l)| *l);
@@ -342,6 +358,8 @@ impl SettingsPage {
         prefs.set_auto_rescan(c.auto_rescan);
         prefs.set_resources_inline(c.resources_inline);
         prefs.set_pause_at_resources(c.pause_at_resources);
+        prefs.set_lead(c.resources_lead_secs.to_string().into());
+        prefs.set_lead_label(lead_label(c.resources_lead_secs).into());
         prefs.set_mini_return_here(c.mini_return_here);
     }
 
@@ -392,6 +410,9 @@ mod tests {
         assert!(c.mini_return_here, "on by default");
         assert!(apply(&mut c, "mini-return-here", "false"));
         assert!(!c.mini_return_here);
+        assert_eq!(c.resources_lead_secs, 0, "at the end by default");
+        assert!(apply(&mut c, "resources-lead", "30"));
+        assert_eq!(c.resources_lead_secs, 30);
         assert_eq!(
             (c.theme.as_str(), c.default_speed, c.daily_goal_minutes, c.autoplay_next, c.autohide_controls),
             ("system", 1.25, 45, false, true)
@@ -402,6 +423,7 @@ mod tests {
         assert!(!apply(&mut c, "speed", "fast"));
         assert!(!apply(&mut c, "speed", "0"));
         assert!(!apply(&mut c, "goal", "-5"));
+        assert!(!apply(&mut c, "resources-lead", "600"), "only the offered choices");
         assert!(!apply(&mut c, "volume", "11"));
         assert_eq!(format!("{c:?}"), before, "rejected changes leave it alone");
     }
@@ -411,6 +433,8 @@ mod tests {
         assert_eq!(speed_label(1.0), "1×");
         assert_eq!(speed_label(0.75), "0.75×");
         assert_eq!(goal_label(90), "90 min");
+        let leads: Vec<String> = LEADS.iter().map(|s| lead_label(*s)).collect();
+        assert_eq!(leads, ["At the end", "10 s before", "30 s before", "1 min before"]);
     }
 
     #[test]

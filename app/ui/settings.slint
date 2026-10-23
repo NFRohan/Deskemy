@@ -23,6 +23,10 @@ export global Prefs {
     in property <bool> auto-rescan;
     in property <bool> resources-inline;
     in property <bool> pause-at-resources;
+    /// How early a lecture's resources are offered (seconds before its end).
+    in property <[SelectOption]> leads;
+    in-out property <string> lead;
+    in property <string> lead-label;
     in property <bool> mini-return-here;
 
     callback set(string, string);
@@ -403,6 +407,18 @@ export component SettingsPage inherits Flickable {
                             label: "Pause on exercises and resources";
                             checked: Prefs.pause-at-resources;
                             toggled => { Prefs.set("pause-at-resources", Prefs.pause-at-resources ? "false" : "true"); }
+                        }
+                    }
+                    if Prefs.pause-at-resources: Divider { }
+                    if Prefs.pause-at-resources: Row {
+                        title: "When to offer them";
+                        description: "Earlier, they show in a corner while the lecture plays on; autoplay still stops at its end, unless they're all ticked off.";
+                        text-width: root.text-width;
+                        Select {
+                            options: Prefs.leads;
+                            value <=> Prefs.lead;
+                            label: Prefs.lead-label;
+                            changed => { Prefs.set("resources-lead", self.value); }
                         }
                     }
                 }

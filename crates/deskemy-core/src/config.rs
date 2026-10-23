@@ -33,6 +33,10 @@ pub struct AppConfig {
     /// open them before moving on. Off by default: many courses attach slides
     /// to every lecture.
     pub pause_at_resources: bool,
+    /// With `pause_at_resources`: how many seconds before a lecture's end its
+    /// resources are offered, while it plays on (never before halfway). 0:
+    /// only at the end.
+    pub resources_lead_secs: u32,
     /// Leaving the mini player opens the full window on the monitor the mini
     /// player is on. Off: back where the window was before it went mini.
     pub mini_return_here: bool,
@@ -55,6 +59,7 @@ impl Default for AppConfig {
             autohide_controls: false,
             resources_inline: true,
             pause_at_resources: false,
+            resources_lead_secs: 0,
             mini_return_here: true,
             last_root: None,
             mini_player: None,
