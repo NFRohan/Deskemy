@@ -710,12 +710,17 @@ fn bookmark_rows(session: &Session) -> Vec<BookmarkRow> {
         .collect()
 }
 
+/// Show the playing lecture's bookmarks as they are now, in the bookmark
+/// dialog and along the seek bar — after any change, wherever it was made.
+pub(crate) fn show_bookmarks(playback: &Playback, session: &Session) {
+    playback.set_bookmarks(course_panel::model(bookmark_rows(session)));
+}
+
 fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeker: Seeker) {
     let playback = ui.global::<Playback>();
     // (position being bookmarked, resume on close) — UI thread only.
     let draft = Rc::new(Cell::new((0.0_f64, false)));
 
-    let show = |playback: &Playback, session: &Session| playback.set_bookmarks(course_panel::model(bookmark_rows(session)));
     let close = {
         let (draft, m, weak) = (draft.clone(), mpv.clone(), ui.as_weak());
         move || {
@@ -740,7 +745,7 @@ fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeker
         d.set((position, playing));
         let playback = ui.global::<Playback>();
         playback.set_bookmark_time(tracks::clock(position).into());
-        show(&playback, &s);
+        show_bookmarks(&playback, &s);
         playback.set_open_menu("bookmark".into());
     });
 
@@ -752,7 +757,7 @@ fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeker
         }
         // The seek bar marks it at once.
         if let Some(ui) = weak.upgrade() {
-            show(&ui.global::<Playback>(), &s);
+            show_bookmarks(&ui.global::<Playback>(), &s);
         }
         done();
     });
@@ -769,7 +774,7 @@ fn wire_bookmarks(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeker
     playback.on_delete_bookmark(move |id| {
         s.delete_bookmark(&id);
         if let Some(ui) = weak.upgrade() {
-            show(&ui.global::<Playback>(), &s);
+            show_bookmarks(&ui.global::<Playback>(), &s);
         }
     });
 }

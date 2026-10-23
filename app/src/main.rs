@@ -504,15 +504,13 @@ fn wire_lists(ui: &AppWindow, db: &Db, session: &std::sync::Arc<session::Session
             Err(e) => tracing::warn!(error = %e, %lecture, "open lecture"),
         }
     });
-    let (db, weak) = (db.clone(), ui.as_weak());
+    let (s, db, weak) = (session.clone(), db.clone(), ui.as_weak());
     lists.on_delete_bookmark(move |id| {
-        let conn = db.lock().unwrap_or_else(|e| e.into_inner());
-        if let Err(e) = deskemy_core::db::queries::delete_bookmark(&conn, &id) {
-            tracing::warn!(error = %e, "delete bookmark");
-        }
-        drop(conn);
+        s.delete_bookmark(&id);
         if let Some(ui) = weak.upgrade() {
             pages::show(&ui, &db, "bookmarks");
+            // The lecture in the player may be the one it was in.
+            video::show_bookmarks(&ui.global::<Playback>(), &s);
         }
     });
 }
