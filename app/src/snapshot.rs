@@ -171,6 +171,21 @@ pub fn sample_course(ui: &crate::AppWindow, db: &crate::session::Db, page: &crat
     }
 }
 
+/// The sample course opened at its first section whose title contains
+/// `title`, as a search hit opens it.
+pub fn reveal_section(ui: &crate::AppWindow, db: &crate::session::Db, page: &crate::course_page::CoursePage, title: &str) {
+    let Some(id) = page.id() else { return };
+    let conn = db.lock().unwrap_or_else(|e| e.into_inner());
+    let section = deskemy_core::db::queries::get_course_detail(&conn, &id)
+        .ok()
+        .flatten()
+        .and_then(|c| c.sections.into_iter().find(|s| s.title.contains(title)));
+    drop(conn);
+    if let Some(s) = section {
+        page.open_section(ui, &id, &s.id);
+    }
+}
+
 /// The tracks list ("tracks"), or the first track's page ("track"), with
 /// "track-<dialog>" opening that dialog ("tracks-create" for the list's).
 pub fn sample_tracks(ui: &crate::AppWindow, page: &crate::career::TracksPage, which: &str) {
@@ -291,6 +306,14 @@ pub fn save(window: &MinimalSoftwareWindow, path: &Path) -> Result<(), String> {
     let size = window.size();
     let (w, h) = (size.width as usize, size.height as usize);
     let mut pixels = vec![Rgb8Pixel::new(0, 0, 0); w * h];
+    // A first pass lays the page out, creating its elements; their timers
+    // (a section scrolling into view) then run before the frame that's kept.
+    window.request_redraw();
+    window.draw_if_needed(|renderer| {
+        renderer.render(&mut pixels, w);
+    });
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    slint::platform::update_timers_and_animations();
     window.request_redraw();
     window.draw_if_needed(|renderer| {
         renderer.render(&mut pixels, w);

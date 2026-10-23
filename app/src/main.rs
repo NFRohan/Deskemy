@@ -297,23 +297,26 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         // "course", or "course-cover" / "course-delete" with that dialog open;
         // "course-pair[:<name>]" pairs the resource named so (the first one);
-        // "course-scrolled", as it's found back from a video, scrolled down.
+        // "course-scrolled", as it's found back from a video, scrolled down;
+        // "course-section:<title>" opened at that section, as from search.
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
             snapshot::sample_course(&ui, &db, &course);
             let dialog = page.strip_prefix("course-").unwrap_or_default();
-            match dialog.strip_prefix("pair") {
-                Some(name) => {
-                    let name = name.trim_start_matches(':');
-                    let resources = course
-                        .id()
-                        .and_then(|id| db::queries::list_course_attachments(&db.lock().unwrap_or_else(|e| e.into_inner()), &id).ok())
-                        .unwrap_or_default();
-                    if let Some(a) = resources.iter().find(|a| a.name.contains(name)) {
-                        course.pair_open(&ui, &a.id);
-                    }
+            if let Some(title) = dialog.strip_prefix("section:") {
+                snapshot::reveal_section(&ui, &db, &course, title);
+            } else if let Some(name) = dialog.strip_prefix("pair") {
+                let name = name.trim_start_matches(':');
+                let resources = course
+                    .id()
+                    .and_then(|id| db::queries::list_course_attachments(&db.lock().unwrap_or_else(|e| e.into_inner()), &id).ok())
+                    .unwrap_or_default();
+                if let Some(a) = resources.iter().find(|a| a.name.contains(name)) {
+                    course.pair_open(&ui, &a.id);
                 }
-                None if dialog == "scrolled" => ui.global::<Course>().set_scroll_y(-320.0),
-                None => ui.global::<Course>().set_dialog(dialog.into()),
+            } else if dialog == "scrolled" {
+                ui.global::<Course>().set_scroll_y(-320.0);
+            } else {
+                ui.global::<Course>().set_dialog(dialog.into());
             }
         }
         ui.show()?;
