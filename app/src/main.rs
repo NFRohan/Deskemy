@@ -448,7 +448,7 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     wire_lists(&ui, &db, player.session());
-    wire_search(&ui, &db, &course, player.session());
+    wire_search(&ui, &db, &course, player.session(), &viewer);
     wire_course(&ui, &course, player.session(), &importing);
 
     log_launch_window(&ui);
@@ -522,17 +522,18 @@ fn wire_search(
     db: &Db,
     course: &std::rc::Rc<course_page::CoursePage>,
     session: &std::sync::Arc<session::Session>,
+    viewer: &std::rc::Rc<pdf::Viewer>,
 ) {
     let search = ui.global::<Search>();
-    let (db, weak) = (db.clone(), ui.as_weak());
+    let (d, weak) = (db.clone(), ui.as_weak());
     search.on_run(move |query| {
         if let Some(ui) = weak.upgrade() {
-            search::run(&ui, &db, &query);
+            search::run(&ui, &d, &query);
         }
     });
-    // Lectures play (resuming), sections open their course there; anything
-    // else opens its course's page.
-    let (s, page, weak) = (session.clone(), course.clone(), ui.as_weak());
+    // Lectures play (resuming), sections open their course there, resources
+    // open as from the course page; a course opens its page.
+    let (s, page, v, d, weak) = (session.clone(), course.clone(), viewer.clone(), db.clone(), ui.as_weak());
     search.on_open(move |hit| {
         let Some(ui) = weak.upgrade() else { return };
         match hit.kind.as_str() {
@@ -541,6 +542,15 @@ fn wire_search(
                 Err(e) => tracing::warn!(error = %e, "open lecture"),
             },
             "section" => page.open_section(&ui, &hit.course, &hit.id),
+            "attachment" => {
+                let attachments = db::queries::list_course_attachments(&d.lock().unwrap_or_else(|e| e.into_inner()), &hit.course);
+                match attachments.ok().and_then(|all| all.into_iter().find(|a| a.id == hit.id.as_str())) {
+                    // Its tick in the viewer saves through the course page's
+                    // handler, which goes by the resource alone.
+                    Some(a) => v.open_resource(&ui, &course_page::resource_item(&a), pdf::Opener::Course),
+                    None => tracing::warn!(resource = %hit.id, "search hit: resource not found"),
+                }
+            }
             _ => page.open(&ui, &hit.course),
         }
     });
