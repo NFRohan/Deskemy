@@ -411,8 +411,8 @@ export component SettingsPage inherits Flickable {
                     }
                     if Prefs.pause-at-resources: Divider { }
                     if Prefs.pause-at-resources: Row {
-                        title: "When to offer them";
-                        description: "Earlier, they show in a corner while the lecture plays on; autoplay still stops at its end, unless they're all ticked off.";
+                        title: "Resource popup timing";
+                        description: "When a lecture's resources pop up. Before the end, they show in a corner while it keeps playing; autoplay still stops at the end unless they're all ticked off.";
                         text-width: root.text-width;
                         Select {
                             options: Prefs.leads;

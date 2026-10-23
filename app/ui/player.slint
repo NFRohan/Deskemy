@@ -210,8 +210,8 @@ export global Playback {
     /// The lecture's resources: when autoplay stopped at them, or offered
     /// ahead of its end.
     in property <[ResourceItem]> prompt-items;
-    /// They're offered ahead of the lecture's end, as it plays on ("When to
-    /// offer them"); ✕ puts them away until they're offered again.
+    /// They're offered ahead of the lecture's end, as it plays on ("Resource
+    /// popup timing"); ✕ puts them away until they're offered again.
     in-out property <bool> resources-soon;
 }
 

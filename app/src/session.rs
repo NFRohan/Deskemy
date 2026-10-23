@@ -39,8 +39,8 @@ pub struct NowPlaying {
     /// Autoplay stopped at the end of this lecture to offer its resources
     /// ("Pause on exercises and resources").
     pub resources_waiting: bool,
-    /// Its resources are offered ahead of its end, as it plays on ("When to
-    /// offer them"): from that point on, and not before it again.
+    /// Its resources are offered ahead of its end, as it plays on ("Resource
+    /// popup timing"): from that point on, and not before it again.
     pub resources_soon: bool,
     /// The course plays at its own saved speed rather than the default: the
     /// default's label ("1.25×"), for the speed menu's "Use default". Empty
@@ -393,8 +393,8 @@ impl Session {
         }
     }
 
-    /// Offer the lecture's resources once it's past the heads-up point ("When
-    /// to offer them"); before it again (a seek back), no longer.
+    /// Offer the lecture's resources once it's past the heads-up point
+    /// ("Resource popup timing"); before it again (a seek back), no longer.
     fn track_heads_up(&self, inner: &mut Inner, position: Option<f64>) {
         let lead = {
             let config = settings::lock(&self.config);
