@@ -176,6 +176,9 @@ pub struct SearchHit {
     pub course_id: String,
     pub course_title: String,
     pub title: String,
+    /// The section a lecture or resource is in (None for a course, a section,
+    /// or a course-wide resource).
+    pub section_title: Option<String>,
 }
 
 /// A subtitle full-text match: a spoken snippet with the lecture + timestamp.

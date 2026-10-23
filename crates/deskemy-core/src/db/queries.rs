@@ -785,11 +785,17 @@ pub fn search(conn: &Connection, query: &str, per_kind: i64) -> Result<Vec<Searc
         return Ok(Vec::new());
     };
     let mut stmt = conn.prepare(
-        "SELECT kind, entity_id, course_id, course_title, title
+        // A resource's section is its own, or else its lecture's.
+        "SELECT kind, entity_id, course_id, course_title, title, section_title
            FROM (SELECT s.kind, s.entity_id, s.course_id, c.title AS course_title, s.title,
+                        sec.title AS section_title,
                         row_number() OVER (PARTITION BY s.kind ORDER BY s.rank) AS n
                    FROM search_index s
                    JOIN courses c ON c.id = s.course_id
+                   LEFT JOIN lectures l ON s.kind = 'lecture' AND l.id = s.entity_id
+                   LEFT JOIN attachments a ON s.kind = 'attachment' AND a.id = s.entity_id
+                   LEFT JOIN lectures al ON al.id = a.lecture_id
+                   LEFT JOIN sections sec ON sec.id = COALESCE(l.section_id, a.section_id, al.section_id)
                   WHERE search_index MATCH ?1)
           WHERE n <= ?2
           ORDER BY n",
@@ -802,6 +808,7 @@ pub fn search(conn: &Connection, query: &str, per_kind: i64) -> Result<Vec<Searc
                 course_id: r.get(2)?,
                 course_title: r.get(3)?,
                 title: r.get(4)?,
+                section_title: r.get(5)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;

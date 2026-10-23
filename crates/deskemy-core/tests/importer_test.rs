@@ -380,8 +380,14 @@ fn search_limits_each_kind_on_its_own() {
     let mut kinds: Vec<&str> = hits.iter().map(|h| h.kind.as_str()).collect();
     kinds.sort();
     assert_eq!(kinds, vec!["attachment", "lecture", "section"]);
-    let lectures = db::queries::search(&conn, "pointers", 10).unwrap().into_iter().filter(|h| h.kind == "lecture").count();
-    assert_eq!(lectures, 3);
+    let hits = db::queries::search(&conn, "pointers", 10).unwrap();
+    assert_eq!(hits.iter().filter(|h| h.kind == "lecture").count(), 3);
+
+    // Lectures and resources say which section they're in; a section doesn't.
+    for hit in &hits {
+        let expected = (hit.kind != "section").then(|| "Pointers".to_string());
+        assert_eq!(hit.section_title, expected, "{} {}", hit.kind, hit.title);
+    }
 }
 
 #[test]

@@ -66,10 +66,15 @@ pub fn heading(name: &str, count: usize) -> String {
     format!("{} · {count}{more}", name.to_uppercase())
 }
 
-/// A title hit's second line: its course (the group says what it is); none
+/// A title hit's second line: where it is (the group says what it is) — its
+/// section and course, which tell apart lectures with the same name; none
 /// for a course.
 fn context(hit: &SearchHit) -> String {
-    if hit.kind == "course" { String::new() } else { hit.course_title.clone() }
+    match (hit.kind.as_str(), &hit.section_title) {
+        ("course", _) => String::new(),
+        (_, Some(section)) => format!("{section} · {}", hit.course_title),
+        (_, None) => hit.course_title.clone(),
+    }
 }
 
 /// Show every hit of a group, not just its first few.
@@ -154,6 +159,7 @@ mod tests {
             course_id: "c".into(),
             course_title: "AWS".into(),
             title: title.into(),
+            section_title: None,
         }
     }
 
@@ -185,9 +191,13 @@ mod tests {
     }
 
     #[test]
-    fn a_hit_s_second_line_is_its_course() {
+    fn a_hit_s_second_line_is_where_it_is() {
         assert_eq!(context(&hit("course")), "");
         assert_eq!(context(&hit("section")), "AWS");
+        let in_section = |kind| SearchHit { section_title: Some("IAM".into()), ..hit(kind) };
+        assert_eq!(context(&in_section("lecture")), "IAM · AWS");
+        assert_eq!(context(&in_section("attachment")), "IAM · AWS");
+        // A course-wide resource: just the course.
         assert_eq!(context(&hit("attachment")), "AWS");
     }
 
