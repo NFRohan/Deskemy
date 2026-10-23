@@ -1533,10 +1533,13 @@ export component PlayerOverlay inherits Rectangle {
 }
 
 /// The title bar above the video in a window, as the Tauri player: where the
-/// lecture sits, with links back to the library and its course.
+/// lecture sits, with links back to the library and its course. The section
+/// tells apart lectures with the same name ("lecture" in every section).
 export component PlayerTopBar inherits TitleBar {
-    crumbs: Playback.course-id == "" ? ["Library", Playback.title] : ["Library", Playback.course-title, Playback.title];
-    targets: Playback.course-id == "" ? ["library", ""] : ["library", "course", ""];
+    crumbs: Playback.course-id == "" ? ["Library", Playback.title]
+        : Playback.subtitle == "" ? ["Library", Playback.course-title, Playback.title]
+        : ["Library", Playback.course-title, Playback.subtitle, Playback.title];
+    targets: Playback.course-id == "" ? ["library", ""] : ["library", "course", "", ""];
     back-button: true;
     back => { Playback.back(); }
     picked(i) => {
