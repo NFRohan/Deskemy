@@ -527,17 +527,18 @@ fn wire_search(
             search::run(&ui, &db, &query);
         }
     });
-    // Lectures play (resuming); anything else opens its course's page.
+    // Lectures play (resuming), sections open their course there; anything
+    // else opens its course's page.
     let (s, page, weak) = (session.clone(), course.clone(), ui.as_weak());
     search.on_open(move |hit| {
         let Some(ui) = weak.upgrade() else { return };
-        if hit.kind == "lecture" {
-            match s.open(&hit.id) {
+        match hit.kind.as_str() {
+            "lecture" => match s.open(&hit.id) {
                 Ok(()) => ui.set_playing(true),
                 Err(e) => tracing::warn!(error = %e, "open lecture"),
-            }
-        } else {
-            page.open(&ui, &hit.course);
+            },
+            "section" => page.open_section(&ui, &hit.course, &hit.id),
+            _ => page.open(&ui, &hit.course),
         }
     });
     let (s, weak) = (session.clone(), ui.as_weak());

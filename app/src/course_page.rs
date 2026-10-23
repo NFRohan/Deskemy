@@ -261,16 +261,33 @@ impl CoursePage {
         if let Err(e) = queries::touch_opened(&self.conn(), course_id) {
             tracing::warn!(error = %e, "touch opened");
         }
-        self.show(ui, course_id);
+        self.show_at(ui, course_id, None);
+    }
+
+    /// Open a course's page at one of its sections (a search hit): expanded
+    /// and scrolled into view.
+    pub fn open_section(&self, ui: &AppWindow, course_id: &str, section_id: &str) {
+        if let Err(e) = queries::touch_opened(&self.conn(), course_id) {
+            tracing::warn!(error = %e, "touch opened");
+        }
+        self.show_at(ui, course_id, Some(section_id));
+        ui.global::<Course>().set_reveal(section_id.into());
     }
 
     /// Show a course, with the section holding its next lecture expanded,
     /// without recording a visit.
     pub fn show(&self, ui: &AppWindow, course_id: &str) {
+        self.show_at(ui, course_id, None);
+    }
+
+    /// Show a course with `section` expanded, or else the one holding its
+    /// next lecture.
+    fn show_at(&self, ui: &AppWindow, course_id: &str, section: Option<&str>) {
         *self.id.borrow_mut() = Some(course_id.to_string());
         *self.pairing.borrow_mut() = None;
         let detail = queries::get_course_detail(&self.conn(), course_id).ok().flatten();
-        let open = detail.as_ref().and_then(|c| {
+        let open = section.map(str::to_string).or_else(|| {
+            let c = detail.as_ref()?;
             let next = next_lecture(c)?.id.clone();
             c.sections.iter().find(|s| s.lectures.iter().any(|l| l.id == next)).map(|s| s.id.clone())
         });

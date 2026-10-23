@@ -45,6 +45,9 @@ export global Course {
     /// as the page is rebuilt after each video: back from one, it's where it
     /// was. Opening a course starts at the top.
     in-out property <length> scroll-y;
+    /// A section to scroll into view once it's laid out (one picked in
+    /// search), then "".
+    in-out property <string> reveal;
     in property <string> id;
     in property <string> title;
     in property <image> thumbnail;
@@ -744,13 +747,28 @@ export component CoursePage inherits Flickable {
             }
             VerticalLayout {
                 spacing: 8px;
-                for section in Course.sections: Rectangle {
+                for section in Course.sections: card := Rectangle {
                     height: body.preferred-height;
                     border-radius: 8px;
                     border-width: 1px;
                     border-color: Theme.outline-variant;
                     background: Theme.surface-container-low;
                     clip: true;
+
+                    // The section to reveal, unless it's all in view already
+                    // (with the course's header), scrolls up to near the top
+                    // of the page, as far as the page goes.
+                    Timer {
+                        interval: 1ms;
+                        running: section.id == Course.reveal;
+                        triggered => {
+                            Course.reveal = "";
+                            let top = card.absolute-position.y - root.absolute-position.y - Course.scroll-y;
+                            if top + Course.scroll-y < 0 || top + card.height + Course.scroll-y > root.height {
+                                Course.scroll-y = min(0px, max(root.height - root.content-height, 24px - top));
+                            }
+                        }
+                    }
 
                     body := VerticalLayout {
                         Rectangle {
