@@ -6,7 +6,7 @@
   <p><strong>An offline player for the video courses you already own.</strong></p>
 
   <p>
-    <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0a7bbd" />
+    <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20%C2%B7%20Linux%20(beta)-0a7bbd" />
     <a href="https://github.com/NFRohan/Deskemy/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/NFRohan/Deskemy?color=8e10db&label=release" /></a>
     <a href="https://github.com/NFRohan/Deskemy/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/NFRohan/Deskemy?color=8e10db&label=stars" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-2e7d32" />
@@ -15,6 +15,7 @@
 
   <p>
     <a href="https://github.com/NFRohan/Deskemy/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download%20for%20Windows-8e10db?style=for-the-badge&logo=windows&logoColor=white" /></a>
+    <a href="https://github.com/NFRohan/Deskemy/releases/latest"><img alt="Download for Linux (beta)" src="https://img.shields.io/badge/Download%20for%20Linux%20(beta)-8e10db?style=for-the-badge&logo=linux&logoColor=white" /></a>
   </p>
 </div>
 
@@ -117,8 +118,10 @@ everything Deskemy records lives in a single local SQLite database.
 
 - **Windows 10 or 11**, with a GPU that supports OpenGL 3.3 (any integrated GPU
   from the last decade). No WebView2 needed.
-- Linux is in progress (the app is built and tested on Linux in CI, but not
-  released yet); macOS after that.
+- **Linux (beta)**: a distro from 2024 or newer (glibc 2.39): Ubuntu 24.04+,
+  Linux Mint 22+, Debian 13+, Fedora 40+ or openSUSE Tumbleweed, on X11 or
+  Wayland. See [Linux](#linux-beta) below.
+- macOS after that.
 
 Everything is bundled. Deskemy plays through **libmpv** (mpv's media
 library, `libmpv-2.dll`), which ships inside the installers and the portable
@@ -148,6 +151,29 @@ To run without installing, download the **portable zip**, extract it, and run
 settings, thumbnails) in a `data/` folder next to it, so nothing is written to
 `%APPDATA%` or the registry. Delete the folder to remove it entirely. (A portable
 copy can't update itself; Deskemy points you at the release page instead.)
+
+### Linux (beta)
+
+Each download carries Deskemy's own libmpv, codecs and PDF viewer, so there's
+no mpv or codec pack to install (H.264 courses play on a stock Fedora too).
+
+- **Fedora, openSUSE:** download `deskemy_<version>_x86_64.rpm` and open it in
+  your software centre, or `sudo dnf install ./deskemy_<version>_x86_64.rpm`.
+- **Ubuntu, Debian, Mint:** download `deskemy_<version>_amd64.deb` and open
+  it, or `sudo apt install ./deskemy_<version>_amd64.deb`.
+- **Any distro:** the AppImage (`Deskemy_<version>_x86_64.AppImage`). Make it
+  executable first (right-click → Properties → *Executable as Program*, or
+  `chmod +x`); until then, opening it may offer to write it to a disk.
+
+The AppImage updates itself like the Windows installers. The .deb and .rpm
+point you at the release page, and the new package installs over the old
+one. Your library and settings live in `~/.local/share/com.spooksy.deskemy`.
+
+On a Wayland desktop Deskemy runs through XWayland, so the mini player can
+stay on top and drag & drop works; `DESKEMY_WAYLAND=1` runs it natively
+(without those two). It's a beta: please report what works and what doesn't
+in [#7](https://github.com/NFRohan/Deskemy/issues/7) or a new issue, with your
+distro, desktop and GPU.
 
 ## Community Translations
 
