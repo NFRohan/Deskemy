@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata: what software centres (GNOME Software, Discover)
+     show for an installed Deskemy. Installed to /usr/share/metainfo by the
+     AppImage, .deb and .rpm (app/scripts/package-appimage.sh). A release
+     adds its <release> at the top (docs/releasing.md). -->
+<component type="desktop-application">
+  <id>io.github.NFRohan.Deskemy</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Deskemy</name>
+  <summary>Offline player for the video courses you already own</summary>
+  <developer id="io.github.nfrohan">
+    <name>Nayeem Fardin</name>
+  </developer>
+  <description>
+    <p>
+      Point Deskemy at a folder of downloaded course videos and it becomes a
+      library: sections and lectures in order, progress kept, and every
+      lecture resumed where you left it. Your files stay where they are;
+      nothing is copied or uploaded.
+    </p>
+    <ul>
+      <li>Subtitles and resources (PDFs, code, archives) next to their lectures, with a built-in PDF viewer</li>
+      <li>A mini player that stays on top beside your editor</li>
+      <li>Bookmarks, chapters, a sleep timer and YouTube-style keyboard shortcuts</li>
+      <li>Search across courses, lectures, resources and spoken subtitle text</li>
+      <li>Watch history, streaks and a daily goal</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">deskemy.desktop</launchable>
+  <provides>
+    <binary>deskemy</binary>
+  </provides>
+  <url type="homepage">https://github.com/NFRohan/Deskemy</url>
+  <url type="bugtracker">https://github.com/NFRohan/Deskemy/issues</url>
+  <url type="vcs-browser">https://github.com/NFRohan/Deskemy</url>
+  <categories>
+    <category>Education</category>
+    <category>AudioVideo</category>
+  </categories>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+  <content_rating type="oars-1.1"/>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The library, with Continue Watching</caption>
+      <image>https://raw.githubusercontent.com/NFRohan/Deskemy/v2.1.1/Images/Deskemy%20Home.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The player with the course's contents beside it</caption>
+      <image>https://raw.githubusercontent.com/NFRohan/Deskemy/v2.1.1/Images/Deskemy%20Player%20Windowed%20With%20Panels.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A course's sections, lectures and resources</caption>
+      <image>https://raw.githubusercontent.com/NFRohan/Deskemy/v2.1.1/Images/Deskemy%20Course%20View.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="2.1.1" date="2026-10-24">
+      <url type="details">https://github.com/NFRohan/Deskemy/releases/tag/v2.1.1</url>
+      <description>
+        <p>Resources can pop up before a lecture ends, bookmarks on the seek bar, search grouped by kind and as you type, and skips that land where you send them.</p>
+      </description>
+    </release>
+    <release version="2.1.0" date="2026-10-21">
+      <url type="details">https://github.com/NFRohan/Deskemy/releases/tag/v2.1.0</url>
+      <description>
+        <p>A built-in PDF viewer, drag and drop import, and pairing a resource with any lecture by hand.</p>
+      </description>
+    </release>
+  </releases>
+</component>

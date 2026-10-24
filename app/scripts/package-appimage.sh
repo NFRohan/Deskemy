@@ -90,6 +90,17 @@ Terminal=false
 Categories=Education;AudioVideo;Video;Player;
 EOF
 cp "$app/ui/logo.png" "$appdir/usr/share/icons/hicolor/256x256/apps/deskemy.png"
+# The software centre's page for it. A release lists itself first there; a
+# test build (2.1.1-3) needn't.
+metainfo="$app/linux/io.github.NFRohan.Deskemy.metainfo.xml"
+listed=$(sed -n 's/.*<release version="\([^"]*\)".*/\1/p' "$metainfo" | head -n 1)
+case "$version" in
+    *-*) ;;
+    "$listed") ;;
+    *) echo "$version isn't the newest <release> in $metainfo" >&2; exit 1 ;;
+esac
+mkdir -p "$appdir/usr/share/metainfo"
+cp "$metainfo" "$appdir/usr/share/metainfo/"
 ln -s usr/share/applications/deskemy.desktop "$appdir/deskemy.desktop"
 ln -s usr/share/icons/hicolor/256x256/apps/deskemy.png "$appdir/deskemy.png"
 ln -s deskemy.png "$appdir/.DirIcon"

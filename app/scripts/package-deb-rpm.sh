@@ -111,6 +111,8 @@ contents:
     dst: /usr/share/applications/deskemy.desktop
   - src: $appdir/usr/share/icons/hicolor/256x256/apps/deskemy.png
     dst: /usr/share/icons/hicolor/256x256/apps/deskemy.png
+  - src: $appdir/usr/share/metainfo/io.github.NFRohan.Deskemy.metainfo.xml
+    dst: /usr/share/metainfo/io.github.NFRohan.Deskemy.metainfo.xml
 overrides:
   deb:
     depends:
