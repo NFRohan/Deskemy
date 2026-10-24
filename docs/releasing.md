@@ -1,10 +1,10 @@
 # Releasing (Windows)
 
-Releases are Windows-only for now. CI builds the Linux AppImage
-(`.github/workflows/slint-linux.yml`, the `deskemy-appimage` artifact,
+Releases are Windows-only for now. CI builds the Linux AppImage, .deb and
+.rpm (`.github/workflows/slint-linux.yml`, the `deskemy-linux` artifact,
 unsigned) but publishes nothing. It ships with a release once the Linux app
 has been reviewed and tested ([linux-port.md](linux-port.md)); then see
-[Linux (AppImage)](#linux-appimage). Until then `latest.json` has no Linux
+[Linux](#linux). Until then `latest.json` has no Linux
 entry, so no Linux copy is offered an update.
 
 The Slint app (`app/`) is packaged with [cargo-packager](https://github.com/crabnebula-dev/cargo-packager)
@@ -109,29 +109,33 @@ updater and this app read
 `https://github.com/NFRohan/Deskemy/releases/latest/download/latest.json`.
 Don't mark a release "latest" until it's ready for everyone.
 
-## Linux (AppImage)
+## Linux
 
-The AppImage is built by CI, not on Windows, and signed here with the same
-key: the key never goes to CI.
+The AppImage, .deb and .rpm are built by CI, not on Windows; the AppImage
+is signed here with the same key: the key never goes to CI.
 
-1. **Fetch it** from the Linux workflow's run on the release commit, into the
-   packages folder, before step 2:
+1. **Fetch them** from the Linux workflow's run on the release commit, into
+   the packages folder, before step 2:
 
    ```powershell
-   gh run download <run id> -n deskemy-appimage -D app/target/packages
+   gh run download <run id> -n deskemy-linux -D app/target/packages
    ```
 
-   It's `Deskemy_<v>_x86_64.AppImage`, its version from the same commit's
+   They're `Deskemy_<v>_x86_64.AppImage`, `deskemy_<v>_amd64.deb` and
+   `deskemy_<v>_x86_64.rpm`, their version from the same commit's
    `app/Cargo.toml`. `package.ps1` only picks up this version's.
-2. **Step 2 as usual.** `package.ps1` signs it, adds a `linux-x86_64` entry
-   (format `appimage`) to `latest.json` and lists it in `SHA256SUMS.txt`.
+2. **Step 2 as usual.** `package.ps1` signs the AppImage, adds a
+   `linux-x86_64` entry (format `appimage`) to `latest.json` and lists all
+   three in `SHA256SUMS.txt`.
 3. **Check its signature** as the installers' (step 3):
    `deskemy.exe --verify-update` takes any file.
-4. **Publish** with the release: the AppImage beside the Windows files (its
-   `.sig` is in `latest.json`).
+4. **Publish** with the release: the three beside the Windows files (the
+   AppImage's `.sig` is in `latest.json`).
 
 A copy running from the AppImage updates itself: it downloads the new one,
 puts it in place of the running file (same name) and relaunches from it.
+One installed from the .deb or .rpm is pointed at the release page; the new
+package installs over it.
 
 ## 2.0.0 notes (Tauri → Slint)
 

@@ -7,9 +7,10 @@
 #   latest.json                           the update manifest, when signed
 #   SHA256SUMS.txt                        checksums of the installers and zip
 #
-# With the Linux AppImage CI built (Deskemy_<version>_x86_64.AppImage, the
-# deskemy-appimage artifact) put in app/target/packages first, it's signed
-# here too and goes in latest.json and SHA256SUMS.txt. The key stays here.
+# With CI's Linux packages (the deskemy-linux artifact) put in
+# app/target/packages first, the AppImage (Deskemy_<version>_x86_64.AppImage)
+# is signed here too and goes in latest.json; it, the .deb and the .rpm go in
+# SHA256SUMS.txt. The key stays here.
 #
 # Signing: set CARGO_PACKAGER_SIGN_PRIVATE_KEY (the key, or a path to it) and
 # CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD — the same minisign key the Tauri
@@ -113,7 +114,7 @@ if ((Test-Path "$setup.sig") -and (Test-Path "$msi.sig")) {
 
 # 5. SHA256SUMS.txt for the downloads, as earlier releases published.
 #    This version's only: an earlier version's installers may still be there.
-$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|msi|zip|AppImage)$' -and $_.Name -like "*_${version}_*" } | Sort-Object Name | ForEach-Object {
+$sums = Get-ChildItem $out -File | Where-Object { $_.Name -match '\.(exe|msi|zip|AppImage|deb|rpm)$' -and $_.Name -like "*_${version}_*" } | Sort-Object Name | ForEach-Object {
     "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
 }
 [System.IO.File]::WriteAllText((Join-Path (Resolve-Path $out).Path "SHA256SUMS.txt"), (($sums -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
