@@ -185,6 +185,9 @@ On the branch, waiting on the Fedora VM pass and a real machine:
 - [x] PDFium (`libpdfium.so`) for the PDF viewer.
 - [x] The AppImage (libmpv, codecs and PDFium bundled), signed by
   `package.ps1` with the release key, updating itself.
+- [x] A .deb and .rpm of the same bundle, installed to `/opt/deskemy` with
+  a menu entry; updated from the release page. Ubuntu 24.04+, Debian 13,
+  Fedora, openSUSE Tumbleweed.
 - [ ] Run it: playback with `hwdec=auto-safe` (VA-API), on X11 and Wayland,
   on a VM and a real machine (NVIDIA too). See linux-port.md's VM pass.
 - [ ] Flatpak, after the AppImage.

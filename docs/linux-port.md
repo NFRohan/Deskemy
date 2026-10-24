@@ -24,8 +24,8 @@ below pass. [roadmap.md](roadmap.md) keeps the summary; this is the detail.
 
 ## Status
 
-- **Done on the branch (draft PR #12):** issues 1 to 11. CI builds and tests
-  on Ubuntu 24.04 and builds the AppImage as an artifact.
+- **Done on the branch (draft PR #12):** issues 1 to 12. CI builds and tests
+  on Ubuntu 24.04 and builds the AppImage, .deb and .rpm as an artifact.
 - **Next:** the [Fedora VM pass](#fedora-vm-pass) with CI's AppImage and a
   source build, then a real machine; then milestone 4 (the beta).
 - **Windows:** issues 1, 3 and 4 change it (seeks and the seek bar); they
@@ -262,6 +262,35 @@ matters:
 - Text: the Skia patch for ClearType text is Windows-only; Linux gets
   greyscale antialiasing, which is normal there. Nothing to do.
 
+### 12. .deb and .rpm (Windows: no)
+
+- **Problem:** an AppImage doesn't install. Downloaded, it isn't executable,
+  so a double-click opens it with whatever claims the file type: on Fedora,
+  GNOME Disks' image writer, offering to write it to a drive. Made
+  executable, it runs but isn't in the app menu.
+- **Fix:** `package-deb-rpm.sh` packs the AppImage's AppDir with
+  [nfpm](https://nfpm.goreleaser.com) (pinned, checked by its hash): the
+  binary and the bundled libraries in `/opt/deskemy`, a `deskemy` command,
+  the menu entry and icon in `/usr`. Same bundle as the AppImage, so no
+  distro mpv and no codec problem.
+  - **Dependencies** are worked out from the bundle: the libraries it links
+    to and doesn't carry (the AppImage's host list, as far as they're used;
+    not what those link to in turn), and the newest glibc symbol version it
+    asks for. The .deb's come from `dpkg-shlibdeps` on the build machine
+    (Ubuntu 24.04), kept to those libraries' packages: the oldest version
+    each needs by the symbols used, and alternatives (any JACK). The .rpm
+    requires their sonames (`libX11.so.6()(64bit)`), which Fedora's and
+    openSUSE's packages both provide, and glibc's symbol version. An older
+    distro refuses the package instead of installing an app that can't
+    start.
+  - **Updates:** a system package can't replace itself, and has no
+    `$APPIMAGE`, so it gets the release page (issue 10): the new package
+    opens in the software installer over the old one. A signed APT / DNF
+    repository, for updates with the system's, if people ask.
+- **Check:** install, run and remove in clean Ubuntu 24.04, Debian 13,
+  Fedora and openSUSE Tumbleweed containers; Ubuntu 22.04 and Debian 12
+  refuse it. Then the VM pass from the .rpm.
+
 ## Release formats
 
 - **AppImage first.** One file that runs on most distros, bundles the codecs
@@ -271,9 +300,10 @@ matters:
   The work is the sandbox: folders picked through the portal come back as
   temporary paths, which would break saved library paths, so Deskemy needs
   home and removable-drive access, and Flathub's reviewers will ask why.
-- **Not now:** .deb and .rpm (they'd use the distro's mpv and bring back the
-  codec problem) and Snap. An AUR package is for the community if they want
-  one.
+- **.deb and .rpm beside it** (issue 12): the AppImage's bundle, installed,
+  in the app menu, updated from the release page. They'd bring back the
+  codec problem only if they used the distro's mpv; they don't.
+- **Not now:** Snap. An AUR package is for the community if they want one.
 
 ## Fedora VM pass
 
@@ -312,6 +342,7 @@ Before and after the fixes, on the branch:
 2. **Linux behaviour (5, 6, 7, 8).** Linux-only; CI plus the VM pass.
 3. **AppImage and updates (9, 10).** CI artifact, VM pass, then a real
    machine.
-4. **Linux beta:** an AppImage published beside a Windows release, marked as
-   a beta in its notes, with `latest.json` updating it.
+4. **Linux beta:** an AppImage, .deb and .rpm published beside a Windows
+   release, marked as a beta in its notes, with `latest.json` updating the
+   AppImage.
 5. **Flatpak.**
