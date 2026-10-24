@@ -83,7 +83,7 @@ platform: linux
 version: "$version"
 section: video
 priority: optional
-maintainer: Nayeem Fardin <nfrohan110@gmail.com>
+maintainer: Spooksy <nfrohan110@gmail.com>
 vendor: Deskemy
 homepage: https://github.com/NFRohan/Deskemy
 license: MIT AND GPL-2.0-or-later
