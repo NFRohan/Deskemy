@@ -283,10 +283,18 @@ matters:
     openSUSE's packages both provide, and glibc's symbol version. An older
     distro refuses the package instead of installing an app that can't
     start.
+  - **AppStream metainfo** (`app/linux/io.github.NFRohan.Deskemy.metainfo.xml`,
+    in all three): once installed, software centres show Deskemy by name
+    with its icon, screenshots and releases. Before installing, GNOME
+    Software's page for a package file shows a generic icon whatever the
+    package holds: it reads only the package's header and file list, and
+    icons come from AppStream catalogs (a distro's repositories, installed
+    apps). Only a repository of our own would change that (see below).
   - **Updates:** a system package can't replace itself, and has no
     `$APPIMAGE`, so it gets the release page (issue 10): the new package
-    opens in the software installer over the old one. A signed APT / DNF
-    repository, for updates with the system's, if people ask.
+    opens in the software installer over the old one. No APT / DNF
+    repository of our own: its signing key and hosting would be a security
+    responsibility of their own, for every user's system updates.
 - **Check:** install, run and remove in clean Ubuntu 24.04, Debian 13,
   Fedora and openSUSE Tumbleweed containers; Ubuntu 22.04 and Debian 12
   refuse it. Then the VM pass from the .rpm.

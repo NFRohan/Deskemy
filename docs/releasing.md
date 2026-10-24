@@ -26,6 +26,12 @@ existing install of its kind (Tauri or Slint) in place:
 Set `version` in `app/Cargo.toml`. It's shown in Settings → About, compared by
 the updater, and written into the installer and `latest.json`.
 
+Add a `<release>` for it at the top of
+`app/linux/io.github.NFRohan.Deskemy.metainfo.xml`: the version, the date
+and a sentence on what's new (what Linux software centres show). The Linux
+build refuses a release version that isn't listed first; test builds
+(`2.1.1-3`) needn't be.
+
 ## 2. Build, sign, package
 
 Signing uses the same minisign key as the Tauri 1.x releases; the app trusts
