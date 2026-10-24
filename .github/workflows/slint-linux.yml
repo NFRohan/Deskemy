@@ -2,7 +2,8 @@
 # distribution's libmpv. The session tests drive a real, headless mpv.
 #
 # CI only: it publishes nothing. Its artifacts are a UI screenshot and the
-# AppImage, unsigned (package.ps1 signs it for a release; docs/linux-port.md).
+# AppImage, .deb and .rpm, unsigned (package.ps1 signs the AppImage for a
+# release; docs/linux-port.md).
 # Linux isn't released until it's been reviewed and tested (docs/roadmap.md,
 # Linux); releases are Windows-only, see docs/releasing.md.
 name: Slint app on Linux
@@ -74,7 +75,8 @@ jobs:
           if-no-files-found: ignore
 
   # The AppImage: libmpv, its libraries and PDFium bundled
-  # (app/scripts/package-appimage.sh). No GTK: rfd uses the desktop portal.
+  # (app/scripts/package-appimage.sh), and the .deb and .rpm of the same
+  # bundle (package-deb-rpm.sh). No GTK: rfd uses the desktop portal.
   appimage:
     needs: build
     runs-on: ubuntu-24.04
@@ -84,7 +86,7 @@ jobs:
       - name: System libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends             libmpv-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev patchelf
+          sudo apt-get install -y --no-install-recommends             libmpv-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev patchelf dpkg-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -111,8 +113,24 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN=1 "$GITHUB_WORKSPACE/$image" --snapshot "$RUNNER_TEMP/appimage.png"
           test -s "$RUNNER_TEMP/appimage.png"
 
+      - name: .deb and .rpm
+        run: sh app/scripts/package-deb-rpm.sh
+
+      # The .deb installs with its dependencies and starts from /opt/deskemy.
+      - name: Smoke test the .deb
+        env:
+          DESKEMY_DATA_DIR: ${{ runner.temp }}/deskemy-data-deb
+        run: |
+          sudo apt-get install -y ./app/target/packages/*.deb
+          if ldd /opt/deskemy/bin/deskemy /opt/deskemy/lib/*.so* | grep "not found"; then exit 1; fi
+          deskemy --snapshot "$RUNNER_TEMP/deb.png"
+          test -s "$RUNNER_TEMP/deb.png"
+
       - uses: actions/upload-artifact@v7
         with:
-          name: deskemy-appimage
-          path: app/target/packages/*.AppImage
+          name: deskemy-linux
+          path: |
+            app/target/packages/*.AppImage
+            app/target/packages/*.deb
+            app/target/packages/*.rpm
           if-no-files-found: error
