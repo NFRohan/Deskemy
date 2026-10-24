@@ -40,17 +40,30 @@ pub const MSI_UPGRADE_CODE: &str = "{12314604-E9F6-5440-BB59-4983D4418E47}";
 /// The manifest entry MSI installs read.
 pub const MSI_TARGET: &str = "windows-x86_64-msi";
 
-/// Where downloaded installers wait; swept on the next start.
+/// Where downloaded installers wait (the user's own temp folder); swept on
+/// the next start. Not on Linux, where the temp folder is everyone's.
+#[cfg(not(target_os = "linux"))]
 pub fn download_dir() -> PathBuf {
     std::env::temp_dir().join("deskemy-update")
 }
 
 /// Delete installers a previous update left behind. Best-effort: one still
 /// running is locked and stays until the next start.
+#[cfg(not(target_os = "linux"))]
 pub fn sweep() {
     let dir = download_dir();
     if dir.exists() && std::fs::remove_dir_all(&dir).is_ok() {
         tracing::info!("swept the previous update's installer");
+    }
+}
+
+/// Delete an AppImage an interrupted update left staged beside this one.
+#[cfg(target_os = "linux")]
+pub fn sweep() {
+    if let Some(current) = appimage() {
+        if std::fs::remove_file(staged_path(&current)).is_ok() {
+            tracing::info!("swept the previous update's AppImage");
+        }
     }
 }
 
@@ -159,8 +172,15 @@ pub fn check_with(endpoint: &str, pubkey: &str, current: &str, target: Option<&s
     }
 }
 
-/// Download (verifying the signature) and save the installer.
+/// Download (verifying the signature) and save the installer: on Windows in
+/// the user's temp folder, on Linux beside the running AppImage.
 pub fn download(update: &Update, progress: impl Fn(u64, Option<u64>)) -> Result<PathBuf, String> {
+    let bytes = fetch(update, progress)?;
+    save(update, &bytes)
+}
+
+/// Download the update and check its signature.
+fn fetch(update: &Update, progress: impl Fn(u64, Option<u64>)) -> Result<Vec<u8>, String> {
     if cfg!(target_os = "linux") && !matches!(update.format, UpdateFormat::AppImage) {
         return Err(format!("this build installs AppImage updates, not {}", update.format));
     }
@@ -168,7 +188,7 @@ pub fn download(update: &Update, progress: impl Fn(u64, Option<u64>)) -> Result<
         return Err(format!("this build installs .exe or .msi updates, not {}", update.format));
     }
     let received = std::cell::Cell::new(0u64);
-    let bytes = update
+    update
         .download_extended(
             |chunk, total| {
                 received.set(received.get() + chunk as u64);
@@ -176,7 +196,11 @@ pub fn download(update: &Update, progress: impl Fn(u64, Option<u64>)) -> Result<
             },
             || {},
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn save(update: &Update, bytes: &[u8]) -> Result<PathBuf, String> {
     let dir = download_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(installer_name(&update.version, update.format));
@@ -184,13 +208,53 @@ pub fn download(update: &Update, progress: impl Fn(u64, Option<u64>)) -> Result<
     Ok(path)
 }
 
-/// "Deskemy_2.1.0_x64-setup.exe" / "Deskemy_2.1.0_x64_en-US.msi" /
-/// "Deskemy_2.1.0_x86_64.AppImage" — as the packaging names them.
+/// Not in /tmp: another user could put a folder or link there first and
+/// swap the verified AppImage before it's installed. Beside the running one
+/// instead, in a folder of the user's own (`updates_in_place` checked it's
+/// writable), ready to be renamed over it.
+#[cfg(target_os = "linux")]
+fn save(_update: &Update, bytes: &[u8]) -> Result<PathBuf, String> {
+    let current = appimage().ok_or("not running from an AppImage")?;
+    stage(&current, bytes).map_err(|e| format!("{}: {e}", staged_path(&current).display()))
+}
+
+/// `.<name>.update` beside the AppImage `current`.
+#[cfg(target_os = "linux")]
+fn staged_path(current: &Path) -> PathBuf {
+    let name = current.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    current.with_file_name(format!(".{name}.update"))
+}
+
+/// Write `bytes` to the staged file for `current`, executable. An earlier
+/// one (an interrupted update's) is removed first; the file is then created
+/// afresh, so nothing already there, a file or a link, is written through.
+#[cfg(target_os = "linux")]
+fn stage(current: &Path, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let staged = staged_path(current);
+    match std::fs::remove_file(&staged) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o700).open(&staged)?;
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| file.set_permissions(std::fs::Permissions::from_mode(0o755)))
+        .and_then(|()| file.sync_all());
+    if written.is_err() {
+        let _ = std::fs::remove_file(&staged);
+    }
+    written.map(|()| staged)
+}
+
+/// "Deskemy_2.1.0_x64-setup.exe" / "Deskemy_2.1.0_x64_en-US.msi" — as the
+/// packaging names them. (An AppImage is staged under its own name.)
+#[cfg(not(target_os = "linux"))]
 pub fn installer_name(version: &str, format: UpdateFormat) -> String {
     let version = version.trim_start_matches('v');
     match format {
         UpdateFormat::Wix => format!("Deskemy_{version}_x64_en-US.msi"),
-        UpdateFormat::AppImage => format!("Deskemy_{version}_x86_64.AppImage"),
         _ => format!("Deskemy_{version}_x64-setup.exe"),
     }
 }
@@ -263,30 +327,25 @@ pub fn run_installer(path: &Path) -> std::io::Result<()> {
     command.spawn().map(|_| ())
 }
 
-/// Put a downloaded AppImage in place of the running one, then relaunch from
+/// Put the staged AppImage in place of the running one, then relaunch from
 /// it. Called by `main` after the app has shut down. Relaunched either way:
 /// with the update, or as it was if it couldn't be put in place.
 #[cfg(target_os = "linux")]
-pub fn run_installer(path: &Path) -> std::io::Result<()> {
+pub fn run_installer(staged: &Path) -> std::io::Result<()> {
     let current = appimage().ok_or_else(|| std::io::Error::other("not running from an AppImage"))?;
-    let placed = put_in_place(path, &current);
+    let placed = put_in_place(staged, &current);
     std::process::Command::new(&current).spawn()?;
     placed
 }
 
-/// Copy `new` beside `current`, then rename it over it: never a half-written
-/// AppImage, and the running one keeps its own file until it exits. The name
-/// stays, so shortcuts to it do too.
+/// Rename the staged AppImage (written whole beside `current`) over it:
+/// never a half-written AppImage, and the running one keeps its own file
+/// until it exits. The name stays, so shortcuts to it do too.
 #[cfg(target_os = "linux")]
-fn put_in_place(new: &Path, current: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let name = current.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let staged = current.with_file_name(format!(".{name}.update"));
-    let placed = std::fs::copy(new, &staged)
-        .and_then(|_| std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)))
-        .and_then(|()| std::fs::rename(&staged, current));
+fn put_in_place(staged: &Path, current: &Path) -> std::io::Result<()> {
+    let placed = std::fs::rename(staged, current);
     if placed.is_err() {
-        let _ = std::fs::remove_file(&staged);
+        let _ = std::fs::remove_file(staged);
     }
     placed
 }
@@ -614,11 +673,15 @@ Connection: close
         verify(&data, &sig, &pubkey).unwrap();
     }
 
+    #[cfg(not(target_os = "linux"))]
     #[test]
-    fn names_and_progress() {
+    fn installer_names() {
         assert_eq!(installer_name("v2.1.0", UpdateFormat::Nsis), "Deskemy_2.1.0_x64-setup.exe");
         assert_eq!(installer_name("2.1.0", UpdateFormat::Wix), "Deskemy_2.1.0_x64_en-US.msi");
-        assert_eq!(installer_name("2.1.0", UpdateFormat::AppImage), "Deskemy_2.1.0_x86_64.AppImage");
+    }
+
+    #[test]
+    fn progress() {
         assert_eq!(percent(50, Some(200)), 25);
         assert_eq!(percent(500, Some(200)), 100);
         assert_eq!(percent(50, None), 0);
@@ -636,10 +699,7 @@ Connection: close
             vec![("/latest.json", linux.into_bytes()), ("/deskemy.AppImage", appimage.clone())]
         });
         let update = check_with(&format!("{base}/latest.json"), &pubkey, "2.0.0", None).unwrap().expect("an update");
-        let path = download(&update, |_, _| {}).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), appimage);
-        assert_eq!(path.file_name().unwrap(), "Deskemy_9.9.9_x86_64.AppImage");
-        let _ = std::fs::remove_file(&path);
+        assert_eq!(fetch(&update, |_, _| {}).unwrap(), appimage);
 
         // A release with Windows builds only: nothing for this copy.
         let base = serve(|base| vec![("/latest.json", manifest(base, "9.9.9", &signature))]);
@@ -651,20 +711,45 @@ Connection: close
     fn an_update_takes_the_appimages_place() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
-        let (current, new) = (dir.path().join("Deskemy.AppImage"), dir.path().join("download"));
+        let current = dir.path().join("Deskemy.AppImage");
         std::fs::write(&current, "old").unwrap();
-        std::fs::write(&new, "new").unwrap();
 
-        put_in_place(&new, &current).unwrap();
+        // Staged beside it, executable; the running one untouched until then.
+        let staged = stage(&current, b"new").unwrap();
+        assert_eq!(staged, dir.path().join(".Deskemy.AppImage.update"));
+        assert_eq!(std::fs::metadata(&staged).unwrap().permissions().mode() & 0o777, 0o755);
+        assert_eq!(std::fs::read_to_string(&current).unwrap(), "old");
+
+        put_in_place(&staged, &current).unwrap();
         assert_eq!(std::fs::read_to_string(&current).unwrap(), "new");
         assert_eq!(std::fs::metadata(&current).unwrap().permissions().mode() & 0o777, 0o755);
         let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
-        assert_eq!(names.len(), 2, "nothing staged is left behind: {names:?}");
+        assert_eq!(names.len(), 1, "nothing staged is left behind: {names:?}");
 
-        // A download that's gone: the AppImage stays as it was, nothing staged.
-        assert!(put_in_place(&dir.path().join("missing"), &current).is_err());
+        // A staged file that's gone: the AppImage stays as it was.
+        assert!(put_in_place(&staged, &current).is_err());
         assert_eq!(std::fs::read_to_string(&current).unwrap(), "new");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn staging_never_writes_through_what_was_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let current = dir.path().join("Deskemy.AppImage");
+        let other = dir.path().join("someone else's file");
+        std::fs::write(&current, "old").unwrap();
+        std::fs::write(&other, "theirs").unwrap();
+
+        // A link where the update is staged: replaced, not followed.
+        std::os::unix::fs::symlink(&other, staged_path(&current)).unwrap();
+        let staged = stage(&current, b"new").unwrap();
+        assert!(!std::fs::symlink_metadata(&staged).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&staged).unwrap(), "new");
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "theirs");
+
+        // An interrupted update's file: replaced by this one.
+        let staged = stage(&current, b"newer").unwrap();
+        assert_eq!(std::fs::read_to_string(&staged).unwrap(), "newer");
     }
 
     #[test]

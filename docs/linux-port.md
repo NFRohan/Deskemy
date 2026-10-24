@@ -242,10 +242,13 @@ matters:
 
 - **Fix:** `package.ps1` signs CI's AppImage with the release key (the key
   never goes to CI), and `latest.json` gets a `linux-x86_64` entry with
-  format `appimage`. The app downloads and verifies it like the installers;
-  after shutting down it copies it beside the running AppImage and renames
-  it over it (never half-written; the name, and so any shortcut, stays),
-  then relaunches. Only a copy running as an AppImage (`$APPIMAGE` set) in
+  format `appimage`. The app downloads and verifies it like the installers
+  and writes it beside the running AppImage (`.<name>.update`, created
+  afresh: never through a file or link already there); after shutting down
+  it renames it over the AppImage (never half-written; the name, and so any
+  shortcut, stays), then relaunches. Not staged in `/tmp`, as the security
+  review found: another local user could put a folder or link there first
+  and swap the verified AppImage before it's installed. Only a copy running as an AppImage (`$APPIMAGE` set) in
   a folder it can write to does this; one built from source, a read-only
   folder, or a future Flatpak gets the release page instead. A failed swap
   leaves the old AppImage, and Deskemy relaunches either way.
