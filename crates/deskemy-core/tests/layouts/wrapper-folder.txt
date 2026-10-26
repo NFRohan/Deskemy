@@ -24,12 +24,19 @@ course: ZeroToMastery - WebAssembly A Practical Guide (4.2025)
 == Introduction
   [section] learn-webassembly-final.json
   WebAssembly A Practical Guide
-== WebAssembly A Practical Guide
-  [section] 1. Introduction
-  [section] 3. Where To Go From Here
+== WebAssembly Everything You Need to Know
   What is WebAssembly
     ~ en
   Getting Started with Rust
     ~ en
   Exploring the Starter Project
     ~ en
+[course] 1. Byte Sized Learning.html
+[course] 1. Review This Course!.html
+[course] 2. Become An Alumni.html
+[course] 2. Exercise Meet Your Classmates and Instructor.html
+[course] 3. Endorsements On LinkedIn.html
+[course] 3. Resources + Code.html
+[course] 4. Learning Guideline.html
+[course] 4. ZTM Plugin + Understanding Your Video Player.html
+[course] 5. Set Your Learning Streak Goal.html

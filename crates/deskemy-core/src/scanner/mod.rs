@@ -162,7 +162,46 @@ impl Scanner for FilesystemScanner {
             files.push(ScannedFile { kind, path, name, size, mtime, rel_dir, is_dir: false });
         }
 
-        Ok(ScannedTree { root: root.to_path_buf(), files: collapse_projects(root, files, &marked) })
+        let base = wrapper(&files);
+        let mut files = collapse_projects(root, files, &marked, &base);
+        // Relative to where the course starts.
+        for f in &mut files {
+            if let Ok(rest) = f.rel_dir.strip_prefix(&base) {
+                f.rel_dir = rest.to_path_buf();
+            }
+        }
+        Ok(ScannedTree { root: root.to_path_buf(), files })
+    }
+}
+
+/// The folders a course is wrapped in, where its sections start: `""` when
+/// it isn't. A wrapper is the one folder holding the course's videos, none
+/// directly in it (a download site's `~Get Your Files Here !`, or the
+/// course's own name again), maybe beside a promo video; wrapped again, both.
+pub fn wrapper(files: &[ScannedFile]) -> PathBuf {
+    let mut base = PathBuf::new();
+    loop {
+        // Per folder in `base`: its videos, and whether any is directly in it.
+        let mut tops: HashMap<&std::ffi::OsStr, (usize, bool)> = HashMap::new();
+        let mut loose = 0;
+        for f in files.iter().filter(|f| f.kind == FileKind::Video) {
+            let Ok(rel) = f.rel_dir.strip_prefix(&base) else { continue };
+            let mut parts = rel.components();
+            match parts.next() {
+                Some(top) => {
+                    let entry = tops.entry(top.as_os_str()).or_default();
+                    entry.0 += 1;
+                    entry.1 |= parts.next().is_none();
+                }
+                None => loose += 1,
+            }
+        }
+        // A video beside it (a promo, at the top) is fine; the course's own aren't.
+        let in_wrapper = match tops.into_iter().collect::<Vec<_>>()[..] {
+            [(top, (n, false))] if loose == 0 || (base.as_os_str().is_empty() && loose < n) => top.to_owned(),
+            _ => return base,
+        };
+        base.push(in_wrapper);
     }
 }
 
@@ -181,7 +220,13 @@ fn prefixes(rel: &Path) -> Vec<PathBuf> {
 /// project has no videos inside and either a project marker, many files, or
 /// — inside a section — source files but no documents. The outermost such
 /// folder wins, so a project's subfolders don't become entries of their own.
-pub fn collapse_projects(root: &Path, files: Vec<ScannedFile>, marked: &HashSet<PathBuf>) -> Vec<ScannedFile> {
+/// Sections start in `base` (see [`wrapper`]).
+pub fn collapse_projects(
+    root: &Path,
+    files: Vec<ScannedFile>,
+    marked: &HashSet<PathBuf>,
+    base: &Path,
+) -> Vec<ScannedFile> {
     let mut with_video: HashSet<PathBuf> = HashSet::new();
     let mut with_code: HashSet<PathBuf> = HashSet::new();
     let mut with_documents: HashSet<PathBuf> = HashSet::new();
@@ -209,7 +254,7 @@ pub fn collapse_projects(root: &Path, files: Vec<ScannedFile>, marked: &HashSet<
     }
     let project = |p: &PathBuf| {
         // Below a section folder (a section of only article pages stays a section).
-        let in_section = p.components().count() >= 2;
+        let in_section = p.strip_prefix(base).is_ok_and(|rel| rel.components().count() >= 2);
         !with_video.contains(p)
             && (has_marker.contains(p)
                 || counts.get(p).copied().unwrap_or(0) > PROJECT_FILE_COUNT
@@ -270,6 +315,34 @@ mod tests {
     fn write(path: &Path, bytes: &[u8]) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn a_wrapper_is_where_the_sections_start() {
+        let videos = |rel_dirs: &[&str]| -> Vec<ScannedFile> {
+            rel_dirs
+                .iter()
+                .map(|d| ScannedFile {
+                    path: PathBuf::new(),
+                    name: "v.mp4".into(),
+                    kind: FileKind::Video,
+                    size: 0,
+                    mtime: 0,
+                    rel_dir: PathBuf::from(d),
+                    is_dir: false,
+                })
+                .collect()
+        };
+        // Wrapped twice; then beside a promo; sections of its own.
+        assert_eq!(wrapper(&videos(&["Get Files/Course/01 A", "Get Files/Course/02 B"])), Path::new("Get Files/Course"));
+        assert_eq!(wrapper(&videos(&["", "Course/01 A", "Course/02 B"])), Path::new("Course"));
+        assert_eq!(wrapper(&videos(&["01 A", "02 B"])), Path::new(""));
+        // A course of one section is that section's; one with more loose
+        // videos than in its one folder keeps them.
+        assert_eq!(wrapper(&videos(&["01 Only", "01 Only"])), Path::new(""));
+        assert_eq!(wrapper(&videos(&["", "", "Extras/clips"])), Path::new(""));
+        // A video directly in a wrapper makes it the course.
+        assert_eq!(wrapper(&videos(&["Course", "Course/01 A", "Course/02 B"])), Path::new(""));
     }
 
     #[test]
