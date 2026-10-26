@@ -43,7 +43,7 @@ pub fn course_title(folder_name: &str) -> String {
         }
         rest = after;
     }
-    rest.to_string()
+    tidy(rest)
 }
 
 /// Display title for a file: drop the extension, then strip a leading numeric
@@ -91,11 +91,35 @@ fn strip_number_prefix(stem: &str) -> String {
         }
         // Only strip when a separator actually followed the digits.
         if k > i {
-            return stem[k..].trim().to_string();
+            return tidy(&stem[k..]);
         }
     }
 
-    stem.trim().to_string()
+    tidy(stem)
+}
+
+/// What downloaders do to names, undone: words joined without spaces
+/// (`Module_1_Introduction_to_Linux`, `34-Data-Source-Reading`, the second
+/// a second number before the title, the instructor's own), and a `?` or
+/// `:` replaced with `_` (`Today's World_`, `Exercise_ Meet Your Class`).
+/// Names written with spaces keep their dashes and underscores.
+fn tidy(title: &str) -> String {
+    let title = title.trim();
+    let tidied = if title.contains(' ') {
+        title.replace("_ ", ": ").trim_end_matches('_').trim_end().to_string()
+    } else if title.contains('_') {
+        title.replace('_', " ").trim().to_string()
+    } else if title.matches('-').count() >= 2 {
+        let words = match title.split_once('-') {
+            Some((n, rest)) if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) => rest,
+            _ => title,
+        };
+        words.replace('-', " ").trim().to_string()
+    } else {
+        title.to_string()
+    };
+    // Never nothing: `_` alone stays.
+    if tidied.is_empty() { title.to_string() } else { tidied.split_whitespace().collect::<Vec<_>>().join(" ") }
 }
 
 /// Sort key: numbered items first (ascending), unnumbered after, alphabetical
@@ -123,6 +147,22 @@ mod tests {
     }
 
     #[test]
+    fn names_downloaders_mangled_are_tidied() {
+        assert_eq!(clean_folder_title("01-Module_1_Introduction_to_Linux"), "Module 1 Introduction to Linux");
+        assert_eq!(clean_title("040 34-Data-Source-Reading.mp4"), "Data Source Reading");
+        assert_eq!(clean_title("0010_202204UPDATE_DEMO_Securing_An_AWS_Account.mp4"), "202204UPDATE DEMO Securing An AWS Account");
+        assert_eq!(clean_folder_title("01 - What is this course about_"), "What is this course about");
+        assert_eq!(clean_title("Exercise_ Meet Your Classmates.pdf"), "Exercise: Meet Your Classmates");
+        assert_eq!(course_title("Adrian_Cantrill_AWS_SAA-C03"), "Adrian Cantrill AWS SAA-C03");
+        // Written with spaces, or one dash: as they are.
+        assert_eq!(clean_title("003 3 Pillars Of Programming.mp4"), "3 Pillars Of Programming");
+        assert_eq!(clean_title("012 snake_case in Python.mp4"), "snake_case in Python");
+        assert_eq!(clean_title("Fine-Tuning.mp4"), "Fine-Tuning");
+        assert_eq!(clean_title("015 Sign-in.mp4"), "Sign-in");
+        assert_eq!(clean_title("_.mp4"), "_");
+    }
+
+    #[test]
     fn course_titles_lose_a_download_sites_tag() {
         assert_eq!(course_title("[FCSNEW.NET] Udemy - Complete MLOps"), "Udemy - Complete MLOps");
         assert_eq!(course_title("[ FreeCourseWeb.com ] Udemy - Master LeetCode"), "Udemy - Master LeetCode");
@@ -136,7 +176,7 @@ mod tests {
     fn cleans_titles() {
         assert_eq!(clean_title("001 Welcome.mp4"), "Welcome");
         assert_eq!(clean_title("1 - Getting Started.mp4"), "Getting Started");
-        assert_eq!(clean_title("01_setup_env.mp4"), "setup_env");
+        assert_eq!(clean_title("01_setup_env.mp4"), "setup env");
         assert_eq!(clean_title("Introduction.mp4"), "Introduction");
         assert_eq!(clean_title("1984.mp4"), "1984");
     }

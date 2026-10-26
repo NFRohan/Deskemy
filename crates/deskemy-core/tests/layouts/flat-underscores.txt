@@ -8,10 +8,10 @@ root: Adrian_Cantrill_AWS_Certified_Solutions_Architect_Associate_SAA-C03
 0010_202204UPDATE_DEMO_Securing_An_AWS_Account.mp4
 --- expected
 found: one course
-course: Adrian_Cantrill_AWS_Certified_Solutions_Architect_Associate_SAA-C03
+course: Adrian Cantrill AWS Certified Solutions Architect Associate SAA-C03
 == Introduction
-  Public_Introduction
-  Finding_and_Using_the_Course_Resources
-  Site_tools_and_features
-  AWS_Exams
-  202204UPDATE_DEMO_Securing_An_AWS_Account
+  Public Introduction
+  Finding and Using the Course Resources
+  Site tools and features
+  AWS Exams
+  202204UPDATE DEMO Securing An AWS Account

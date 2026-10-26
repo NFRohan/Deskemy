@@ -52,7 +52,7 @@ course: Udemy - Complete MLOps Bootcamp With 10+ End To End ML Projects
 == Python Prerequisites
   Data Manipulation And Analysis
     ~ en
-  34-Data-Source-Reading
+  Data Source Reading
   Data Source Reading
     ~ en
   Logging In Python

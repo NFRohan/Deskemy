@@ -25,7 +25,7 @@ root: Complete Linux Training Course to Get Your Dream IT Job 2026
 --- expected
 found: one course
 course: Complete Linux Training Course to Get Your Dream IT Job 2026
-== Module_1_Introduction_to_Linux
+== Module 1 Introduction to Linux
   [section] 14-Module_1_Homework.html
   [section] 15-Module_1_Handouts.html
   [section] 4-Resources.7z
@@ -40,7 +40,7 @@ course: Complete Linux Training Course to Get Your Dream IT Job 2026
   Linux Vs. Windows
     ~ ru
     + 13-Linux_vs._Windows_-_Quiz.html
-== Module_3_System_Access_and_File_System
+== Module 3 System Access and File System
   Access To Linux System
     ~ ru
   Download And Install Putty
