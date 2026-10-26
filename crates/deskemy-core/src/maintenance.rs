@@ -72,9 +72,10 @@ pub fn reindex_subtitles(db: &Mutex<Connection>) -> Result<i64> {
 }
 
 /// Index one course's subtitles (`Some`) or everyone's (`None`), replacing
-/// what was there.
+/// what was there. One file per lecture: search shouldn't find the same
+/// sentence in each of a lecture's seventeen languages.
 fn index_subtitles(db: &Mutex<Connection>, course_id: Option<&str>) -> Result<i64> {
-    let files = queries::subtitle_files(&lock(db), course_id)?;
+    let files = one_per_lecture(queries::subtitle_files(&lock(db), course_id)?);
     let parsed: Vec<(String, String, Vec<(i64, String)>)> = files
         .into_iter()
         .filter_map(|(lecture, course, path)| {
@@ -99,6 +100,29 @@ fn index_subtitles(db: &Mutex<Connection>, course_id: Option<&str>) -> Result<i6
     }
     tx.commit()?;
     Ok(total)
+}
+
+/// Each lecture's subtitle to index, as (lecture, course, path): the one
+/// with no language marked (named just like its video), else English, else
+/// the first. `files` come grouped by lecture.
+fn one_per_lecture(files: Vec<queries::SubtitleFile>) -> Vec<(String, String, String)> {
+    let rank = |lang: &Option<String>| match lang.as_deref() {
+        None => 0,
+        Some(l) if l == "en" || l.starts_with("en-") => 1,
+        Some(_) => 2,
+    };
+    let mut chosen: Vec<queries::SubtitleFile> = Vec::new();
+    for file in files {
+        match chosen.last_mut() {
+            Some(last) if last.0 == file.0 => {
+                if rank(&file.3) < rank(&last.3) {
+                    *last = file;
+                }
+            }
+            _ => chosen.push(file),
+        }
+    }
+    chosen.into_iter().map(|(lecture, course, path, _)| (lecture, course, path)).collect()
 }
 
 /// Delete thumbnail-cache files no longer referenced by any course.
@@ -202,6 +226,23 @@ pub fn export_backup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_subtitle_per_lecture_is_indexed() {
+        let file = |lecture: &str, path: &str, lang: Option<&str>| {
+            (lecture.to_string(), "c".to_string(), path.to_string(), lang.map(str::to_string))
+        };
+        let chosen = one_per_lecture(vec![
+            file("a", "a Arabic.vtt", Some("ar")),
+            file("a", "a English.vtt", Some("en")),
+            file("a", "a French.vtt", Some("fr")),
+            file("b", "b.fr.srt", Some("fr")),
+            file("b", "b.srt", None),
+            file("c", "c RUS.srt", Some("ru")),
+        ]);
+        let paths: Vec<&str> = chosen.iter().map(|(_, _, p)| p.as_str()).collect();
+        assert_eq!(paths, ["a English.vtt", "b.srt", "c RUS.srt"]);
+    }
 
     #[test]
     fn thumbnail_gc_keeps_referenced_files() {

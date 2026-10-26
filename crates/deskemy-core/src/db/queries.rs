@@ -1043,15 +1043,19 @@ pub fn clear_subtitle_index(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Sidecar subtitles, of one course or all: (lecture_id, course_id, file_path).
-pub fn subtitle_files(conn: &Connection, course_id: Option<&str>) -> Result<Vec<(String, String, String)>> {
+/// A sidecar subtitle file: (lecture_id, course_id, file_path, lang).
+pub type SubtitleFile = (String, String, String, Option<String>);
+
+/// Sidecar subtitles, of one course or all, by lecture and path.
+pub fn subtitle_files(conn: &Connection, course_id: Option<&str>) -> Result<Vec<SubtitleFile>> {
     let mut stmt = conn.prepare(
-        "SELECT s.lecture_id, l.course_id, s.file_path
+        "SELECT s.lecture_id, l.course_id, s.file_path, s.lang
            FROM subtitles s JOIN lectures l ON l.id = s.lecture_id
-          WHERE ?1 IS NULL OR l.course_id = ?1",
+          WHERE ?1 IS NULL OR l.course_id = ?1
+          ORDER BY s.lecture_id, s.file_path",
     )?;
     let rows = stmt
-        .query_map(params![course_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .query_map(params![course_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
