@@ -1,0 +1,46 @@
+# One folder per lecture, numbered; the video in it isn't (2-Section/1. Why Terraform/Why Terraform.mp4). Some titles hold a number of their own: (Part 1).
+root: ZeroToMastery - DevOps Bootcamp Terraform
+--- files
+1-Introduction/Course Code.pdf
+1-Introduction/Course Code.zip
+1-Introduction/DevOps Bootcamp - Terraform/DevOps Bootcamp - Terraform.mp4
+1-Introduction/Exercise_ Meet Your Classmates and Instructor.pdf
+1-Introduction/How-to's_ Speed up videos, Downloading videos, Subtitles Adjusting Le.pdf
+2-Terraform and AWS Introduction/1. Why Terraform/Why Terraform.mp4
+2-Terraform and AWS Introduction/10. AWS Basics EC2/AWS Basics EC2.mp4
+2-Terraform and AWS Introduction/2. Terraform Demo/Terraform Demo.mp4
+2-Terraform and AWS Introduction/3. IaC Tool Comparison - Terraform vs Ansible/IaC Tool Comparison - Terraform vs Ansible.mp4
+3-Provisioning AWS Infrastructure with Terraform/1. Terraform Code Structure/Terraform Code Structure.mp4
+3-Provisioning AWS Infrastructure with Terraform/10. Replacing Infrastructure with Terraform/Replacing Infrastructure with Terraform.mp4
+3-Provisioning AWS Infrastructure with Terraform/11. Creating Resources (Part 2) - AWS Subnet/Creating Resources (Part 2) - AWS Subnet.mp4
+3-Provisioning AWS Infrastructure with Terraform/12. Customizing Terraform Configuration with Variables (Part 1)/Customizing Terraform Configuration with Variables (Part 1).mp4
+3-Provisioning AWS Infrastructure with Terraform/9. Destroying Infrastructure with Terraform/Destroying Infrastructure with Terraform.mp4
+--- expected
+found: 3 courses
+course: 1-Introduction
+== DevOps Bootcamp - Terraform
+  DevOps Bootcamp - Terraform
+[course] Course Code.pdf
+[course] Course Code.zip
+[course] Exercise_ Meet Your Classmates and Instructor.pdf
+[course] How-to's_ Speed up videos, Downloading videos, Subtitles Adjusting Le.pdf
+course: 2-Terraform and AWS Introduction
+== Why Terraform
+  Why Terraform
+== Terraform Demo
+  Terraform Demo
+== IaC Tool Comparison - Terraform vs Ansible
+  IaC Tool Comparison - Terraform vs Ansible
+== AWS Basics EC2
+  AWS Basics EC2
+course: 3-Provisioning AWS Infrastructure with Terraform
+== Terraform Code Structure
+  Terraform Code Structure
+== Destroying Infrastructure with Terraform
+  Destroying Infrastructure with Terraform
+== Replacing Infrastructure with Terraform
+  Replacing Infrastructure with Terraform
+== Creating Resources (Part 2) - AWS Subnet
+  Creating Resources (Part 2) - AWS Subnet
+== Customizing Terraform Configuration with Variables (Part 1)
+  Customizing Terraform Configuration with Variables (Part 1)

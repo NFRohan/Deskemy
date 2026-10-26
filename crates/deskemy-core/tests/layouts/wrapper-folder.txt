@@ -1,0 +1,35 @@
+# The course wrapped in a folder of its own name, beside a promo video and a project file; sections of articles only (.html) around one of videos.
+root: ZeroToMastery - WebAssembly A Practical Guide (4.2025)
+--- files
+WebAssembly A Practical Guide.mp4
+WebAssembly A Practical Guide/1. Introduction/1. Byte Sized Learning.html
+WebAssembly A Practical Guide/1. Introduction/2. Exercise Meet Your Classmates and Instructor.html
+WebAssembly A Practical Guide/1. Introduction/3. Resources + Code.html
+WebAssembly A Practical Guide/1. Introduction/4. ZTM Plugin + Understanding Your Video Player.html
+WebAssembly A Practical Guide/1. Introduction/5. Set Your Learning Streak Goal.html
+WebAssembly A Practical Guide/2. WebAssembly Everything You Need to Know/1. What is WebAssembly.en.srt
+WebAssembly A Practical Guide/2. WebAssembly Everything You Need to Know/1. What is WebAssembly.mp4
+WebAssembly A Practical Guide/2. WebAssembly Everything You Need to Know/2. Getting Started with Rust.en.srt
+WebAssembly A Practical Guide/2. WebAssembly Everything You Need to Know/2. Getting Started with Rust.mp4
+WebAssembly A Practical Guide/2. WebAssembly Everything You Need to Know/3. Exploring the Starter Project.en.srt
+WebAssembly A Practical Guide/2. WebAssembly Everything You Need to Know/3. Exploring the Starter Project.mp4
+WebAssembly A Practical Guide/3. Where To Go From Here/1. Review This Course!.html
+WebAssembly A Practical Guide/3. Where To Go From Here/2. Become An Alumni.html
+WebAssembly A Practical Guide/3. Where To Go From Here/3. Endorsements On LinkedIn.html
+WebAssembly A Practical Guide/3. Where To Go From Here/4. Learning Guideline.html
+learn-webassembly-final.json
+--- expected
+found: one course
+course: ZeroToMastery - WebAssembly A Practical Guide (4.2025)
+== Introduction
+  [section] learn-webassembly-final.json
+  WebAssembly A Practical Guide
+== WebAssembly A Practical Guide
+  [section] 1. Introduction
+  [section] 3. Where To Go From Here
+  What is WebAssembly
+    ~ en
+  Getting Started with Rust
+    ~ en
+  Exploring the Starter Project
+    ~ en

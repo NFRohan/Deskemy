@@ -1,0 +1,19 @@
+# A download site's wrapper: the course inside '~Get Your Files Here !', a bonus link beside it, the site's tag in the folder name.
+root: [ ExampleSite.com ] Udemy - Master LeetCode - Conquer the Top 150 Problems
+--- files
+Get Bonus Downloads Here.url
+~Get Your Files Here !/1 - Array and Strings/1 -Merge Sorted Array.mp4
+~Get Your Files Here !/1 - Array and Strings/2 -Remove Element.mp4
+~Get Your Files Here !/11 - Bit Manipulation/1 -Add Binary.mp4
+~Get Your Files Here !/11 - Bit Manipulation/2 -Single Number.mp4
+~Get Your Files Here !/Bonus Resources.txt
+--- expected
+found: 1 courses
+course: ~Get Your Files Here !
+== Array and Strings
+  Merge Sorted Array
+  Remove Element
+== Bit Manipulation
+  Add Binary
+  Single Number
+[course] Bonus Resources.txt

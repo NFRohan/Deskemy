@@ -1,0 +1,16 @@
+# A course folder holding one folder: the same course, with a download site's tag in front.
+root: The Ultimate React Course 2023 React, Redux & More
+--- files
+[ExampleNode.net] - The Ultimate React Course 2023 React, Redux & More/10. Thinking in React Components, Composition, and Reusability/8. Fixing Prop Drilling With Composition (And Building a Layout).mp4
+[ExampleNode.net] - The Ultimate React Course 2023 React, Redux & More/10. Thinking in React Components, Composition, and Reusability/8. Fixing Prop Drilling With Composition (And Building a Layout).srt
+[ExampleNode.net] - The Ultimate React Course 2023 React, Redux & More/29. [Optional] Implementing More Features Authentication, Dark Mode, Dashboard, etc/2. Client-Side Filtering Filtering Cabins.mp4
+[ExampleNode.net] - The Ultimate React Course 2023 React, Redux & More/29. [Optional] Implementing More Features Authentication, Dark Mode, Dashboard, etc/6. API-Side Filtering Filtering Bookings.mp4
+--- expected
+found: 1 courses
+course: [ExampleNode.net] - The Ultimate React Course 2023 React, Redux & More
+== Thinking in React Components, Composition, and Reusability
+  Fixing Prop Drilling With Composition (And Building a Layout)
+    ~ -
+== [Optional] Implementing More Features Authentication, Dark Mode, Dashboard, etc
+  Client-Side Filtering Filtering Cabins
+  API-Side Filtering Filtering Bookings

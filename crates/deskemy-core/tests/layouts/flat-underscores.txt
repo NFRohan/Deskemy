@@ -1,0 +1,17 @@
+# Every lecture in the course folder, no sections; underscores for spaces, in the folder name too.
+root: Adrian_Cantrill_AWS_Certified_Solutions_Architect_Associate_SAA-C03
+--- files
+0001_Public_Introduction.mp4
+0002_Finding_and_Using_the_Course_Resources.mp4
+0003_Site_tools_and_features.mp4
+0004_AWS_Exams.mp4
+0010_202204UPDATE_DEMO_Securing_An_AWS_Account.mp4
+--- expected
+found: one course
+course: Adrian_Cantrill_AWS_Certified_Solutions_Architect_Associate_SAA-C03
+== Introduction
+  Public_Introduction
+  Finding_and_Using_the_Course_Resources
+  Site_tools_and_features
+  AWS_Exams
+  202204UPDATE_DEMO_Securing_An_AWS_Account

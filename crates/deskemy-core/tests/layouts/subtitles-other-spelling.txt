@@ -1,0 +1,43 @@
+# Subtitles spelled differently from their video, with a language after (10-Linux_vs._Unix RUS.srt for 10-Linux Vs. Unix.mp4); a lecture's resources in a numbered folder beside it (39-Resources/); underscores for spaces in section names.
+root: Complete Linux Training Course to Get Your Dream IT Job 2026
+--- files
+01-Module_1_Introduction_to_Linux/1-Introduction RUS.srt
+01-Module_1_Introduction_to_Linux/1-Introduction.mp4
+01-Module_1_Introduction_to_Linux/10-Linux Vs. Unix.mp4
+01-Module_1_Introduction_to_Linux/10-Linux_vs._Unix RUS.srt
+01-Module_1_Introduction_to_Linux/13-Linux Vs. Windows.mp4
+01-Module_1_Introduction_to_Linux/13-Linux_vs._Windows RUS.srt
+01-Module_1_Introduction_to_Linux/13-Linux_vs._Windows_-_Quiz.html
+01-Module_1_Introduction_to_Linux/14-Module_1_Homework.html
+01-Module_1_Introduction_to_Linux/15-Module_1_Handouts.html
+01-Module_1_Introduction_to_Linux/15-Resources/History_of_Unix.pdf
+01-Module_1_Introduction_to_Linux/15-Resources/Module_1.pdf
+01-Module_1_Introduction_to_Linux/2-Great News.mp4
+01-Module_1_Introduction_to_Linux/2-Great_News RUS.srt
+01-Module_1_Introduction_to_Linux/4-Resources/4-Resources.7z
+03-Module_3_System_Access_and_File_System/38-Access To Linux System.mp4
+03-Module_3_System_Access_and_File_System/38-Access_to_Linux_System RUS.srt
+03-Module_3_System_Access_and_File_System/39-Download And Install Putty.mp4
+03-Module_3_System_Access_and_File_System/39-Download_and_Install_Putty RUS.srt
+03-Module_3_System_Access_and_File_System/39-Resources/39-Resources.7z
+03-Module_3_System_Access_and_File_System/40-Access Linux Via Putty Or Ssh Command Line.mp4
+03-Module_3_System_Access_and_File_System/40-Access_Linux_via_Putty_or_SSH_command_line RUS.srt
+--- expected
+found: one course
+course: Complete Linux Training Course to Get Your Dream IT Job 2026
+== Module_1_Introduction_to_Linux
+  [section] 14-Module_1_Homework.html
+  [section] 15-Module_1_Handouts.html
+  [section] 4-Resources.7z
+  [section] History_of_Unix.pdf
+  [section] Module_1.pdf
+  Introduction
+  Great News
+  Linux Vs. Unix
+  Linux Vs. Windows
+    + 13-Linux_vs._Windows_-_Quiz.html
+== Module_3_System_Access_and_File_System
+  [section] 39-Resources.7z
+  Access To Linux System
+  Download And Install Putty
+  Access Linux Via Putty Or Ssh Command Line

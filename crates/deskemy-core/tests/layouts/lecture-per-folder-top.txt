@@ -1,0 +1,44 @@
+# One folder per lecture at the top, the video always called lecture.mp4, with its notes beside it; exercise folders with notes only.
+root: Low Level Academy - Zero2Hero C Programming
+--- files
+01 - What is this course about_/lecture.mp4
+01 - What is this course about_/notes.html
+01 - What is this course about_/notes.pdf
+02 - Goal Setting and Motivation/lecture.mp4
+02 - Goal Setting and Motivation/notes.html
+02 - Goal Setting and Motivation/notes.pdf
+03 - Tool & Environment Setup/lecture.mp4
+03 - Tool & Environment Setup/notes.html
+03 - Tool & Environment Setup/notes.pdf
+11 - Compiling Hello World/notes.html
+11 - Compiling Hello World/notes.pdf
+12 - Arrays/lecture.mp4
+12 - Arrays/notes.html
+12 - Arrays/notes.pdf
+13 - Arrays Exercise/notes.html
+13 - Arrays Exercise/notes.pdf
+README.txt
+--- expected
+found: one course
+course: Low Level Academy - Zero2Hero C Programming
+== What is this course about_
+  [section] notes.html
+  [section] notes.pdf
+  lecture
+== Goal Setting and Motivation
+  [section] notes.html
+  [section] notes.pdf
+  lecture
+== Tool & Environment Setup
+  [section] notes.html
+  [section] notes.pdf
+  lecture
+== Arrays
+  [section] notes.html
+  [section] notes.pdf
+  lecture
+[course] README.txt
+[course] notes.html
+[course] notes.html
+[course] notes.pdf
+[course] notes.pdf

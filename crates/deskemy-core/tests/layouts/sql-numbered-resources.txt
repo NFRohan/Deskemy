@@ -1,0 +1,69 @@
+# Udemy: SQL files carry the lecture's number first and the instructor's second (006 003-sql.sql); articles (.html) take lecture numbers between the videos; the bonus section has no video.
+root: Udemy - SQL and PostgreSQL The Complete Developer's Guide (7.2024)
+--- files
+01 - Simple - But Powerful - SQL Statements/001 Join Our Community!.html
+01 - Simple - But Powerful - SQL Statements/002 Course Resources.html
+01 - Simple - But Powerful - SQL Statements/002 diagrams.zip
+01 - Simple - But Powerful - SQL Statements/003 What is PostgreSQL All About.mp4
+01 - Simple - But Powerful - SQL Statements/003 What is PostgreSQL All About.srt
+01 - Simple - But Powerful - SQL Statements/004 Database Design.mp4
+01 - Simple - But Powerful - SQL Statements/004 Database Design.srt
+01 - Simple - But Powerful - SQL Statements/005 Database Terminology.html
+01 - Simple - But Powerful - SQL Statements/006 003-sql.sql
+01 - Simple - But Powerful - SQL Statements/006 Creating Tables.mp4
+01 - Simple - But Powerful - SQL Statements/006 Creating Tables.srt
+01 - Simple - But Powerful - SQL Statements/007 Analyzing CREATE TABLE.mp4
+01 - Simple - But Powerful - SQL Statements/007 Analyzing CREATE TABLE.srt
+01 - Simple - But Powerful - SQL Statements/008 005-sql-cumulative.sql
+01 - Simple - But Powerful - SQL Statements/008 005-sql.sql
+01 - Simple - But Powerful - SQL Statements/008 Inserting Data Into a Table.mp4
+01 - Simple - But Powerful - SQL Statements/008 Inserting Data Into a Table.srt
+01 - Simple - But Powerful - SQL Statements/009 Retrieving Data with Select.mp4
+01 - Simple - But Powerful - SQL Statements/009 Retrieving Data with Select.srt
+01 - Simple - But Powerful - SQL Statements/010 Create, Insert, and Select!.html
+01 - Simple - But Powerful - SQL Statements/011 Calculated Columns.mp4
+01 - Simple - But Powerful - SQL Statements/011 Calculated Columns.srt
+01 - Simple - But Powerful - SQL Statements/012 Calculating Phone Revenue.mp4
+01 - Simple - But Powerful - SQL Statements/012 Calculating Phone Revenue.srt
+01 - Simple - But Powerful - SQL Statements/013 Using Calculated Columns.html
+01 - Simple - But Powerful - SQL Statements/014 Exercise Solution.mp4
+01 - Simple - But Powerful - SQL Statements/014 Exercise Solution.srt
+01 - Simple - But Powerful - SQL Statements/015 012-sql.sql
+01 - Simple - But Powerful - SQL Statements/015 String Operators and Functions.mp4
+01 - Simple - But Powerful - SQL Statements/015 String Operators and Functions.srt
+37 - Bonus!/001 Bonus!.html
+--- expected
+found: one course
+course: Udemy - SQL and PostgreSQL The Complete Developer's Guide (7.2024)
+== Simple - But Powerful - SQL Statements
+  [section] 001 Join Our Community!.html
+  [section] 002 Course Resources.html
+  [section] 002 diagrams.zip
+  [section] 005 Database Terminology.html
+  [section] 010 Create, Insert, and Select!.html
+  [section] 013 Using Calculated Columns.html
+  What is PostgreSQL All About
+    ~ -
+  Database Design
+    ~ -
+  Creating Tables
+    ~ -
+    + 006 003-sql.sql
+  Analyzing CREATE TABLE
+    ~ -
+  Inserting Data Into a Table
+    ~ -
+    + 008 005-sql-cumulative.sql
+    + 008 005-sql.sql
+  Retrieving Data with Select
+    ~ -
+  Calculated Columns
+    ~ -
+  Calculating Phone Revenue
+    ~ -
+  Exercise Solution
+    ~ -
+  String Operators and Functions
+    ~ -
+    + 015 012-sql.sql
+[course] 001 Bonus!.html

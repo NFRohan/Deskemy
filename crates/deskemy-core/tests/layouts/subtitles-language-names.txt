@@ -1,0 +1,23 @@
+# Subtitles in many languages, the language spelled out after the video's name (1 - Course Introduction English.vtt).
+root: Udemy - Apache Kafka Series - Learn Apache Kafka for Beginners v3
+--- files
+1 - Kafka Introduction/1 - Course Introduction Arabic.vtt
+1 - Kafka Introduction/1 - Course Introduction English.vtt
+1 - Kafka Introduction/1 - Course Introduction Japanese.vtt
+1 - Kafka Introduction/1 - Course Introduction Portuguese.vtt
+1 - Kafka Introduction/1 - Course Introduction Simplified Chinese.vtt
+1 - Kafka Introduction/1 - Course Introduction.mp4
+1 - Kafka Introduction/1 - Stephanes GitHub.txt
+1 - Kafka Introduction/2 - Apache Kafka in 5 minutes Arabic.vtt
+1 - Kafka Introduction/2 - Apache Kafka in 5 minutes English.vtt
+1 - Kafka Introduction/2 - Apache Kafka in 5 minutes Japanese.vtt
+1 - Kafka Introduction/2 - Apache Kafka in 5 minutes Portuguese.vtt
+1 - Kafka Introduction/2 - Apache Kafka in 5 minutes Simplified Chinese.vtt
+1 - Kafka Introduction/2 - Apache Kafka in 5 minutes.mp4
+--- expected
+found: one course
+course: Udemy - Apache Kafka Series - Learn Apache Kafka for Beginners v3
+== Kafka Introduction
+  Course Introduction
+    + 1 - Stephanes GitHub.txt
+  Apache Kafka in 5 minutes

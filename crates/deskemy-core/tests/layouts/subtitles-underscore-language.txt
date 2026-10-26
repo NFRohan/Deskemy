@@ -1,0 +1,27 @@
+# Udemy downloaders: subtitles named <video>_en.srt; link resources (.url) with the lecture's number.
+root: Backend Master Class [Golang + Postgres + Kubernetes + gRPC]
+--- files
+01 - Working with database [Postgres + SQLC]/001 01-presentation-backend-master-class.pdf
+01 - Working with database [Postgres + SQLC]/001 DB-diagram-website.url
+01 - Working with database [Postgres + SQLC]/001 Design DB schema and generate SQL code with dbdiagram.io.mp4
+01 - Working with database [Postgres + SQLC]/001 Design DB schema and generate SQL code with dbdiagram.io_en.srt
+01 - Working with database [Postgres + SQLC]/001 Github-repository-of-the-course.url
+01 - Working with database [Postgres + SQLC]/001 Join-our-Discord-group-to-discuss-ask-questions-and-share-knowledge-with-each-other.url
+01 - Working with database [Postgres + SQLC]/001 Learn-basic-Go-syntax-on-the-Tour-of-Go-webiste.url
+01 - Working with database [Postgres + SQLC]/002 Microsoft-documentation-page-Install-WSL.url
+01 - Working with database [Postgres + SQLC]/002 Setup development environment on Windows WSL2, Go, VSCode, Docker, Make, Sqlc.mp4
+01 - Working with database [Postgres + SQLC]/002 Setup development environment on Windows WSL2, Go, VSCode, Docker, Make, Sqlc_en.srt
+01 - Working with database [Postgres + SQLC]/003 Setup Go and Visual Studio Code tools + theme.mp4
+--- expected
+found: one course
+course: Backend Master Class [Golang + Postgres + Kubernetes + gRPC]
+== Working with database [Postgres + SQLC]
+  Design DB schema and generate SQL code with dbdiagram.io
+    + 001 01-presentation-backend-master-class.pdf
+    + 001 DB-diagram-website.url
+    + 001 Github-repository-of-the-course.url
+    + 001 Join-our-Discord-group-to-discuss-ask-questions-and-share-knowledge-with-each-other.url
+    + 001 Learn-basic-Go-syntax-on-the-Tour-of-Go-webiste.url
+  Setup development environment on Windows WSL2, Go, VSCode, Docker, Make, Sqlc
+    + 002 Microsoft-documentation-page-Install-WSL.url
+  Setup Go and Visual Studio Code tools + theme
