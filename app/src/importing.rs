@@ -11,7 +11,7 @@ use crate::session::{Db, Session};
 use crate::settings::{self, Config};
 use crate::{AppWindow, BatchCourse, Import};
 use deskemy_core::domain::ImportPreview;
-use deskemy_core::importer::folders::{courses_in, Found};
+use deskemy_core::importer::folders::{courses_in, has_archives, Found};
 use deskemy_core::importer::{ImportPlan, ImportSnapshot, Importer};
 use deskemy_core::media::mpv_prober::MpvProber;
 use deskemy_core::media::stub::StubProber;
@@ -80,6 +80,10 @@ pub fn find_courses(given: &[PathBuf]) -> Result<Courses, String> {
     let mut seen = std::collections::HashSet::new();
     folders.retain(|f| seen.insert(f.clone()));
     match (folders.is_empty(), given) {
+        (true, [one]) if has_archives(one) => Err(format!(
+            "No playable video files found in {}. It holds archives (.zip, .rar, .7z): extract them, then add the folder again.",
+            one.display()
+        )),
         (true, [one]) => Err(format!("No playable video files found in {}.", one.display())),
         (true, _) => Err("No playable video files found in those folders.".into()),
         (false, _) => Ok(Courses { folders, parent }),
@@ -628,6 +632,7 @@ mod tests {
         touch("Courses/Go/01 Intro/001 Hello.mp4");
         touch("Single/01 Intro/001 Hello.mp4");
         touch("Empty/notes.pdf");
+        touch("Packed/Course.part1.rar");
         let dir = |rel: &str| tmp.path().join(rel);
 
         // One course folder.
@@ -643,6 +648,8 @@ mod tests {
         assert_eq!(found.parent, None);
         // Nothing to import.
         assert!(find_courses(&[dir("Empty")]).unwrap_err().starts_with("No playable video files found in"));
+        // A download not yet extracted says so.
+        assert!(find_courses(&[dir("Packed")]).unwrap_err().contains("extract them"));
         assert_eq!(
             find_courses(&[dir("Empty"), dir("Empty")]).unwrap_err(),
             "No playable video files found in those folders."

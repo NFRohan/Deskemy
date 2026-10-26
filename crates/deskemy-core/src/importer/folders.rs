@@ -75,6 +75,21 @@ pub fn courses_in(folder: &Path) -> Found {
     Found::Courses(with_videos)
 }
 
+/// Whether a folder with no videos holds archives a few levels down
+/// (`.zip`, `.rar`, `.7z`): a download not yet extracted.
+pub fn has_archives(folder: &Path) -> bool {
+    walkdir::WalkDir::new(folder)
+        .max_depth(3)
+        .into_iter()
+        .flatten()
+        .any(|e| {
+            e.file_type().is_file()
+                && e.path()
+                    .extension()
+                    .is_some_and(|x| matches!(x.to_string_lossy().to_lowercase().as_str(), "zip" | "rar" | "7z"))
+        })
+}
+
 /// What a folder's videos make of it.
 #[derive(Debug, PartialEq)]
 enum Videos {
@@ -255,5 +270,8 @@ mod tests {
         touch(tmp.path(), "Code/src/index.ts");
         assert_eq!(courses_in(tmp.path()), Found::Nothing);
         assert_eq!(courses_in(&tmp.path().join("missing")), Found::Nothing);
+        assert!(!has_archives(tmp.path()));
+        touch(tmp.path(), "Download/Course.part1.rar");
+        assert!(has_archives(&tmp.path().join("Download")));
     }
 }
