@@ -8,8 +8,8 @@ Get Bonus Downloads Here.url
 ~Get Your Files Here !/11 - Bit Manipulation/2 -Single Number.mp4
 ~Get Your Files Here !/Bonus Resources.txt
 --- expected
-found: 1 courses
-course: ~Get Your Files Here !
+found: one course
+course: [ ExampleSite.com ] Udemy - Master LeetCode - Conquer the Top 150 Problems
 == Array and Strings
   Merge Sorted Array
   Remove Element
@@ -17,3 +17,4 @@ course: ~Get Your Files Here !
   Add Binary
   Single Number
 [course] Bonus Resources.txt
+[course] Get Bonus Downloads Here.url

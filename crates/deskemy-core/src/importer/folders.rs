@@ -12,10 +12,18 @@
 //! reads as a folder of courses too, so the caller offers importing it as
 //! one; a folder of courses that all keep their videos loose reads as one
 //! course of sections.
+//!
+//! Some courses keep each lecture in a folder of its own, one video in it
+//! (`Course/2-AWS/1. Why Terraform/Why Terraform.mp4`). Folders of those are
+//! sections when they're numbered like sections (`1-Introduction`,
+//! `2-AWS`), and courses otherwise (`Courses/Rust/…`, `Courses/Go/…`): the
+//! two look the same but for the names. And a folder holding one course is
+//! that course: a download site's wrapper around it (`~Get Your Files Here
+//! !`) is unwrapped by the scanner, and the course keeps the folder's name.
 
-use super::structure::sort_key;
+use super::structure::{prefix_number, sort_key};
 use crate::scanner::{is_video, SKIPPED_DIRS};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -35,6 +43,7 @@ pub fn courses_in(folder: &Path) -> Found {
     let Ok(entries) = std::fs::read_dir(folder) else { return Found::Nothing };
     let mut with_videos = Vec::new();
     let mut sectioned = false;
+    let mut of_lectures = false;
     for entry in entries.flatten() {
         if !entry.file_type().is_ok_and(|t| t.is_dir()) || skipped(&entry.file_name().to_string_lossy()) {
             continue;
@@ -50,6 +59,7 @@ pub fn courses_in(folder: &Path) -> Found {
         match videos {
             Videos::None => continue,
             Videos::Some => {}
+            Videos::Lectures => of_lectures = true,
             Videos::Sections => sectioned = true,
         }
         with_videos.push(dir);
@@ -57,7 +67,8 @@ pub fn courses_in(folder: &Path) -> Found {
     if with_videos.is_empty() {
         return Found::Nothing;
     }
-    if !sectioned {
+    let numbered = || with_videos.iter().all(|d| prefix_number(&d.file_name().unwrap_or_default().to_string_lossy()).is_some());
+    if with_videos.len() == 1 || !(sectioned || of_lectures) || (!sectioned && numbered()) {
         return Found::Course;
     }
     with_videos.sort_by_cached_key(|p| sort_key(&p.file_name().unwrap_or_default().to_string_lossy()));
@@ -70,6 +81,9 @@ enum Videos {
     None,
     /// Videos, in it or in one folder of it.
     Some,
+    /// Lectures in folders of their own: two or more folders in it, each with
+    /// one video directly in it, and none of its own.
+    Lectures,
     /// Sections of its own: two or more folders in it hold videos, more of
     /// them than the videos in it.
     Sections,
@@ -78,18 +92,22 @@ enum Videos {
 /// One walk of `dir`.
 fn videos_in(dir: &Path) -> Videos {
     let mut own = 0;
-    let mut folders: HashSet<OsString> = HashSet::new();
+    // Per folder of `dir`: its videos, and whether all are directly in it.
+    let mut folders: HashMap<OsString, (usize, bool)> = HashMap::new();
     for entry in walk(dir, 1, usize::MAX) {
         if entry.depth() == 1 {
             own += 1;
         } else if let Some(first) = entry.path().strip_prefix(dir).ok().and_then(|rel| rel.components().next()) {
             // The folder of `dir` it's in.
-            folders.insert(first.as_os_str().to_owned());
+            let folder = folders.entry(first.as_os_str().to_owned()).or_insert((0, true));
+            folder.0 += 1;
+            folder.1 &= entry.depth() == 2;
         }
     }
     match (own, folders.len()) {
         (0, 0) => Videos::None,
-        (own, folders) if folders >= 2 && folders > own => Videos::Sections,
+        (0, n) if n >= 2 && folders.values().all(|&(videos, direct)| videos == 1 && direct) => Videos::Lectures,
+        (own, n) if n >= 2 && n > own => Videos::Sections,
         _ => Videos::Some,
     }
 }
@@ -200,6 +218,33 @@ mod tests {
         touch(tmp.path(), "Courses/C/01 Intro/1.mp4");
         touch(tmp.path(), "Courses/C/02 More/2.mp4");
         assert!(matches!(courses_in(&tmp.path().join("Courses")), Found::Courses(c) if c.len() == 3));
+    }
+
+    #[test]
+    fn numbered_folders_of_lecture_folders_are_sections() {
+        let tmp = tempfile::tempdir().unwrap();
+        touch(tmp.path(), "Course/1-Introduction/Welcome/Welcome.mp4");
+        touch(tmp.path(), "Course/2-AWS/1. Why Terraform/Why Terraform.mp4");
+        touch(tmp.path(), "Course/2-AWS/2. Demo/Demo.mp4");
+        touch(tmp.path(), "Course/3-Provisioning/1. Structure/Structure.mp4");
+        touch(tmp.path(), "Course/3-Provisioning/2. Providers/Providers.mp4");
+        touch(tmp.path(), "Course/3-Provisioning/2. Providers/notes.pdf");
+        assert_eq!(courses_in(&tmp.path().join("Course")), Found::Course);
+        // The same, unnumbered: courses of lecture folders.
+        touch(tmp.path(), "Courses/C Programming/01 - Intro/lecture.mp4");
+        touch(tmp.path(), "Courses/C Programming/02 - Setup/lecture.mp4");
+        touch(tmp.path(), "Courses/Rust/01 - Intro/lecture.mp4");
+        touch(tmp.path(), "Courses/Rust/02 - Types/lecture.mp4");
+        assert!(matches!(courses_in(&tmp.path().join("Courses")), Found::Courses(c) if c.len() == 2));
+    }
+
+    #[test]
+    fn a_folder_holding_one_course_is_that_course() {
+        let tmp = tempfile::tempdir().unwrap();
+        touch(tmp.path(), "[Site] Course/Get Bonus Downloads Here.url");
+        touch(tmp.path(), "[Site] Course/~Get Your Files Here !/01 Intro/001 Welcome.mp4");
+        touch(tmp.path(), "[Site] Course/~Get Your Files Here !/02 Basics/002 Types.mp4");
+        assert_eq!(courses_in(&tmp.path().join("[Site] Course")), Found::Course);
     }
 
     #[test]

@@ -16,31 +16,22 @@ root: ZeroToMastery - DevOps Bootcamp Terraform
 3-Provisioning AWS Infrastructure with Terraform/12. Customizing Terraform Configuration with Variables (Part 1)/Customizing Terraform Configuration with Variables (Part 1).mp4
 3-Provisioning AWS Infrastructure with Terraform/9. Destroying Infrastructure with Terraform/Destroying Infrastructure with Terraform.mp4
 --- expected
-found: 3 courses
-course: 1-Introduction
-== DevOps Bootcamp - Terraform
+found: one course
+course: ZeroToMastery - DevOps Bootcamp Terraform
+== Introduction
+  [section] Course Code.pdf
+  [section] Course Code.zip
+  [section] Exercise_ Meet Your Classmates and Instructor.pdf
+  [section] How-to's_ Speed up videos, Downloading videos, Subtitles Adjusting Le.pdf
   DevOps Bootcamp - Terraform
-[course] Course Code.pdf
-[course] Course Code.zip
-[course] Exercise_ Meet Your Classmates and Instructor.pdf
-[course] How-to's_ Speed up videos, Downloading videos, Subtitles Adjusting Le.pdf
-course: 2-Terraform and AWS Introduction
-== Why Terraform
-  Why Terraform
-== Terraform Demo
-  Terraform Demo
-== IaC Tool Comparison - Terraform vs Ansible
-  IaC Tool Comparison - Terraform vs Ansible
-== AWS Basics EC2
+== Terraform and AWS Introduction
   AWS Basics EC2
-course: 3-Provisioning AWS Infrastructure with Terraform
-== Terraform Code Structure
-  Terraform Code Structure
-== Destroying Infrastructure with Terraform
-  Destroying Infrastructure with Terraform
-== Replacing Infrastructure with Terraform
-  Replacing Infrastructure with Terraform
-== Creating Resources (Part 2) - AWS Subnet
-  Creating Resources (Part 2) - AWS Subnet
-== Customizing Terraform Configuration with Variables (Part 1)
+  IaC Tool Comparison - Terraform vs Ansible
+  Terraform Demo
+  Why Terraform
+== Provisioning AWS Infrastructure with Terraform
   Customizing Terraform Configuration with Variables (Part 1)
+  Creating Resources (Part 2) - AWS Subnet
+  Destroying Infrastructure with Terraform
+  Replacing Infrastructure with Terraform
+  Terraform Code Structure
