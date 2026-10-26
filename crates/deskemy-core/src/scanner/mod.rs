@@ -143,7 +143,7 @@ impl Scanner for FilesystemScanner {
             if entry.depth() > 0 && PROJECT_MARKERS.contains(&name.to_lowercase().as_str()) {
                 marked.insert(rel_dir.clone());
             }
-            if !entry.file_type().is_file() {
+            if !entry.file_type().is_file() || is_advert(&name) {
                 continue;
             }
             let path = entry.path().to_path_buf();
@@ -172,6 +172,21 @@ impl Scanner for FilesystemScanner {
         }
         Ok(ScannedTree { root: root.to_path_buf(), files })
     }
+}
+
+/// A download site's advert, not the course's: a link or text file named
+/// after a site (`[CourseClub.Me].url`, `[ FreeCourseWeb.com ].txt`), and
+/// the bonus links its wrappers add.
+fn is_advert(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    if matches!(lower.as_str(), "get bonus downloads here.url" | "bonus resources.txt") {
+        return true;
+    }
+    let Some((stem, ext)) = lower.rsplit_once('.') else { return false };
+    matches!(ext, "url" | "webloc" | "website" | "lnk" | "txt" | "html" | "htm")
+        && stem.starts_with('[')
+        && stem.ends_with(']')
+        && stem.contains('.')
 }
 
 /// The folders a course is wrapped in, where its sections start: `""` when
@@ -315,6 +330,17 @@ mod tests {
     fn write(path: &Path, bytes: &[u8]) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn download_sites_adverts_are_left_out() {
+        for name in ["[CourseClub.Me].url", "[FCSNEW.NET].url", "[ FreeCourseWeb.com ].txt", "Get Bonus Downloads Here.url", "Bonus Resources.txt"] {
+            assert!(is_advert(name), "{name}");
+        }
+        // A lecture's own links and notes, and bracketed names that aren't a site.
+        for name in ["004 Github-repository.url", "external-links.txt", "[Optional] Setup.url", "[Bonus] notes.txt", "README.txt"] {
+            assert!(!is_advert(name), "{name}");
+        }
     }
 
     #[test]

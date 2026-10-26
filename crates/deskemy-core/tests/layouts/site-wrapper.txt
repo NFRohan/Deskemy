@@ -16,5 +16,3 @@ course: [ ExampleSite.com ] Udemy - Master LeetCode - Conquer the Top 150 Proble
 == Bit Manipulation
   Add Binary
   Single Number
-[course] Bonus Resources.txt
-[course] Get Bonus Downloads Here.url
