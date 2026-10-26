@@ -39,6 +39,31 @@ checklist live in [slint-port.md](slint-port.md).
 5. **Linux** (GH #7) — the reason for the port. Then macOS.
 6. **Bigger features** ([Feature ideas](#feature-ideas)).
 
+## Importer: course layouts from the wild
+
+A sweep of 49 real downloads (`importer-fixes` branch). Each layout below is
+a fixture in `crates/deskemy-core/tests/layouts/`, replayed through Add
+Folder's detection and the import; a course someone reports as imported
+wrong becomes one too (`DESKEMY_BLESS=1` rewrites the expected outlines
+after a deliberate change).
+
+- [x] Subtitles named `<video>_en.srt`, `<video> English.vtt` (one per
+      language), or spelled differently with the video's number; only one
+      per lecture in the search index.
+- [x] A course wrapped in a folder of its own (`~Get Your Files Here !`, or
+      its own name beside a promo) is unwrapped; a folder holding one course
+      is that course, titled after it.
+- [x] A lecture in a folder of its own, below sections (Add Folder no longer
+      splits such a course into many) or at the top (`01 - Intro/lecture.mp4`):
+      numbered, titled and given its files by the folder. A resource in a
+      numbered folder (`39-Resources/`) goes to that lecture.
+- [x] Download sites' adverts left out; their tag left off course titles.
+- [x] Names joined with `_` or `-`, a `?` turned `_`, a second number: tidied.
+- [x] A folder of only archives says to extract them.
+- [ ] Later, maybe: a notes-only folder's files (`13 - Arrays Exercise/notes.pdf`)
+      named after the folder; sections of article pages only (no video) as
+      sections; the in-app layout report.
+
 ## 2.0.3
 
 - [x] **Add Folder does nothing when the folder dialog can't open (#10)** —
