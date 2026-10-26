@@ -17,11 +17,13 @@ found: one course
 course: Backend Master Class [Golang + Postgres + Kubernetes + gRPC]
 == Working with database [Postgres + SQLC]
   Design DB schema and generate SQL code with dbdiagram.io
+    ~ en
     + 001 01-presentation-backend-master-class.pdf
     + 001 DB-diagram-website.url
     + 001 Github-repository-of-the-course.url
     + 001 Join-our-Discord-group-to-discuss-ask-questions-and-share-knowledge-with-each-other.url
     + 001 Learn-basic-Go-syntax-on-the-Tour-of-Go-webiste.url
   Setup development environment on Windows WSL2, Go, VSCode, Docker, Make, Sqlc
+    ~ en
     + 002 Microsoft-documentation-page-Install-WSL.url
   Setup Go and Visual Studio Code tools + theme

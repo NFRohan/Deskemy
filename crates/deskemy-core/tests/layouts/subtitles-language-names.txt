@@ -19,5 +19,7 @@ found: one course
 course: Udemy - Apache Kafka Series - Learn Apache Kafka for Beginners v3
 == Kafka Introduction
   Course Introduction
+    ~ ar en ja pt zh-hans
     + 1 - Stephanes GitHub.txt
   Apache Kafka in 5 minutes
+    ~ ar en ja pt zh-hans

@@ -40,6 +40,7 @@ course: [EXAMPLE.NET] Udemy - Complete MLOps Bootcamp With 10+ End To End ML Pro
   [section] [ExampleClub.Me].url
   [section] [ExampleClub.Me].url
   Introduction
+    ~ en
     + 001 mlops.pdf
 == IDE's And Code Editors You Can Use
   [section] [EXAMPLE.NET].url
@@ -48,15 +49,21 @@ course: [EXAMPLE.NET] Udemy - Complete MLOps Bootcamp With 10+ End To End ML Pro
   [section] [ExampleClub.Me].url
   [section] external-links.txt
   Getting Started With Google Colab
+    ~ en
   Getting Started With Github Codespace
+    ~ en
     + 003 Github-Codespace.url
   Anaconda And VS Code Installation
+    ~ en
     + 004 Anaconda-PAth.url
     + 004 Vss-Code-Url.url
 == Python Prerequisites
   Data Manipulation And Analysis
+    ~ en
   34-Data-Source-Reading
   Data Source Reading
+    ~ en
   Logging In Python
+    ~ en
 [course] [EXAMPLE.NET].url
 [course] [ExampleClub.Me].url

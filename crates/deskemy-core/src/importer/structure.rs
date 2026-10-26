@@ -19,6 +19,14 @@ pub fn leading_number(name: &str) -> Option<i64> {
     }
 }
 
+/// The number a name starts with (`"039 Intro"` → 39, `" 7-Setup"` → 7), not
+/// one further in (`"Creating Resources (Part 1)"` → `None`).
+pub fn prefix_number(name: &str) -> Option<i64> {
+    let name = name.trim_start();
+    let digits = name.len() - name.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    name[..digits].parse().ok()
+}
+
 /// Display title for a file: drop the extension, then strip a leading numeric
 /// prefix and its separator (`"001 Welcome.mp4"` → `"Welcome"`,
 /// `"1 - Intro.mp4"` → `"Intro"`). Leaves numeric-only titles like `"1984"`
@@ -89,6 +97,10 @@ mod tests {
         assert_eq!(leading_number("Section 3"), Some(3));
         assert_eq!(leading_number("10 Things.mp4"), Some(10));
         assert_eq!(leading_number("Introduction"), None);
+        assert_eq!(prefix_number("039 Intro"), Some(39));
+        assert_eq!(prefix_number(" 7-Setup"), Some(7));
+        assert_eq!(prefix_number("Creating Resources (Part 1)"), None);
+        assert_eq!(prefix_number(""), None);
     }
 
     #[test]

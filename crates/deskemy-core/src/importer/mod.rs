@@ -5,9 +5,11 @@
 //! - immediate subfolders are sections; loose root videos form "Introduction"
 //! - resources attach to the lecture sharing their leading number in the same
 //!   section (Udemy names code files `011 foo.sql` next to `011 Lecture.mp4`)
-//! - subtitles attach to the video whose stem prefixes the subtitle name
+//! - subtitles attach to the video whose name they start with, a language after
+//!   it (`.en`, `_en`, ` English`), or else to the one with their number
 
 pub mod folders;
+mod language;
 pub mod structure;
 
 use crate::db::queries::{self, LectureInsert};
@@ -20,7 +22,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
-use structure::{clean_folder_title, clean_title, leading_number, sort_key};
+use structure::{clean_folder_title, clean_title, leading_number, prefix_number, sort_key};
 
 pub struct Importer {
     prober: Box<dyn MediaProber>,
@@ -624,8 +626,8 @@ impl Importer {
                                 conn,
                                 &new_id(),
                                 &lec.id,
-                                lang.as_deref(),
-                                lang.as_deref(),
+                                lang.as_ref().map(|(code, _)| code.as_str()),
+                                lang.as_ref().map(|(_, label)| label.as_str()),
                                 &f.path.to_string_lossy(),
                             )?;
                         }
@@ -698,41 +700,52 @@ fn detect_thumbnail(scan: &ScannedTree) -> Option<String> {
         .map(|f| f.path.to_string_lossy().to_string())
 }
 
-/// Match a subtitle file to a lecture in its section by stem prefix.
-/// Returns the lecture and parsed language (`name.en.srt` → `Some("en")`).
-fn match_subtitle<'a>(
-    f: &ScannedFile,
-    section: &'a PlannedSection,
-) -> Option<(&'a PlannedLecture, Option<String>)> {
+/// A subtitle's language: its code and how to show it (`("en", "English")`).
+type Language = (String, String);
+
+/// Match a subtitle file to a lecture in its folder, and read its language.
+/// It's named after the video (`Intro.srt`), with a language after
+/// (`Intro.en.srt`, `Intro_en.srt`, `Intro English.vtt`); or spelled
+/// differently, with the video's number (`10-Linux_vs._Unix RUS.srt` for
+/// `10-Linux Vs. Unix.mp4`), when one lecture there has it.
+fn match_subtitle<'a>(f: &ScannedFile, section: &'a PlannedSection) -> Option<(&'a PlannedLecture, Option<Language>)> {
     let sub_stem = Path::new(&f.name)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())?;
     let sub_rel = f.rel_dir.to_string_lossy().to_string();
+    let here = || section.lectures.iter().filter(|l| l.rel_dir == sub_rel);
 
-    // Prefer the longest matching lecture stem (most specific).
-    let mut best: Option<(&PlannedLecture, Option<String>)> = None;
-    for lec in &section.lectures {
-        if lec.rel_dir != sub_rel {
-            continue;
-        }
-        if sub_stem == lec.stem {
+    // The longest video name it starts with: the most specific.
+    let mut best: Option<(&PlannedLecture, Option<Language>)> = None;
+    for lec in here() {
+        let Some(rest) = sub_stem.strip_prefix(&lec.stem) else { continue };
+        if rest.is_empty() {
             return Some((lec, None));
         }
-        if let Some(rest) = sub_stem.strip_prefix(&lec.stem) {
-            if let Some(lang) = rest.strip_prefix('.') {
-                if !lang.is_empty() {
-                    let better = best
-                        .as_ref()
-                        .map(|(b, _)| lec.stem.len() > b.stem.len())
-                        .unwrap_or(true);
-                    if better {
-                        best = Some((lec, Some(lang.to_string())));
-                    }
-                }
-            }
+        let token = rest.trim_start_matches(['.', '_', '-', ' ']);
+        let lang = match (rest.chars().next(), language::parse(token)) {
+            (Some('.' | '_' | '-' | ' '), Some(lang)) => lang,
+            // `Intro.en.forced`: kept as written.
+            (Some('.'), None) if !token.is_empty() => (token.to_string(), token.to_string()),
+            // `Intro Part 2.srt` is another lecture's.
+            _ => continue,
+        };
+        if best.as_ref().is_none_or(|(b, _)| lec.stem.len() > b.stem.len()) {
+            best = Some((lec, Some(lang)));
         }
     }
-    best
+    if best.is_some() {
+        return best;
+    }
+
+    let n = prefix_number(&sub_stem)?;
+    let mut numbered = here().filter(|l| prefix_number(&l.stem) == Some(n));
+    let lec = numbered.next()?;
+    if numbered.next().is_some() {
+        return None;
+    }
+    let last = sub_stem.rsplit([' ', '_', '-', '.']).next().unwrap_or_default();
+    Some((lec, language::parse_unambiguous(last)))
 }
 
 /// Match a resource file to a lecture: exact stem, then same leading number
