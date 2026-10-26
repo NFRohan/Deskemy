@@ -33,7 +33,7 @@ root: [EXAMPLE.NET] Udemy - Complete MLOps Bootcamp With 10+ End To End ML Proje
 03 - Python Prerequisites/041 Logging In Python_en.srt
 --- expected
 found: one course
-course: [EXAMPLE.NET] Udemy - Complete MLOps Bootcamp With 10+ End To End ML Projects
+course: Udemy - Complete MLOps Bootcamp With 10+ End To End ML Projects
 == Introduction
   Introduction
     ~ en

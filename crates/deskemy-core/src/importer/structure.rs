@@ -27,6 +27,25 @@ pub fn prefix_number(name: &str) -> Option<i64> {
     name[..digits].parse().ok()
 }
 
+/// A course's title from its folder: without a download site's tag in front
+/// (`[FCSNEW.NET] Udemy - Go` → `Udemy - Go`, `[ Site.com ] - React` →
+/// `React`). Brackets that aren't a site stay (`[Optional] Go`).
+pub fn course_title(folder_name: &str) -> String {
+    let mut rest = folder_name.trim();
+    while let Some((tag, after)) = rest.strip_prefix('[').and_then(|r| r.split_once(']')) {
+        let site = tag.trim();
+        if !site.contains('.') || site.contains(char::is_whitespace) {
+            break;
+        }
+        let after = after.trim_start_matches([' ', '-', '_', '|', ':']);
+        if after.is_empty() {
+            break;
+        }
+        rest = after;
+    }
+    rest.to_string()
+}
+
 /// Display title for a file: drop the extension, then strip a leading numeric
 /// prefix and its separator (`"001 Welcome.mp4"` → `"Welcome"`,
 /// `"1 - Intro.mp4"` → `"Intro"`). Leaves numeric-only titles like `"1984"`
@@ -101,6 +120,16 @@ mod tests {
         assert_eq!(prefix_number(" 7-Setup"), Some(7));
         assert_eq!(prefix_number("Creating Resources (Part 1)"), None);
         assert_eq!(prefix_number(""), None);
+    }
+
+    #[test]
+    fn course_titles_lose_a_download_sites_tag() {
+        assert_eq!(course_title("[FCSNEW.NET] Udemy - Complete MLOps"), "Udemy - Complete MLOps");
+        assert_eq!(course_title("[ FreeCourseWeb.com ] Udemy - Master LeetCode"), "Udemy - Master LeetCode");
+        assert_eq!(course_title("[TutsNode.net] - The Ultimate React Course"), "The Ultimate React Course");
+        assert_eq!(course_title("[Optional] Go Basics"), "[Optional] Go Basics");
+        assert_eq!(course_title("Backend Master Class [Golang + Postgres]"), "Backend Master Class [Golang + Postgres]");
+        assert_eq!(course_title("[Site.com]"), "[Site.com]");
     }
 
     #[test]

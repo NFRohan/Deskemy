@@ -22,7 +22,7 @@ use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use structure::{clean_folder_title, clean_title, leading_number, prefix_number, sort_key};
+use structure::{clean_folder_title, clean_title, course_title, leading_number, prefix_number, sort_key};
 
 pub struct Importer {
     prober: Box<dyn MediaProber>,
@@ -194,7 +194,7 @@ impl Importer {
         let folder_path = course_dir.to_string_lossy().to_string();
         let title = course_dir
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
+            .map(|n| course_title(&n.to_string_lossy()))
             .unwrap_or_else(|| folder_path.clone());
 
         let existing = queries::find_course_by_path(conn, &folder_path)?;

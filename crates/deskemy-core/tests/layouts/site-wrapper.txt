@@ -9,7 +9,7 @@ Get Bonus Downloads Here.url
 ~Get Your Files Here !/Bonus Resources.txt
 --- expected
 found: one course
-course: [ ExampleSite.com ] Udemy - Master LeetCode - Conquer the Top 150 Problems
+course: Udemy - Master LeetCode - Conquer the Top 150 Problems
 == Array and Strings
   Merge Sorted Array
   Remove Element
