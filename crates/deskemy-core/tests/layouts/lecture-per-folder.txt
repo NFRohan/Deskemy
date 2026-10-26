@@ -25,13 +25,13 @@ course: ZeroToMastery - DevOps Bootcamp Terraform
   [section] How-to's_ Speed up videos, Downloading videos, Subtitles Adjusting Le.pdf
   DevOps Bootcamp - Terraform
 == Terraform and AWS Introduction
-  AWS Basics EC2
-  IaC Tool Comparison - Terraform vs Ansible
-  Terraform Demo
   Why Terraform
+  Terraform Demo
+  IaC Tool Comparison - Terraform vs Ansible
+  AWS Basics EC2
 == Provisioning AWS Infrastructure with Terraform
-  Customizing Terraform Configuration with Variables (Part 1)
-  Creating Resources (Part 2) - AWS Subnet
+  Terraform Code Structure
   Destroying Infrastructure with Terraform
   Replacing Infrastructure with Terraform
-  Terraform Code Structure
+  Creating Resources (Part 2) - AWS Subnet
+  Customizing Terraform Configuration with Variables (Part 1)

@@ -19,8 +19,8 @@ use crate::hashing::content_hash;
 use crate::media::MediaProber;
 use crate::scanner::{FileKind, FilesystemScanner, ScannedFile, ScannedTree, Scanner};
 use rusqlite::Connection;
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use structure::{clean_folder_title, clean_title, leading_number, prefix_number, sort_key};
 
@@ -502,10 +502,11 @@ impl Importer {
         progress: &impl Fn(usize, usize),
     ) -> Result<Vec<PlannedSection>> {
         // Group video files by their top-level section key ("" = course root).
+        let layout = Layout::of(scan);
         let mut videos_by_key: HashMap<String, Vec<&ScannedFile>> = HashMap::new();
         for f in &scan.files {
             if f.kind == FileKind::Video {
-                videos_by_key.entry(section_key(f)).or_default().push(f);
+                videos_by_key.entry(layout.section_key(f)).or_default().push(f);
             }
         }
 
@@ -518,7 +519,7 @@ impl Importer {
         let mut sections = Vec::new();
         for (s_pos, key) in keys.into_iter().enumerate() {
             let mut vids = videos_by_key.remove(&key).unwrap();
-            vids.sort_by_key(|a| sort_key(&a.name));
+            vids.sort_by_cached_key(|a| sort_key(layout.lecture_name(a).0));
 
             let title = if key.is_empty() {
                 "Introduction".to_string()
@@ -572,9 +573,13 @@ impl Importer {
                     .unwrap_or_else(|| v.name.clone());
                 lectures.push(PlannedLecture {
                     id: new_id(),
-                    title: if clean_titles { clean_title(&v.name) } else { v.name.clone() },
+                    title: match (clean_titles, layout.lecture_name(v)) {
+                        (false, (name, _)) => name.to_string(),
+                        (true, (folder, true)) => clean_folder_title(folder),
+                        (true, (file, false)) => clean_title(file),
+                    },
                     position: l_pos as i64,
-                    number: leading_number(&v.name),
+                    number: leading_number(layout.lecture_name(v).0),
                     stem,
                     rel_dir: v.rel_dir.to_string_lossy().to_string(),
                     path,
@@ -612,6 +617,7 @@ impl Importer {
         scan: &ScannedTree,
         sections: &[PlannedSection],
     ) -> Result<()> {
+        let layout = Layout::of(scan);
         let by_key: HashMap<&str, &PlannedSection> =
             sections.iter().map(|s| (s.key.as_str(), s)).collect();
 
@@ -619,7 +625,7 @@ impl Importer {
             match f.kind {
                 FileKind::Video | FileKind::Image => continue,
                 FileKind::Subtitle => {
-                    let key = section_key(f);
+                    let key = layout.section_key(f);
                     if let Some(section) = by_key.get(key.as_str()) {
                         if let Some((lec, lang)) = match_subtitle(f, section) {
                             queries::insert_subtitle(
@@ -634,9 +640,9 @@ impl Importer {
                     }
                 }
                 FileKind::Attachment => {
-                    let key = section_key(f);
+                    let key = layout.section_key(f);
                     let section = by_key.get(key.as_str()).copied();
-                    let lecture_id = section.and_then(|s| match_attachment(f, s)).map(|l| l.id.clone());
+                    let lecture_id = section.and_then(|s| match_attachment(f, s, &layout)).map(|l| l.id.clone());
                     let att_id = new_id();
                     queries::insert_attachment(
                         conn,
@@ -662,12 +668,77 @@ pub fn hash_lecture_file(path: &Path, size: u64) -> Option<String> {
     content_hash(path, size).ok()
 }
 
-fn section_key(f: &ScannedFile) -> String {
-    f.rel_dir
-        .components()
-        .next()
-        .map(|c| c.as_os_str().to_string_lossy().to_string())
-        .unwrap_or_default()
+/// How a course's folders hold its lectures. Mostly a section's videos are
+/// files in it, but some courses give each lecture a folder of its own, one
+/// video in it: below sections (`2-AWS/1. Why Terraform/Why Terraform.mp4`),
+/// or at the top (`01 - Intro/lecture.mp4`, `02 - Setup/lecture.mp4`), the
+/// course then being one section of them.
+struct Layout {
+    /// The folders that are a lecture each.
+    lecture_dirs: HashSet<PathBuf>,
+    /// The top folders are lectures, not sections.
+    top_lectures: bool,
+}
+
+impl Layout {
+    fn of(scan: &ScannedTree) -> Self {
+        // Per folder: videos directly in it, and whether any are deeper.
+        let mut direct: HashMap<&Path, usize> = HashMap::new();
+        let mut deeper: HashSet<&Path> = HashSet::new();
+        let mut numbered: HashSet<&Path> = HashSet::new();
+        for f in scan.files.iter().filter(|f| f.kind == FileKind::Video) {
+            *direct.entry(f.rel_dir.as_path()).or_default() += 1;
+            deeper.extend(f.rel_dir.ancestors().skip(1));
+            if prefix_number(&f.name).is_some() {
+                numbered.insert(f.rel_dir.as_path());
+            }
+        }
+        let single = |dir: &Path| direct.get(dir) == Some(&1) && !deeper.contains(dir);
+        let tops: HashSet<&Path> = direct
+            .keys()
+            .filter_map(|dir| dir.components().next().map(|c| Path::new(c.as_os_str())))
+            .collect();
+        // Not a course of one-lecture sections (`01 Intro/001 Welcome.mp4`):
+        // the folders name the lectures, their videos don't.
+        let top_lectures = tops.len() >= 2 && tops.iter().all(|top| single(top) && !numbered.contains(top));
+        let lecture_dirs = direct
+            .keys()
+            .filter(|dir| single(dir) && (dir.components().count() >= 2 || top_lectures))
+            .map(|dir| dir.to_path_buf())
+            .collect();
+        Layout { lecture_dirs, top_lectures }
+    }
+
+    /// The section a file is in: its top folder ("" for the course's own),
+    /// or the course's one section when the top folders are lectures.
+    fn section_key(&self, f: &ScannedFile) -> String {
+        if self.top_lectures {
+            return String::new();
+        }
+        f.rel_dir
+            .components()
+            .next()
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .unwrap_or_default()
+    }
+
+    /// The lecture folder a file is in, if any.
+    fn lecture_dir<'a>(&self, rel_dir: &'a Path) -> Option<&'a Path> {
+        rel_dir.ancestors().find(|dir| self.lecture_dirs.contains(*dir))
+    }
+
+    /// What a video's lecture is named after: its folder, when that's a
+    /// lecture folder with a number and the video's own name has none
+    /// (`1. Why Terraform`, not `Why Terraform.mp4`; `01 - Intro`, not
+    /// `lecture.mp4`); else the video.
+    fn lecture_name<'a>(&self, v: &'a ScannedFile) -> (&'a str, bool) {
+        let folder = v.rel_dir.file_name().map(|n| n.to_str().unwrap_or_default()).unwrap_or_default();
+        if self.lecture_dirs.contains(&v.rel_dir) && prefix_number(&v.name).is_none() && prefix_number(folder).is_some() {
+            (folder, true)
+        } else {
+            (&v.name, false)
+        }
+    }
 }
 
 /// Introduction (root, empty key) first; then numbered sections ascending;
@@ -684,7 +755,7 @@ fn detect_thumbnail(scan: &ScannedTree) -> Option<String> {
     let root_images: Vec<&ScannedFile> = scan
         .files
         .iter()
-        .filter(|f| f.kind == FileKind::Image && section_key(f).is_empty())
+        .filter(|f| f.kind == FileKind::Image && f.rel_dir.as_os_str().is_empty())
         .collect();
 
     // Prefer a conventionally named cover.
@@ -748,27 +819,31 @@ fn match_subtitle<'a>(f: &ScannedFile, section: &'a PlannedSection) -> Option<(&
     Some((lec, language::parse_unambiguous(last)))
 }
 
-/// Match a resource file to a lecture: exact stem, then same leading number
-/// within the section.
-fn match_attachment<'a>(f: &ScannedFile, section: &'a PlannedSection) -> Option<&'a PlannedLecture> {
+/// Match a resource file to a lecture: one named like it, then one with its
+/// number, in its folder; the lecture whose folder it's in, when lectures
+/// have folders of their own; or, in a numbered folder beside the lectures
+/// (`39-Resources/39-Resources.7z`), the lecture with that folder's number.
+fn match_attachment<'a>(f: &ScannedFile, section: &'a PlannedSection, layout: &Layout) -> Option<&'a PlannedLecture> {
     let stem = Path::new(&f.name)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let rel = f.rel_dir.to_string_lossy().to_string();
+    let in_dir = |dir: &Path| {
+        let dir = dir.to_string_lossy().to_string();
+        section.lectures.iter().filter(move |l| l.rel_dir == dir)
+    };
 
-    if let Some(l) = section
-        .lectures
-        .iter()
-        .find(|l| l.rel_dir == rel && l.stem == stem)
-    {
+    if let Some(l) = in_dir(&f.rel_dir).find(|l| l.stem == stem) {
         return Some(l);
     }
-    let num = leading_number(&f.name)?;
-    section
-        .lectures
-        .iter()
-        .find(|l| l.rel_dir == rel && l.number == Some(num))
+    if let Some(l) = leading_number(&f.name).and_then(|n| in_dir(&f.rel_dir).find(|l| l.number == Some(n))) {
+        return Some(l);
+    }
+    if let Some(dir) = layout.lecture_dir(&f.rel_dir) {
+        return in_dir(dir).next();
+    }
+    let n = prefix_number(&f.rel_dir.file_name()?.to_string_lossy())?;
+    in_dir(f.rel_dir.parent()?).find(|l| l.number == Some(n))
 }
 
 fn attachment_kind(f: &ScannedFile) -> &'static str {

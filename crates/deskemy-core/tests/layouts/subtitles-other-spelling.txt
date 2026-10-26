@@ -41,10 +41,10 @@ course: Complete Linux Training Course to Get Your Dream IT Job 2026
     ~ ru
     + 13-Linux_vs._Windows_-_Quiz.html
 == Module_3_System_Access_and_File_System
-  [section] 39-Resources.7z
   Access To Linux System
     ~ ru
   Download And Install Putty
     ~ ru
+    + 39-Resources.7z
   Access Linux Via Putty Or Ssh Command Line
     ~ ru
