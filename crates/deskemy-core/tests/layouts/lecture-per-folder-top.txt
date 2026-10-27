@@ -21,21 +21,24 @@ README.txt
 --- expected
 found: one course
 course: Low Level Academy - Zero2Hero C Programming
-== Introduction
-  [section] README.txt
-  [section] notes.html
-  [section] notes.html
-  [section] notes.pdf
-  [section] notes.pdf
+== What is this course about
   What is this course about
     + notes.html
     + notes.pdf
+== Goal Setting and Motivation
   Goal Setting and Motivation
     + notes.html
     + notes.pdf
+== Tool & Environment Setup
   Tool & Environment Setup
     + notes.html
     + notes.pdf
+== Arrays
   Arrays
     + notes.html
     + notes.pdf
+[course] README.txt
+[course] notes.html
+[course] notes.html
+[course] notes.pdf
+[course] notes.pdf

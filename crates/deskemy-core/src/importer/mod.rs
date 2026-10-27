@@ -506,7 +506,7 @@ impl Importer {
         let mut videos_by_key: HashMap<String, Vec<&ScannedFile>> = HashMap::new();
         for f in &scan.files {
             if f.kind == FileKind::Video {
-                videos_by_key.entry(layout.section_key(f)).or_default().push(f);
+                videos_by_key.entry(section_key(f)).or_default().push(f);
             }
         }
 
@@ -625,7 +625,7 @@ impl Importer {
             match f.kind {
                 FileKind::Video | FileKind::Image => continue,
                 FileKind::Subtitle => {
-                    let key = layout.section_key(f);
+                    let key = section_key(f);
                     if let Some(section) = by_key.get(key.as_str()) {
                         if let Some((lec, lang)) = match_subtitle(f, section) {
                             queries::insert_subtitle(
@@ -640,7 +640,7 @@ impl Importer {
                     }
                 }
                 FileKind::Attachment => {
-                    let key = layout.section_key(f);
+                    let key = section_key(f);
                     let section = by_key.get(key.as_str()).copied();
                     let lecture_id = section.and_then(|s| match_attachment(f, s, &layout)).map(|l| l.id.clone());
                     let att_id = new_id();
@@ -671,13 +671,11 @@ pub fn hash_lecture_file(path: &Path, size: u64) -> Option<String> {
 /// How a course's folders hold its lectures. Mostly a section's videos are
 /// files in it, but some courses give each lecture a folder of its own, one
 /// video in it: below sections (`2-AWS/1. Why Terraform/Why Terraform.mp4`),
-/// or at the top (`01 - Intro/lecture.mp4`, `02 - Setup/lecture.mp4`), the
-/// course then being one section of them.
+/// or at the top (`01 - Intro/lecture.mp4`, `02 - Setup/lecture.mp4`), each
+/// then a section of one lecture, as the folders are.
 struct Layout {
     /// The folders that are a lecture each.
     lecture_dirs: HashSet<PathBuf>,
-    /// The top folders are lectures, not sections.
-    top_lectures: bool,
 }
 
 impl Layout {
@@ -698,28 +696,16 @@ impl Layout {
             .keys()
             .filter_map(|dir| dir.components().next().map(|c| Path::new(c.as_os_str())))
             .collect();
-        // Not a course of one-lecture sections (`01 Intro/001 Welcome.mp4`):
-        // the folders name the lectures, their videos don't.
+        // At the top, only when the folders name the lectures and their
+        // videos don't: not a course of one-lecture sections
+        // (`01 Intro/001 Welcome.mp4`).
         let top_lectures = tops.len() >= 2 && tops.iter().all(|top| single(top) && !numbered.contains(top));
         let lecture_dirs = direct
             .keys()
             .filter(|dir| single(dir) && (dir.components().count() >= 2 || top_lectures))
             .map(|dir| dir.to_path_buf())
             .collect();
-        Layout { lecture_dirs, top_lectures }
-    }
-
-    /// The section a file is in: its top folder ("" for the course's own),
-    /// or the course's one section when the top folders are lectures.
-    fn section_key(&self, f: &ScannedFile) -> String {
-        if self.top_lectures {
-            return String::new();
-        }
-        f.rel_dir
-            .components()
-            .next()
-            .map(|c| c.as_os_str().to_string_lossy().to_string())
-            .unwrap_or_default()
+        Layout { lecture_dirs }
     }
 
     /// The lecture folder a file is in, if any.
@@ -895,4 +881,13 @@ pub fn repair_section_titles(conn: &mut Connection) -> Result<usize> {
     queries::rebuild_search_index(&tx)?;
     tx.commit()?;
     Ok(fixes.len())
+}
+
+/// The section a file is in: its top folder ("" for the course's own).
+fn section_key(f: &ScannedFile) -> String {
+    f.rel_dir
+        .components()
+        .next()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .unwrap_or_default()
 }
