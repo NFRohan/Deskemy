@@ -103,6 +103,10 @@ export component PdfViewer inherits Rectangle {
         view.content-y = max(min(view.height - view.content-height, 0px), min(0px, view.content-y - dy));
     }
 
+    // Swallow the clicks and hovers nothing here takes (the pages, the space
+    // around them), so they don't reach the course page or player beneath.
+    TouchArea { }
+
     keys := FocusScope {
         init => { self.focus(); }
         key-pressed(event) => {
