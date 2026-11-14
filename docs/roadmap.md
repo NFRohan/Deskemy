@@ -227,8 +227,11 @@ command palette, A–B loop.
 
 - [x] **Manual resource pairing** — in [2.1](#21). Later, maybe: from the
   player's Resources panel too, and by dragging a resource onto a lecture.
-- [x] **Simple built-in PDF viewer** (dcsm8) — in [2.1](#21). Later, maybe:
-  find in the PDF, text selection, remembering the page per PDF.
+- [x] **Simple built-in PDF viewer** (dcsm8) — in [2.1](#21). Links work
+  since 2.1.2: web and mail links open in the browser (nothing else a PDF
+  names, such as a file or program), links to a page go there. Later, maybe:
+  addresses written as plain text (no link), find in the PDF, text
+  selection, remembering the page per PDF.
 - **Transcript panel** (later: needs a lot of design) — the lecture's
   subtitles as a scrolling transcript: click a line to jump, the current line
   highlighted, search within the lecture. Subtitle files are already parsed

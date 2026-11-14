@@ -5,12 +5,25 @@
 import { Theme } from "theme.slint";
 import { TitleBar } from "shell.slint";
 
+/// A link on a page: its area, as fractions of the page from its top left,
+/// and where it goes.
+export struct PdfLink {
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    /// A page of this PDF (from 0), or -1 for a web (or mail) address.
+    page: int,
+    url: string,
+}
+
 export struct PdfPage {
     image: image,
     /// Rendered (pages out of view have no pixels).
     has-image: bool,
     /// Height over width.
     aspect: float,
+    links: [PdfLink],
 }
 
 export global Pdf {
@@ -38,6 +51,8 @@ export global Pdf {
     callback zoom-by(int);
     /// Go to the previous (-1) or next (1) page.
     callback step(int);
+    /// A link was clicked: to a page (from 0), or a web address (page -1).
+    callback follow(int, string);
     /// The view scrolled or resized: its top (scrolled past), height, and the
     /// width pages are shown at.
     callback viewport(length, length, length);
@@ -94,6 +109,8 @@ export component PdfViewer inherits Rectangle {
     property <length> fit-width: max(120px, min(root.width - 48px, 880px));
     property <length> page-width: root.fit-width * Pdf.zoom;
     changed page-width => { root.report(); }
+    // The web address under the pointer, shown in a corner as browsers do.
+    property <string> hovered-url;
 
     function report() {
         Pdf.viewport(-view.content-y, view.height, root.page-width);
@@ -253,6 +270,24 @@ export component PdfViewer inherits Rectangle {
                                 source: page.image;
                                 image-fit: fill;
                             }
+                            for link in page.links: TouchArea {
+                                x: parent.width * link.x;
+                                y: parent.height * link.y;
+                                width: parent.width * link.w;
+                                height: parent.height * link.h;
+                                mouse-cursor: pointer;
+                                accessible-role: button;
+                                accessible-label: link.page >= 0 ? "Go to page \{link.page + 1}" : link.url;
+                                accessible-action-default => { Pdf.follow(link.page, link.url); }
+                                clicked => { Pdf.follow(link.page, link.url); }
+                                changed has-hover => {
+                                    if self.has-hover {
+                                        root.hovered-url = link.page >= 0 ? "Page \{link.page + 1}" : link.url;
+                                    } else if root.hovered-url == (link.page >= 0 ? "Page \{link.page + 1}" : link.url) {
+                                        root.hovered-url = "";
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -280,6 +315,24 @@ export component PdfViewer inherits Rectangle {
                 font-size: Theme.body-md;
                 horizontal-alignment: center;
                 wrap: word-wrap;
+            }
+        }
+
+        if root.hovered-url != "": Rectangle {
+            x: 8px;
+            y: parent.height - self.height - 8px;
+            width: min(url.preferred-width + 16px, parent.width - 16px);
+            height: 26px;
+            border-radius: 6px;
+            background: Theme.surface-container-highest;
+            url := Text {
+                x: 8px;
+                width: parent.width - 16px;
+                text: root.hovered-url;
+                color: Theme.on-surface;
+                font-size: Theme.label-md;
+                vertical-alignment: center;
+                overflow: elide;
             }
         }
     }

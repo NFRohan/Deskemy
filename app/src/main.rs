@@ -809,6 +809,12 @@ fn wire_pdf(ui: &AppWindow, viewer: &std::rc::Rc<pdf::Viewer>) {
         }
     });
     let (v, weak) = (viewer.clone(), ui.as_weak());
+    pdf.on_follow(move |page, url| {
+        if let Some(ui) = weak.upgrade() {
+            v.follow(&ui, page, &url);
+        }
+    });
+    let (v, weak) = (viewer.clone(), ui.as_weak());
     pdf.on_viewport(move |top, height, width| {
         if let Some(ui) = weak.upgrade() {
             v.viewport(&ui, top, height, width);

@@ -7,7 +7,7 @@
 //! and the UI lets go of pages far out of view. Without PDFium, PDFs open in
 //! the system's PDF app as before.
 
-use crate::{AppWindow, Course, Pdf, PdfPage, Playback, ResourceItem};
+use crate::{AppWindow, Course, Pdf, PdfLink, PdfPage, Playback, ResourceItem};
 use slint::{ComponentHandle, Model, Rgba8Pixel, SharedPixelBuffer};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -78,6 +78,32 @@ pub fn next_zoom(zoom: f32, direction: i32) -> f32 {
         d if d > 0 => ZOOMS.iter().copied().find(|z| *z > zoom + 0.001).unwrap_or(zoom),
         _ => ZOOMS.iter().rev().copied().find(|z| *z < zoom - 0.001).unwrap_or(zoom),
     }
+}
+
+/// Where a link on a page goes.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Target {
+    /// A page of the same PDF, from 0.
+    Page(usize),
+    /// A web or mail address.
+    Web(String),
+}
+
+/// A link on a page: its area (left, top, width, height, as fractions of the
+/// page from its top left) and where it goes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Link {
+    pub area: [f32; 4],
+    pub target: Target,
+}
+
+/// A link's address, if it's one to follow: web and mail addresses only,
+/// never a file or a program a PDF names.
+pub fn web(uri: &str) -> Option<Target> {
+    let uri = uri.trim();
+    let (scheme, rest) = uri.split_once(':')?;
+    let ok = matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https" | "mailto") && !rest.is_empty();
+    ok.then(|| Target::Web(uri.to_string()))
 }
 
 /// What the worker is asked to do.
@@ -271,14 +297,32 @@ impl Viewer {
 
     /// To the previous or next page's top.
     pub fn step(&self, ui: &AppWindow, delta: i32) {
+        self.go_to(ui, i64::from(ui.global::<Pdf>().get_current()) - 1 + i64::from(delta));
+    }
+
+    /// To a page's top (from 0; past either end, that end).
+    fn go_to(&self, ui: &AppWindow, page: i64) {
         let pdf = ui.global::<Pdf>();
         let state = self.state.borrow();
         let (_, height, width) = state.view;
         let pages = layout(&state.aspects, width);
         let Some(last) = pages.last() else { return };
-        let target = (pdf.get_current() - 1 + delta).clamp(0, pages.len() as i32 - 1) as usize;
+        let target = page.clamp(0, pages.len() as i64 - 1) as usize;
         let bottom = (last.0 + last.1 + PADDING - height).max(0.0);
         pdf.set_scroll_y(-(pages[target].0 - SPACING).clamp(0.0, bottom));
+    }
+
+    /// A link was clicked: to a page of this PDF, or a web address, opened in
+    /// the browser.
+    pub fn follow(&self, ui: &AppWindow, page: i32, url: &str) {
+        if page >= 0 {
+            self.go_to(ui, i64::from(page));
+        } else if let Some(Target::Web(url)) = web(url) {
+            tracing::info!(%url, "pdf link");
+            if let Err(e) = open::that_detached(&url) {
+                tracing::warn!(error = %e, %url, "open pdf link");
+            }
+        }
     }
 
     /// The view moved or resized: ask for the pages now in view, and let go
@@ -352,7 +396,10 @@ impl Viewer {
         pdf.set_loading(false);
         match result {
             Ok(aspects) => {
-                let rows = aspects.iter().map(|&aspect| PdfPage { image: Default::default(), has_image: false, aspect }).collect();
+                let rows = aspects
+                    .iter()
+                    .map(|&aspect| PdfPage { image: Default::default(), has_image: false, aspect, links: Default::default() })
+                    .collect();
                 pdf.set_pages(crate::course_panel::model(rows));
                 self.state.borrow_mut().aspects = aspects;
                 self.update(ui);
@@ -361,7 +408,7 @@ impl Viewer {
         }
     }
 
-    fn rendered(&self, ui: &AppWindow, generation: u64, page: usize, width: u32, pixels: SharedPixelBuffer<Rgba8Pixel>) {
+    fn rendered(&self, ui: &AppWindow, generation: u64, page: usize, width: u32, (pixels, links): Rendered) {
         let mut state = self.state.borrow_mut();
         if state.generation != generation || state.requested.get(&page) != Some(&width) {
             return;
@@ -378,6 +425,7 @@ impl Viewer {
         }
         row.image = slint::Image::from_rgba8(pixels);
         row.has_image = true;
+        row.links = link_rows(&links);
         rows.set_row_data(page, row);
         state.shown.insert(page);
     }
@@ -471,9 +519,9 @@ fn run(shared: &Shared, viewer: ViewerHandle) {
                 let Some((_, d)) = doc.as_ref().filter(|(g, _)| *g == generation) else { continue };
                 let started = std::time::Instant::now();
                 match render(d, page, width) {
-                    Ok(pixels) => {
-                        tracing::trace!(page, width, elapsed = ?started.elapsed(), "rendered");
-                        viewer.send(move |v, ui| v.rendered(ui, generation, page, width, pixels));
+                    Ok(rendered) => {
+                        tracing::trace!(page, width, links = rendered.1.len(), elapsed = ?started.elapsed(), "rendered");
+                        viewer.send(move |v, ui| v.rendered(ui, generation, page, width, rendered));
                     }
                     Err(e) => tracing::warn!(page, error = %e, "render pdf page"),
                 }
@@ -504,18 +552,76 @@ fn load<'a>(
     Ok((doc, aspects))
 }
 
-/// A page's pixels at a width.
+/// A rendered page: its pixels, and its links.
+type Rendered = (SharedPixelBuffer<Rgba8Pixel>, Vec<Link>);
+
+/// A page's pixels at a width, and its links.
 fn render(
     doc: &pdfium_render::prelude::PdfDocument,
     page: usize,
     width: u32,
-) -> Result<SharedPixelBuffer<Rgba8Pixel>, pdfium_render::prelude::PdfiumError> {
+) -> Result<Rendered, pdfium_render::prelude::PdfiumError> {
     use pdfium_render::prelude::{PdfPageIndex, PdfRenderConfig, Pixels};
     let config = PdfRenderConfig::new().set_target_width(width as Pixels).render_form_data(true);
     let page = doc.pages().get(page as PdfPageIndex)?;
     let bitmap = page.render_with_config(&config)?;
     let (w, h) = (bitmap.width().max(0) as u32, bitmap.height().max(0) as u32);
-    Ok(SharedPixelBuffer::clone_from_slice(&bitmap.as_rgba_bytes(), w, h))
+    let links = links(&page, &config, w, h);
+    Ok((SharedPixelBuffer::clone_from_slice(&bitmap.as_rgba_bytes(), w, h), links))
+}
+
+/// A page's links, placed on its render (`config`, `w` x `h` pixels): PDFium
+/// turns their page points into pixels, so a rotated or cropped page has
+/// them in the right place. Links that go nowhere we follow are left out.
+fn links(
+    page: &pdfium_render::prelude::PdfPage,
+    config: &pdfium_render::prelude::PdfRenderConfig,
+    w: u32,
+    h: u32,
+) -> Vec<Link> {
+    let (w, h) = (w.max(1) as f32, h.max(1) as f32);
+    page.links()
+        .iter()
+        .filter_map(|link| {
+            let target = target(&link)?;
+            let rect = link.rect().ok()?;
+            let a = page.points_to_pixels(rect.left(), rect.top(), config).ok()?;
+            let b = page.points_to_pixels(rect.right(), rect.bottom(), config).ok()?;
+            let (x0, x1) = (a.0.min(b.0) as f32 / w, a.0.max(b.0) as f32 / w);
+            let (y0, y1) = (a.1.min(b.1) as f32 / h, a.1.max(b.1) as f32 / h);
+            (x1 > x0 && y1 > y0).then_some(Link { area: [x0, y0, x1 - x0, y1 - y0], target })
+        })
+        .collect()
+}
+
+/// Where a link goes: a page of this PDF (its destination, or a go-to
+/// action's), or a web address (a URI action's).
+fn target(link: &pdfium_render::prelude::PdfLink) -> Option<Target> {
+    if let Some(dest) = link.destination() {
+        return dest.page_index().ok().map(|p| Target::Page(p as usize));
+    }
+    let action = link.action()?;
+    if let Some(uri) = action.as_uri_action() {
+        return web(&uri.uri().ok()?);
+    }
+    let local = action.as_local_destination_action()?;
+    local.destination().ok()?.page_index().ok().map(|p| Target::Page(p as usize))
+}
+
+/// Links as a page's row has them.
+fn link_rows(links: &[Link]) -> slint::ModelRc<PdfLink> {
+    let rows = links
+        .iter()
+        .map(|l| {
+            let [x, y, w, h] = l.area;
+            let (page, url) = match &l.target {
+                Target::Page(p) => (*p as i32, String::new()),
+                Target::Web(url) => (-1, url.clone()),
+            };
+            PdfLink { x, y, w, h, page, url: url.into() }
+        })
+        .collect();
+    crate::course_panel::model(rows)
 }
 
 /// Snapshots: open a PDF and render its first pages now, on this thread (no
@@ -532,8 +638,10 @@ pub fn sample(ui: &AppWindow, path: &str, page_width: f32) {
             .iter()
             .enumerate()
             .map(|(i, &aspect)| {
-                let pixels = (i < 2).then(|| render(&doc, i, render_width(page_width, 1.0)).ok()).flatten();
-                PdfPage { has_image: pixels.is_some(), image: pixels.map(slint::Image::from_rgba8).unwrap_or_default(), aspect }
+                let rendered = (i < 2).then(|| render(&doc, i, render_width(page_width, 1.0)).ok()).flatten();
+                let links = rendered.as_ref().map(|(_, links)| link_rows(links)).unwrap_or_default();
+                let image = rendered.map(|(pixels, _)| slint::Image::from_rgba8(pixels));
+                PdfPage { has_image: image.is_some(), image: image.unwrap_or_default(), aspect, links }
             })
             .collect();
         pdf.set_pages(crate::course_panel::model(rows));
@@ -604,7 +712,8 @@ mod tests {
         let pdfium = bind().unwrap();
         let (doc, aspects) = load(&pdfium, &path).unwrap();
         assert_eq!(aspects, vec![0.5]);
-        let pixels = render(&doc, 0, 400).unwrap();
+        let (pixels, links) = render(&doc, 0, 400).unwrap();
+        assert!(links.is_empty());
         assert_eq!((pixels.width(), pixels.height()), (400, 200));
         let at = |x: usize, y: usize| pixels.as_slice()[y * 400 + x];
         assert_eq!(at(20, 100), Rgba8Pixel { r: 0, g: 0, b: 255, a: 255 });
@@ -616,6 +725,50 @@ mod tests {
         std::fs::write(&junk, "hello").unwrap();
         assert!(load(&pdfium, &junk).unwrap_err().contains("doesn't look like a PDF"));
         assert!(load(&pdfium, &tmp.path().join("gone.pdf")).unwrap_err().starts_with("The file couldn't be read"));
+    }
+
+    /// Two 200x100 pages. Page 1's links: its top left quarter to a web page,
+    /// its bottom right to page 2, and its bottom left to a program (one we
+    /// never open).
+    const LINKED: &str = "%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n\
+        2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj\n\
+        3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Annots [5 0 R 6 0 R 7 0 R] >> endobj\n\
+        4 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] >> endobj\n\
+        5 0 obj << /Type /Annot /Subtype /Link /Rect [0 50 100 100] /A << /S /URI /URI (https://example.com/a) >> >> endobj\n\
+        6 0 obj << /Type /Annot /Subtype /Link /Rect [100 0 200 50] /Dest [4 0 R /Fit] >> endobj\n\
+        7 0 obj << /Type /Annot /Subtype /Link /Rect [0 0 50 50] /A << /S /URI /URI (file:///C:/Windows/System32/calc.exe) >> >> endobj\n\
+        trailer << /Root 1 0 R >>\n%%EOF\n";
+
+    #[test]
+    fn links_are_placed_on_the_page() {
+        if library().is_none() {
+            eprintln!("skipped: no PDFium beside the test (app/scripts/get-pdfium.ps1)");
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("linked.pdf");
+        std::fs::write(&path, LINKED).unwrap();
+        let pdfium = bind().unwrap();
+        let (doc, _) = load(&pdfium, &path).unwrap();
+        let (_, mut links) = render(&doc, 0, 400).unwrap();
+        links.sort_by(|a, b| a.area[0].total_cmp(&b.area[0]));
+        let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.01);
+        assert_eq!(links.len(), 2, "{links:?}");
+        assert!(near(links[0].area, [0.0, 0.0, 0.5, 0.5]), "{links:?}");
+        assert_eq!(links[0].target, Target::Web("https://example.com/a".into()));
+        assert!(near(links[1].area, [0.5, 0.5, 0.5, 0.5]), "{links:?}");
+        assert_eq!(links[1].target, Target::Page(1));
+        assert!(render(&doc, 1, 400).unwrap().1.is_empty());
+    }
+
+    #[test]
+    fn only_web_and_mail_links_open() {
+        assert_eq!(web(" https://example.com "), Some(Target::Web("https://example.com".into())));
+        assert_eq!(web("HTTP://x"), Some(Target::Web("HTTP://x".into())));
+        assert_eq!(web("mailto:a@b.c"), Some(Target::Web("mailto:a@b.c".into())));
+        for no in ["file:///C:/x.exe", "C:\\x.exe", "javascript:alert(1)", "ms-settings:", "smb://host/x", "https:", "example.com"] {
+            assert_eq!(web(no), None, "{no}");
+        }
     }
 
     #[test]
