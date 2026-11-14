@@ -193,6 +193,11 @@ export global Playback {
     callback toggle-subtitles();
     /// < / >: previous / next preset speed.
     callback step-speed(int);
+    /// The A–B loop (seconds; -1 for not set). `ab-loop` steps it on: the
+    /// start where playback is, then the end, then off.
+    in property <float> loop-a: -1;
+    in property <float> loop-b: -1;
+    callback ab-loop();
     /// Drop the course's own speed for the default.
     callback use-default-speed();
     /// I: show / hide the playback-info overlay.
@@ -253,6 +258,13 @@ export component IconButton inherits Rectangle {
     }
 }
 
+// One end of an A–B loop, on the seek bar.
+component LoopEnd inherits Rectangle {
+    width: 3px;
+    border-radius: 1.5px;
+    background: #38bdf8;
+}
+
 // A thin scrubbable track; `value` is 0..1. `changed` fires continuously while
 // dragging, `committed` once on release (seeking commits, volume follows live).
 export component Scrubber inherits Rectangle {
@@ -268,6 +280,10 @@ export component Scrubber inherits Rectangle {
     /// pointing at one shows its label, clicking it commits its spot.
     in property <[BookmarkRow]> marks;
     in property <float> span;
+    /// A loop along it, in seconds out of `span` (-1: not set): its start
+    /// marked, and once it has an end, the stretch between.
+    in property <float> loop-from: -1;
+    in property <float> loop-to: -1;
 
     property <float> shown: max(0, min(1, touch.pressed ? root.preview : root.value));
     property <length> track: touch.has-hover || touch.pressed ? root.thickness + 2px : root.thickness;
@@ -288,6 +304,24 @@ export component Scrubber inherits Rectangle {
             border-radius: parent.border-radius;
             background: #ffffff;
         }
+
+        if root.span > 0 && root.loop-to >= 0: Rectangle {
+            x: parent.width * max(0, root.loop-from / root.span);
+            width: parent.width * max(0, min(1, root.loop-to / root.span) - max(0, root.loop-from / root.span));
+            height: parent.height;
+            background: #38bdf8b3;
+        }
+    }
+
+    if root.span > 0 && root.loop-from >= 0: LoopEnd {
+        x: root.width * max(0, min(1, root.loop-from / root.span)) - self.width / 2;
+        y: (root.height - self.height) / 2;
+        height: root.track + 8px;
+    }
+    if root.span > 0 && root.loop-to >= 0: LoopEnd {
+        x: root.width * max(0, min(1, root.loop-to / root.span)) - self.width / 2;
+        y: (root.height - self.height) / 2;
+        height: root.track + 8px;
     }
 
     if touch.has-hover || touch.pressed: Rectangle {
@@ -534,6 +568,7 @@ export component PlayerOverlay inherits Rectangle {
                 { keys: "M", action: "Mute" },
                 { keys: "C", action: "Toggle subtitles" },
                 { keys: "< / >", action: "Speed down / up" },
+                { keys: "A", action: "Loop: start, end, off" },
                 { keys: "0 – 9", action: "Jump to 0–90%" },
                 { keys: "Home / End", action: "Start / end" },
             ],
@@ -641,6 +676,8 @@ export component PlayerOverlay inherits Rectangle {
             Playback.seek(0);
         } else if event.text == Key.End {
             Playback.seek(Playback.duration * 0.999);
+        } else if event.text == "a" {
+            Playback.ab-loop();
         } else if event.text == "b" {
             if Playback.in-library {
                 Playback.open-bookmark();
@@ -911,6 +948,8 @@ export component PlayerOverlay inherits Rectangle {
                         value: Playback.duration > 0 ? Playback.live-position / Playback.duration : 0;
                         marks: Playback.bookmarks;
                         span: Playback.duration;
+                        loop-from: Playback.loop-a;
+                        loop-to: Playback.loop-b;
                         committed(v) => { Playback.seek(v * Playback.duration); }
                     }
                     Text {
@@ -1036,6 +1075,22 @@ export component PlayerOverlay inherits Rectangle {
                         icon: @image-url("icons/m-bedtime.svg");
                         active: Playback.open-menu == "sleep" || Playback.sleep-mode != "off";
                         clicked => { root.toggle-menu("sleep"); }
+                    }
+
+                    // The A–B loop: its button, or while one is set, its
+                    // stretch (a press goes on to the end, or turns it off).
+                    if Playback.loop-a < 0: IconButton {
+                        icon: @image-url("icons/m-repeat.svg");
+                        accessible-role: button;
+                        accessible-label: "Loop a stretch (A)";
+                        clicked => { Playback.ab-loop(); }
+                    }
+                    if Playback.loop-a >= 0: Chip {
+                        text: root.time(Playback.loop-a) + " – " + (Playback.loop-b >= 0 ? root.time(Playback.loop-b) : "…");
+                        selected: false;
+                        accessible-role: button;
+                        accessible-label: Playback.loop-b >= 0 ? "Turn the loop off (A)" : "End the loop here (A)";
+                        clicked => { Playback.ab-loop(); }
                     }
 
                     // Speed: shows the current rate, like the Tauri picker.

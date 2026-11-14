@@ -301,6 +301,8 @@ impl Session {
         drop(db);
 
         let file = mpv::file_arg(&item.path);
+        // The last lecture's loop isn't this one's.
+        crate::ab_loop::clear(&self.mpv);
         let loaded = if start > 1.0 { self.load_at(&file, start) } else { self.mpv.command(&["loadfile", &file]) };
         loaded.map_err(|e| e.to_string())?;
         let _ = self.mpv.set_property("pause", "no");
@@ -780,6 +782,20 @@ mod tests {
         // Stepping past either end is a no-op.
         session.step(1).unwrap();
         assert_eq!(session.now_playing().1.title, "Third");
+    }
+
+    #[test]
+    fn a_lecture_loads_without_the_last_ones_loop() {
+        let Some(mpv) = headless_mpv() else { return };
+        let (_tmp, db, lectures) = library();
+        let session = Session::new(mpv.clone(), db, settings::shared(AppConfig::default()));
+
+        session.open(&lectures[0]).unwrap();
+        mpv.set_property("ab-loop-a", "2").unwrap();
+        mpv.set_property("ab-loop-b", "4").unwrap();
+        assert_eq!(crate::ab_loop::read(&mpv), (Some(2.0), Some(4.0)));
+        session.step(1).unwrap();
+        assert_eq!(crate::ab_loop::read(&mpv), (None, None));
     }
 
     #[test]

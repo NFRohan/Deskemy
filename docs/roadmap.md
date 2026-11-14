@@ -223,7 +223,7 @@ File dialogs use rfd's default backend, the XDG desktop portal (no GTK).
 
 Priority (2.1): manual resource pairing, the PDF viewer, drag & drop import.
 Later: the transcript panel (needs a lot of design). Held: study plan,
-command palette, A–B loop.
+command palette.
 
 - [x] **Manual resource pairing** — in [2.1](#21). Later, maybe: from the
   player's Resources panel too, and by dragging a resource onto a lecture.
@@ -246,8 +246,11 @@ command palette, A–B loop.
 - **Study plan** (held) — pick a finish date for a course; it works out the daily
   minutes and shows "today: 2 lectures, 25 min" on the library, building on the
   daily goal and streaks.
-- **A–B loop** — repeat a stretch of a lecture, optionally slower (mpv's
-  `ab-loop-a` / `ab-loop-b`). On hold: rarely used — until someone asks.
+- [x] **A–B loop** (2.1.2) — repeat a stretch of a lecture, slower with the
+  speed control if wanted (mpv's `ab-loop-a` / `ab-loop-b`). A, or the loop
+  button: the start, then the end, then off; the stretch shows on the seek
+  bar and as a chip by the speed. Each lecture loads without one. Later,
+  maybe: dragging its ends on the seek bar.
 - **Command palette** (held) — Ctrl+K to jump to any course or lecture, or run an
   action.
 - [x] **Follow-along mini player** — shipped in 2.0.

@@ -1,6 +1,7 @@
 // Release builds are GUI-only on Windows (no console window).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ab_loop;
 mod awake;
 mod caption;
 mod career;

@@ -634,6 +634,8 @@ fn wire_controls(ui: &AppWindow, session: &Arc<Session>, mpv: &Arc<Mpv>, seeks: 
     });
     let s = session.clone();
     playback.on_use_default_speed(move || s.use_default_speed());
+    let m = mpv.clone();
+    playback.on_ab_loop(move || crate::ab_loop::press(&m));
 
     let (s, m) = (session.clone(), mpv.clone());
     playback.on_step_speed(move |dir| {
@@ -930,6 +932,7 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
 
         let reading = seeks.reading();
         let s = State::sample(mpv);
+        let (loop_a, loop_b) = crate::ab_loop::read(mpv);
         session.track_end(s.at_end, s.position.is_some());
         session.tick(s.position, s.duration, s.paused);
         // The mini player keeps the video's shape; being that shape, the
@@ -1066,6 +1069,8 @@ fn pump_events(mpv: &Mpv, session: &Session, seeks: &Arc<Seeks>, stats_open: &At
             playback.set_sleep_mode(sleep_mode.into());
             playback.set_sleep_badge(sleep_badge.into());
             playback.set_sleep_minutes(sleep_minutes);
+            playback.set_loop_a(loop_a.map_or(-1.0, |t| t as f32));
+            playback.set_loop_b(loop_b.map_or(-1.0, |t| t as f32));
         });
     }
     awake::keep_awake(false);

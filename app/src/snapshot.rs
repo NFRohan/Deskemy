@@ -142,6 +142,12 @@ pub fn sample_playback(ui: &crate::AppWindow, menu: &str, db: &crate::session::D
         "stats" | "mini" => {}
         "mini-exercise" => playback.set_open_menu("exercise".into()),
         "soon" | "mini-soon" => playback.set_resources_soon(true),
+        // An A–B loop: its start only, or start and end.
+        "loop-start" => playback.set_loop_a(40.0),
+        "loop" => {
+            playback.set_loop_a(40.0);
+            playback.set_loop_b(75.0);
+        }
         // The speed menu for a course with its own saved speed.
         "speed-saved" => {
             playback.set_speed_default("1×".into());
