@@ -1,0 +1,23 @@
+# A subtitle spelled with a double space where its video has one (9. RDS  Security.en_US.vtt for 9. RDS Security.mp4: the downloader dropped a ':'), the language after a dot as a code and region.
+root: Udemy - Ultimate AWS Certified Solutions Architect Associate 2026
+--- files
+09. AWS Fundamentals RDS + Aurora + ElastiCache/10. RDS Proxy.en_US.vtt
+09. AWS Fundamentals RDS + Aurora + ElastiCache/10. RDS Proxy.mp4
+09. AWS Fundamentals RDS + Aurora + ElastiCache/7. Amazon Aurora - Advanced Concepts.en_US.vtt
+09. AWS Fundamentals RDS + Aurora + ElastiCache/7. Amazon Aurora - Advanced Concepts.mp4
+09. AWS Fundamentals RDS + Aurora + ElastiCache/8. RDS & Aurora - Backup and Monitoring.en_US.vtt
+09. AWS Fundamentals RDS + Aurora + ElastiCache/8. RDS & Aurora - Backup and Monitoring.mp4
+09. AWS Fundamentals RDS + Aurora + ElastiCache/9. RDS  Security.en_US.vtt
+09. AWS Fundamentals RDS + Aurora + ElastiCache/9. RDS Security.mp4
+--- expected
+found: one course
+course: Udemy - Ultimate AWS Certified Solutions Architect Associate 2026
+== AWS Fundamentals RDS + Aurora + ElastiCache
+  Amazon Aurora - Advanced Concepts
+    ~ en-us
+  RDS & Aurora - Backup and Monitoring
+    ~ en-us
+  RDS Security
+    ~ en-us
+  RDS Proxy
+    ~ en-us

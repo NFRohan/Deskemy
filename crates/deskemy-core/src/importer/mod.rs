@@ -801,8 +801,11 @@ fn match_subtitle<'a>(f: &ScannedFile, section: &'a PlannedSection) -> Option<(&
     if numbered.next().is_some() {
         return None;
     }
+    // `9. RDS  Security.en_US`: a code after a dot; `10-Linux_vs._Unix RUS`:
+    // a language as the last word, when it can't be a short word instead.
+    let dotted = sub_stem.rsplit_once('.').and_then(|(_, code)| language::parse(code));
     let last = sub_stem.rsplit([' ', '_', '-', '.']).next().unwrap_or_default();
-    Some((lec, language::parse_unambiguous(last)))
+    Some((lec, dotted.or_else(|| language::parse_unambiguous(last))))
 }
 
 /// Match a resource file to a lecture: one named like it, then one with its
