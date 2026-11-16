@@ -143,6 +143,35 @@ pub fn delete_course(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// What hangs off a course itself and outlives a re-import, which deletes the
+/// course and inserts it again under the same id: the career tracks it's in
+/// (GH #14) and its playback preferences. Per-lecture data is remapped by the
+/// importer instead (lecture ids change).
+const KEPT_ON_REIMPORT: &[&str] = &["track_courses", "course_prefs"];
+
+/// Set a course's kept rows aside, ahead of `delete_course` in a re-import
+/// (in its transaction); `restore_kept_rows` puts them back.
+pub fn set_aside_kept_rows(conn: &Connection, course_id: &str) -> Result<()> {
+    for table in KEPT_ON_REIMPORT {
+        conn.execute_batch(&format!(
+            "DROP TABLE IF EXISTS temp.kept_{table}; CREATE TEMP TABLE kept_{table} AS SELECT * FROM main.{table} WHERE 0;"
+        ))?;
+        conn.execute(&format!("INSERT INTO temp.kept_{table} SELECT * FROM main.{table} WHERE course_id = ?1"), params![course_id])?;
+    }
+    Ok(())
+}
+
+/// Put back what `set_aside_kept_rows` kept, once the course is inserted
+/// again under the same id.
+pub fn restore_kept_rows(conn: &Connection) -> Result<()> {
+    for table in KEPT_ON_REIMPORT {
+        conn.execute_batch(&format!(
+            "INSERT OR IGNORE INTO main.{table} SELECT * FROM temp.kept_{table}; DROP TABLE temp.kept_{table};"
+        ))?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn insert_course(
     conn: &Connection,
@@ -614,7 +643,7 @@ pub fn pair_resource(conn: &Connection, attachment_id: &str, lecture_id: Option<
 
 /// Back to the importer's placement.
 pub fn unpair_resource(conn: &Connection, attachment_id: &str) -> Result<()> {
-    // Gone (a rescan re-imported the course under new ids): say so, rather
+    // Gone (a rescan gave the course's resources new ids): say so, rather
     // than seem to have done it.
     let exists: bool =
         conn.query_row("SELECT EXISTS (SELECT 1 FROM attachments WHERE id = ?1)", params![attachment_id], |r| r.get(0))?;
@@ -658,7 +687,7 @@ pub fn restore_resource_pairing(
 
 /// Mark a resource done or not.
 /// Whether a resource is marked done; None when there's no such resource
-/// (a rescan gave the course new ids).
+/// (a rescan gave the course's resources new ids).
 pub fn attachment_completed(conn: &Connection, attachment_id: &str) -> Result<Option<bool>> {
     let done = conn
         .query_row(

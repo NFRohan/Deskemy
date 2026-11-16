@@ -268,16 +268,19 @@ impl Importer {
         let sections = &plan.sections;
         let scan = &plan.scan;
 
-        let course_id = new_id();
         let thumbnail = detect_thumbnail(scan);
 
         let tx = conn.transaction()?;
         // Replace any previous import of the same folder. Re-read inside the tx:
         // the DB was unlocked during the probe, and folder_path is UNIQUE, so
-        // replace whatever occupies it now (atomic with the re-insert).
-        if let Some(existing) = queries::find_course_by_path(&tx, &snap.folder_path)? {
-            queries::delete_course(&tx, &existing)?;
+        // replace whatever occupies it now (atomic with the re-insert). The
+        // course keeps its id, and the tracks it's in and its preferences.
+        let existing = queries::find_course_by_path(&tx, &snap.folder_path)?;
+        if let Some(existing) = &existing {
+            queries::set_aside_kept_rows(&tx, existing)?;
+            queries::delete_course(&tx, existing)?;
         }
+        let course_id = existing.clone().unwrap_or_else(new_id);
         queries::insert_course(
             &tx,
             &course_id,
@@ -286,6 +289,9 @@ impl Importer {
             &snap.folder_path,
             crate::domain::ScanStatus::Scanning.as_str(),
         )?;
+        if existing.is_some() {
+            queries::restore_kept_rows(&tx)?;
+        }
         queries::fts_insert(&tx, "course", &course_id, &course_id, &snap.title)?;
 
         let mut lecture_count: i64 = 0;

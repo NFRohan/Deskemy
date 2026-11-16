@@ -116,10 +116,27 @@ fn reimport_preserves_user_data() {
     db::queries::add_bookmark(&conn, &old_lec_id, 42.0, Some("note")).unwrap();
     db::queries::add_tag(&conn, &cid1, "sql").unwrap();
     db::queries::set_favorite(&conn, &cid1, true).unwrap();
+    // In two career tracks (second in one of them), with its own speed and
+    // subtitle language.
+    let other = tmp.path().join("Other");
+    fs::create_dir_all(&other).unwrap();
+    touch(&other.join("1 - Intro.mp4"));
+    let other_id = importer.import_course(&mut conn, None, &other).unwrap();
+    let (backend, devops) = (
+        db::queries::create_track(&conn, "Backend", None).unwrap(),
+        db::queries::create_track(&conn, "DevOps", None).unwrap(),
+    );
+    db::queries::add_course_to_track(&conn, &backend, &cid1).unwrap();
+    db::queries::add_course_to_track(&conn, &devops, &other_id).unwrap();
+    db::queries::add_course_to_track(&conn, &devops, &cid1).unwrap();
+    db::queries::set_pref_speed(&conn, &cid1, 1.5).unwrap();
+    let pick = db::queries::SubtitlePick { id: 2, lang: "en", title: None };
+    db::queries::set_pref_subtitle(&conn, &cid1, Some(pick)).unwrap();
 
-    // Re-import the same folder → new ids, but user data must survive.
+    // Re-import the same folder (as a rescan does): new lecture ids, but the
+    // course keeps its id and user data must survive.
     let cid2 = importer.import_course(&mut conn, None, &course).unwrap();
-    assert_ne!(cid1, cid2);
+    assert_eq!(cid1, cid2, "a re-import keeps the course's id");
 
     let detail2 = db::queries::get_course_detail(&conn, &cid2).unwrap().unwrap();
     let lec2 = detail2
@@ -144,6 +161,17 @@ fn reimport_preserves_user_data() {
     // Tag + favorite preserved on the new course.
     assert_eq!(db::queries::tags_for_course(&conn, &cid2).unwrap(), vec!["sql".to_string()]);
     assert!(detail2.is_favorite);
+
+    // Still in both tracks, in its place (GH #14), with its preferences.
+    let in_track = |track: &str| -> Vec<String> {
+        db::queries::get_track(&conn, track).unwrap().unwrap().courses.into_iter().map(|c| c.id).collect()
+    };
+    assert_eq!(in_track(&backend), vec![cid2.clone()]);
+    assert_eq!(in_track(&devops), vec![other_id, cid2.clone()]);
+    let prefs = db::queries::get_course_prefs(&conn, &cid2).unwrap().unwrap();
+    assert_eq!(prefs.speed, Some(1.5));
+    assert_eq!(prefs.subtitle_lang.as_deref(), Some("en"));
+    assert!(prefs.subtitles_on);
 }
 
 #[test]
