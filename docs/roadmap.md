@@ -158,6 +158,18 @@ what's paired with the lecture.
   the first time the course plays. Schema v10. Reply on the issue when 2.1
   is out. (Audio tracks are still remembered by number: courses rarely have
   more than one.)
+- **#13 New feature ideas** — for later. Small: mouse back on every page
+  (today the player and PDF viewer only), an "open folder" button on the
+  course page, hide finished courses in the library, tag autocomplete,
+  tracks by most recently used, a selectable course title. Bigger: notes
+  on a course or track (plain text first: Slint has no markdown; overlaps
+  #5), a course homepage URL, a track header image. Not planned: LLM
+  summaries of subtitles (no cloud).
+- **#14 A course leaves its career tracks after a file in it is edited** —
+  fixed for 2.1.2: a re-import (auto-rescan) deleted the course and put it
+  back under a new id, and the delete took its track memberships and its
+  playback preferences with it. A re-import now keeps the course's id and
+  both. Reply on the issue when 2.1.2 is out.
 
 ## Windows polish
 
