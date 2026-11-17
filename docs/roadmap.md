@@ -23,7 +23,13 @@ checklist live in [slint-port.md](slint-port.md).
   before a lecture ends), bookmarks on the seek bar, search grouped by kind
   and as you type, sections in the player's title bar, exact skips and a
   seek bar that glides. Built on the linux-port branch; Linux itself is held
-  for more testing.
+  for more testing. The Linux beta (AppImage, .deb, .rpm) was added to it
+  on 2026-10-25.
+- **2.1.2** (2026-11-17) — the A–B loop, links in PDFs (and no clicks
+  through the viewer), the importer sweep of real downloads (subtitles as
+  downloaders name them, wrapper folders, a folder per lecture, site
+  adverts and tags, mangled names), and courses kept in their career
+  tracks through a rescan (#14).
 
 ## Order of work
 

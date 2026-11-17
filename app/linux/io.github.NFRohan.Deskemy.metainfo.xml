@@ -58,6 +58,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="2.1.2" date="2026-11-17">
+      <url type="details">https://github.com/NFRohan/Deskemy/releases/tag/v2.1.2</url>
+      <description>
+        <p>An A-B loop to replay a stretch of a lecture, links that work in PDFs, courses from many more downloaders imported the way they're laid out, and courses that stay in their career tracks when their folder changes.</p>
+      </description>
+    </release>
     <release version="2.1.1" date="2026-10-24">
       <url type="details">https://github.com/NFRohan/Deskemy/releases/tag/v2.1.1</url>
       <description>
