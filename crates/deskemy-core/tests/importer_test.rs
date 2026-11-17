@@ -516,6 +516,36 @@ fn subtitle_search_marks_matched_words() {
 }
 
 #[test]
+fn every_subtitle_language_is_searched_and_a_moment_shows_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let course = tmp.path().join("K8s");
+    fs::create_dir_all(&course).unwrap();
+    touch(&course.join("001 Pods.mp4"));
+    let srt = |first: &str, second: &str| {
+        format!("1\n00:00:05,000 --> 00:00:07,000\n{first}\n\n2\n00:00:40,000 --> 00:00:42,000\n{second}\n")
+    };
+    fs::write(course.join("001 Pods.en.srt"), srt("Kubernetes runs your pods.", "Kubernetes again, and a quokka.")).unwrap();
+    fs::write(course.join("001 Pods.es.srt"), srt("Kubernetes ejecuta tus pods.", "Kubernetes otra vez, y un ornitorrinco.")).unwrap();
+
+    let mut conn = db::open_in_memory().unwrap();
+    Importer::new(Box::new(StubProber)).import_course(&mut conn, None, &course).unwrap();
+    let db = std::sync::Mutex::new(conn);
+    assert_eq!(deskemy_core::maintenance::reindex_subtitles(&db).unwrap(), 4, "both languages indexed");
+    let conn = db.lock().unwrap();
+    let at = |q: &str| -> Vec<i64> {
+        let mut t: Vec<i64> = db::queries::subtitle_search(&conn, q, 10).unwrap().iter().map(|h| h.start_ms).collect();
+        t.sort();
+        t
+    };
+
+    // In both languages at both moments: each moment once.
+    assert_eq!(at("kubernetes"), [5000, 40000]);
+    // In one language only, either one.
+    assert_eq!(at("quokka"), [40000]);
+    assert_eq!(at("ornitorrinco"), [40000]);
+}
+
+#[test]
 fn a_course_s_subtitles_index_on_their_own() {
     let tmp = tempfile::tempdir().unwrap();
     let srt = |text: &str| format!("1\n00:00:02,000 --> 00:00:04,000\n{text}\n");

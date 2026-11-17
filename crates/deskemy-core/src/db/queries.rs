@@ -1130,14 +1130,27 @@ pub fn subtitle_search_marked(
     let Some(expr) = fts_match_expr(query, "text") else {
         return Ok(Vec::new());
     };
+    // A lecture's subtitles in several languages share their timing, so one
+    // word (a name, a command) matches at the same moment in each: a moment
+    // of a lecture (to the second) is one hit, its best-ranked match.
     let mut stmt = conn.prepare(
-        "SELECT si.lecture_id, si.course_id, c.title, l.title, si.start_ms,
-                snippet(subtitle_index, 3, ?3, ?4, '…', 10)
-           FROM subtitle_index si
-           JOIN lectures l ON l.id = si.lecture_id
-           JOIN courses  c ON c.id = si.course_id
-          WHERE subtitle_index MATCH ?1
-          ORDER BY rank
+        // (snippet() can't share a query with a window function: the match
+        // runs on its own first, MATERIALIZED, and the moments are picked
+        // from its rows.)
+        "WITH hits AS MATERIALIZED (
+             SELECT si.lecture_id, si.course_id, si.start_ms,
+                    snippet(subtitle_index, 3, ?3, ?4, '…', 10) AS snip, rank AS score
+               FROM subtitle_index si
+              WHERE subtitle_index MATCH ?1),
+         moments AS (
+             SELECT *, ROW_NUMBER() OVER (PARTITION BY lecture_id, start_ms / 1000 ORDER BY score) AS nth
+               FROM hits)
+         SELECT m.lecture_id, m.course_id, c.title, l.title, m.start_ms, m.snip
+           FROM moments m
+           JOIN lectures l ON l.id = m.lecture_id
+           JOIN courses  c ON c.id = m.course_id
+          WHERE m.nth = 1
+          ORDER BY m.score
           LIMIT ?2",
     )?;
     let rows = stmt
