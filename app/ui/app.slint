@@ -8,7 +8,7 @@ import {
 } from "player.slint";
 import { CoursePanel } from "course_panel.slint";
 import { MiniPlayer } from "mini.slint";
-import { Nav, Sidebar, TopBar, WindowChrome } from "shell.slint";
+import { MacWindowButtons, Nav, Sidebar, TopBar, WindowChrome } from "shell.slint";
 import { CourseCard, Hero, Library, LibraryPage, SelectOption } from "library.slint";
 import { Course, CourseDialogs, CoursePage, CurriculumLecture, CurriculumSection, PairRow } from "course.slint";
 import {
@@ -159,6 +159,11 @@ export component AppWindow inherits Window {
         }
     }
 
+    // macOS: the window buttons, in the top-left corner over the sidebar or
+    // the player's title bar. Under the dialogs below, as the caption
+    // buttons are elsewhere.
+    if WindowChrome.mac && !Pdf.open && (!root.playing || (!Playback.fullscreen && !Playback.mini)): MacWindowButtons { }
+
     // Page dialogs dim the whole window, sidebar included.
     if root.course-dialog: CourseDialogs {
         width: parent.width;
@@ -191,4 +196,7 @@ export component AppWindow inherits Window {
         width: parent.width;
         height: parent.height;
     }
+
+    // macOS: the window buttons again, over the PDF viewer.
+    if WindowChrome.mac && Pdf.open: MacWindowButtons { }
 }
