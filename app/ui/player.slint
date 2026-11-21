@@ -1703,6 +1703,7 @@ export component PlayerTopBar inherits TitleBar {
         : Playback.subtitle == "" ? ["Library", Playback.course-title, Playback.title]
         : ["Library", Playback.course-title, Playback.subtitle, Playback.title];
     targets: Playback.course-id == "" ? ["library", ""] : ["library", "course", "", ""];
+    at-left-edge: true;
     back-button: true;
     back => { Playback.back(); }
     picked(i) => {

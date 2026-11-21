@@ -160,6 +160,7 @@ export component PdfViewer inherits Rectangle {
         VerticalLayout {
             TitleBar {
                 crumbs: [Pdf.name];
+                at-left-edge: true;
                 targets: [""];
                 back-button: true;
                 back => { Pdf.close(); }
