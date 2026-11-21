@@ -6,6 +6,8 @@ import { AddFolderButton, Import } from "import.slint";
 
 /// Window actions (carried out in Rust) and the state their buttons show.
 export global WindowChrome {
+    /// macOS: its own window buttons, in the top-left corner.
+    out property <bool> mac: Platform.os == OperatingSystemType.macos;
     in property <bool> maximized;
     /// The pointer is on / pressed on the maximize button, as Windows tells
     /// it (over that button its input goes to Windows, for Snap Layouts).
@@ -119,10 +121,97 @@ export component WindowButtons inherits HorizontalLayout {
     }
 }
 
+/// A window button as macOS draws them: a 12px dot in its color, with its
+/// mark shown while the pointer is on any of the three. The hit box is 20px
+/// wide and 16px tall, so the three touch and the group's hover doesn't
+/// flicker between them.
+component TrafficLight inherits Rectangle {
+    in property <string> label;
+    in property <color> tint;
+    in property <color> edge;
+    in property <color> mark;
+    /// The mark, as path commands on a 6x6 box.
+    in property <string> glyph;
+    in property <bool> show-glyph;
+    callback clicked;
+    out property <bool> hover: touch.has-hover;
+
+    width: 20px;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    Rectangle {
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: touch.pressed ? root.tint.darker(0.2) : root.tint;
+        border-width: 0.5px;
+        border-color: root.edge;
+    }
+    if root.show-glyph: Path {
+        width: 6px;
+        height: 6px;
+        viewbox-width: 6;
+        viewbox-height: 6;
+        commands: root.glyph;
+        fill: transparent;
+        stroke: root.mark;
+        stroke-width: 1px;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Close / minimize / maximize, in the window's top-left corner (macOS):
+/// 4px in, 60px wide, centred on the 48px title bar. Only 16px tall, so a
+/// click above or below them still moves the window.
+/// Green maximizes, as Option-click does on macOS, not fullscreen.
+export component MacWindowButtons inherits HorizontalLayout {
+    x: 4px;
+    y: 16px;
+    width: 3 * 20px;
+    height: 16px;
+    property <bool> hover: close.hover || minimize.hover || zoom.hover;
+
+    close := TrafficLight {
+        label: "Close";
+        tint: #ff5f57;
+        edge: #e0443e;
+        mark: #4d0000;
+        glyph: "M 0.5 0.5 L 5.5 5.5 M 5.5 0.5 L 0.5 5.5";
+        show-glyph: root.hover;
+        clicked => { WindowChrome.close(); }
+    }
+    minimize := TrafficLight {
+        label: "Minimize";
+        tint: #febc2e;
+        edge: #dea123;
+        mark: #995700;
+        glyph: "M 0 3 L 6 3";
+        show-glyph: root.hover;
+        clicked => { WindowChrome.minimize(); }
+    }
+    zoom := TrafficLight {
+        label: WindowChrome.maximized ? "Restore" : "Maximize";
+        tint: #28c840;
+        edge: #1aab29;
+        mark: #006500;
+        glyph: "M 3 0 L 3 6 M 0 3 L 6 3";
+        show-glyph: root.hover;
+        clicked => { WindowChrome.toggle-maximize(); }
+    }
+}
+
 /// The 48px title bar: drag it to move the window, double-click to maximize;
 /// breadcrumbs on the left (the last is where you are; others with a target
-/// are links), window buttons on the right.
+/// are links), window buttons on the right. On macOS the window draws its own
+/// buttons in the top-left corner (MacWindowButtons).
 export component TitleBar inherits Rectangle {
+    /// The bar starts at the window's left edge (the player, the PDF viewer):
+    /// on macOS, it leaves room for the window buttons there.
+    in property <bool> at-left-edge;
     in property <[string]> crumbs;
     /// Per crumb, where it leads ("" = not a link).
     in property <[string]> targets;
@@ -140,9 +229,10 @@ export component TitleBar inherits Rectangle {
         }
 
         HorizontalLayout {
-            padding-left: root.back-button ? 8px : 16px;
-            // Room for the caption buttons (3 x 46px), which sit in the corner.
-            padding-right: 3 * 46px + 8px;
+            // Room for the window buttons, which sit in a corner: on macOS
+            // the left one (64px), elsewhere the right one (3 x 46px).
+            padding-left: (WindowChrome.mac && root.at-left-edge ? 64px : 0px) + (root.back-button ? 8px : 16px);
+            padding-right: WindowChrome.mac ? 16px : 3 * 46px + 8px;
             spacing: 6px;
 
             if root.back-button: HorizontalLayout {
@@ -188,7 +278,7 @@ export component TitleBar inherits Rectangle {
             Rectangle { horizontal-stretch: 1; }
         }
 
-        WindowButtons {
+        if !WindowChrome.mac: WindowButtons {
             x: parent.width - 3 * 46px;
             y: 0;
             width: 3 * 46px;
@@ -281,8 +371,18 @@ export component Sidebar inherits Rectangle {
         { id: "settings", label: "Settings", icon: @image-url("icons/settings.svg") },
     ];
 
+    // macOS: the window buttons sit over the top 48px, which moves the
+    // window like the title bar beside it.
+    if WindowChrome.mac: WindowMoveArea {
+        y: 0;
+        height: 48px;
+        TouchArea {
+            double-clicked => { WindowChrome.toggle-maximize(); }
+        }
+    }
+
     VerticalLayout {
-        padding-top: 24px;
+        padding-top: WindowChrome.mac ? 48px : 24px;
         padding-bottom: 24px;
         spacing: 32px;
 
