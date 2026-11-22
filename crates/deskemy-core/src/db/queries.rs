@@ -233,6 +233,13 @@ pub fn tags_for_course(conn: &Connection, course_id: &str) -> Result<Vec<String>
     Ok(rows)
 }
 
+/// Every tag in the library, the most used first.
+pub fn all_tags(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT tag FROM course_tags GROUP BY tag ORDER BY COUNT(*) DESC, tag")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 /// Add a tag to a course (no-op if already present); returns the course's tags.
 pub fn add_tag(conn: &Connection, course_id: &str, tag: &str) -> Result<Vec<String>> {
     let tag = tag.trim();

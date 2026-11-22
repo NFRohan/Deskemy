@@ -171,6 +171,29 @@ pub fn resource_groups<'a>(c: &CourseDetail, attachments: &'a [Attachment]) -> V
 
 /// The lecture a resource is shown with: where the curriculum puts it with
 /// "keep videos and resources together", else its own (guessed or paired).
+/// Up to five of the library's tags (`all`, most used first) matching what's
+/// typed, leaving out the course's own: those starting with it first, then
+/// those containing it. Nothing typed, nothing offered.
+pub fn tag_suggestions(typed: &str, all: &[String], mine: &[String]) -> Vec<String> {
+    let typed = typed.trim().to_lowercase();
+    if typed.is_empty() {
+        return Vec::new();
+    }
+    let free = |t: &&String| !mine.iter().any(|m| m.eq_ignore_ascii_case(t));
+    let (starts, contains): (Vec<&String>, Vec<&String>) = all
+        .iter()
+        .filter(free)
+        .filter(|t| t.to_lowercase().contains(&typed))
+        .partition(|t| t.to_lowercase().starts_with(&typed));
+    starts.into_iter().chain(contains).take(5).cloned().collect()
+}
+
+/// A tag as typed, or as the library already spells it.
+pub fn spelled_as_used(typed: &str, all: &[String]) -> String {
+    let typed = typed.trim();
+    all.iter().find(|t| t.eq_ignore_ascii_case(typed)).cloned().unwrap_or_else(|| typed.to_string())
+}
+
 pub fn shown_with<'a>(c: &'a CourseDetail, attachments: &[Attachment], id: &str, inline: bool) -> Option<&'a Lecture> {
     let lecture_id = if inline {
         let (by_lecture, _) = inline_resources(&c.sections, attachments);
@@ -295,6 +318,7 @@ impl CoursePage {
 
         let title = detail.as_ref().map_or_else(|| "Course".into(), |c| c.title.clone());
         ui.global::<Course>().set_scroll_y(0.0);
+        ui.global::<Course>().set_tag_suggestions(model(Vec::new()));
         let nav = ui.global::<Nav>();
         nav.set_page("course".into());
         nav.set_crumbs(model(vec!["Library".into(), title.into()]));
@@ -437,10 +461,26 @@ impl CoursePage {
 
     pub fn add_tag(&self, ui: &AppWindow, tag: &str) {
         let Some(id) = self.id() else { return };
-        if let Err(e) = queries::add_tag(&self.conn(), &id, tag) {
+        let conn = self.conn();
+        // A tag already in use keeps its spelling: "devops" adds "DevOps".
+        let tag = spelled_as_used(tag, &queries::all_tags(&conn).unwrap_or_default());
+        if let Err(e) = queries::add_tag(&conn, &id, &tag) {
             tracing::warn!(error = %e, "add tag");
         }
+        drop(conn);
         self.refresh(ui);
+    }
+
+    /// The tag field changed: offer the library's tags that match.
+    pub fn type_tag(&self, ui: &AppWindow, typed: &str) {
+        let Some(id) = self.id() else { return };
+        let suggestions = {
+            let conn = self.conn();
+            let all = queries::all_tags(&conn).unwrap_or_default();
+            let mine = queries::tags_for_course(&conn, &id).unwrap_or_default();
+            tag_suggestions(typed, &all, &mine)
+        };
+        ui.global::<Course>().set_tag_suggestions(model(suggestions.into_iter().map(Into::into).collect()));
     }
 
     pub fn remove_tag(&self, ui: &AppWindow, tag: &str) {
@@ -668,6 +708,20 @@ fn clipboard_png() -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tags_in_use_are_suggested_while_typing() {
+        let all: Vec<String> = ["DevOps", "AWS", "Docker", "dev tools", "Kubernetes"].map(String::from).to_vec();
+        let mine = vec!["AWS".to_string()];
+        // Starting with it first, then containing it; the course's own left out.
+        assert_eq!(tag_suggestions("dev", &all, &mine), ["DevOps", "dev tools"]);
+        assert_eq!(tag_suggestions("o", &all, &mine), ["DevOps", "Docker", "dev tools"]);
+        assert_eq!(tag_suggestions("aws", &all, &mine), Vec::<String>::new(), "already on it");
+        assert_eq!(tag_suggestions("  ", &all, &mine), Vec::<String>::new());
+        // Typed in another case, a tag in use keeps its spelling.
+        assert_eq!(spelled_as_used(" devops ", &all), "DevOps");
+        assert_eq!(spelled_as_used("Terraform", &all), "Terraform");
+    }
 
     fn lecture(id: &str, completed: bool, playable: bool, duration: Option<f64>) -> Lecture {
         Lecture {

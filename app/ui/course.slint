@@ -108,6 +108,10 @@ export global Course {
     callback delete-course();
     /// Show the course's folder in the file manager.
     callback open-folder();
+    /// Tags already in the library that match what's being typed.
+    in property <[string]> tag-suggestions;
+    /// The tag field's text changed.
+    callback type-tag(string);
 }
 
 export component IconAction inherits Rectangle {
@@ -149,6 +153,33 @@ component ProgressBar inherits Rectangle {
         width: parent.width * max(0, min(100, root.value)) / 100;
         border-radius: 2px;
         background: root.complete ? Theme.secondary-container : Theme.accent-blue;
+    }
+}
+
+/// A tag already used on other courses, offered while typing one.
+component SuggestedTag inherits Rectangle {
+    in property <string> text;
+    callback clicked;
+
+    height: 22px;
+    width: label.preferred-width + 20px;
+    border-radius: 11px;
+    border-width: 1px;
+    border-color: touch.has-hover ? Theme.on-surface-variant : Theme.outline-variant;
+    background: touch.has-hover ? Theme.surface-container-high : transparent;
+    accessible-role: button;
+    accessible-label: "Add tag " + root.text;
+    accessible-action-default => { root.clicked(); }
+
+    label := Text {
+        text: "+ " + root.text;
+        color: Theme.on-surface-variant;
+        font-size: Theme.label-sm;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
     }
 }
 
@@ -667,10 +698,12 @@ export component CoursePage inherits Flickable {
                                 vertical-alignment: center;
                                 color: Theme.on-surface;
                                 font-size: Theme.label-sm;
+                                edited => { Course.type-tag(self.text); }
                                 accepted => {
                                     if self.text != "" {
                                         Course.add-tag(self.text);
                                         self.text = "";
+                                        Course.type-tag("");
                                     }
                                 }
                             }
@@ -686,6 +719,15 @@ export component CoursePage inherits Flickable {
                                 y: parent.height - 1px;
                                 height: 1px;
                                 background: new-tag.has-focus ? Theme.accent-blue : Theme.outline-variant;
+                            }
+                        }
+                        // Tags in use elsewhere that match: click to add one.
+                        for tag in Course.tag-suggestions: SuggestedTag {
+                            text: tag;
+                            clicked => {
+                                Course.add-tag(tag);
+                                new-tag.text = "";
+                                Course.type-tag("");
                             }
                         }
                     }

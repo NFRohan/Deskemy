@@ -299,7 +299,8 @@ fn main() -> Result<(), slint::PlatformError> {
         // "course", or "course-cover" / "course-delete" with that dialog open;
         // "course-pair[:<name>]" pairs the resource named so (the first one);
         // "course-scrolled", as it's found back from a video, scrolled down;
-        // "course-section:<title>" opened at that section, as from search.
+        // "course-section:<title>" opened at that section, as from search;
+        // "course-tags", with tags offered while one is typed.
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
             snapshot::sample_course(&ui, &db, &course);
             let dialog = page.strip_prefix("course-").unwrap_or_default();
@@ -316,6 +317,11 @@ fn main() -> Result<(), slint::PlatformError> {
                 }
             } else if dialog == "scrolled" {
                 ui.global::<Course>().set_scroll_y(-320.0);
+            } else if dialog == "tags" {
+                // A tag on it, and two in use elsewhere offered (UI only).
+                let page = ui.global::<Course>();
+                page.set_tags(course_panel::model(vec!["AWS".into()]));
+                page.set_tag_suggestions(course_panel::model(vec!["DevOps".into(), "dev tools".into()]));
             } else {
                 ui.global::<Course>().set_dialog(dialog.into());
             }
@@ -712,6 +718,7 @@ fn wire_course(
     }
     action!(on_toggle_favorite, |p, ui| p.toggle_favorite(&ui));
     action!(on_open_folder, |p, _ui| p.open_folder());
+    action!(on_type_tag, |p, ui, typed| p.type_tag(&ui, &typed));
     action!(on_toggle_complete, |p, ui, id| p.toggle_complete(&ui, &id));
     action!(on_add_tag, |p, ui, tag| p.add_tag(&ui, &tag));
     action!(on_remove_tag, |p, ui, tag| p.remove_tag(&ui, &tag));
