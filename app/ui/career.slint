@@ -629,7 +629,7 @@ component UpNextDetails inherits VerticalLayout {
         }
     }
     if Tracks.next-lecture-title != "": Text {
-        text: (root.course.done > 0 ? "Resume at “" : "Begins with “") + Tracks.next-lecture-title + "”";
+        text: (Tracks.next-label == "Continue" ? "Resume at “" : "Begins with “") + Tracks.next-lecture-title + "”";
         color: Theme.on-surface-variant;
         font-size: Theme.body-sm;
         wrap: word-wrap;

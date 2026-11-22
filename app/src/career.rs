@@ -214,6 +214,7 @@ impl TracksPage {
             tracing::warn!(error = %e, "touch track");
         }
         *self.id.borrow_mut() = Some(id.to_string());
+        ui.global::<Tracks>().set_header_error("".into());
         ui.global::<Nav>().set_page("track".into());
         self.refresh(ui);
     }
@@ -271,7 +272,9 @@ impl TracksPage {
             let c = &t.courses[i];
             let detail = queries::get_course_detail(&self.conn(), &c.id).ok().flatten()?;
             let lecture = crate::course_page::next_lecture(&detail)?;
-            Some((lecture.id.clone(), lecture.title.clone(), c.completed_lectures > 0, c.remaining_seconds))
+            // Started: something finished, or left off partway.
+            let started = c.completed_lectures > 0 || detail.last_lecture_id.is_some();
+            Some((lecture.id.clone(), lecture.title.clone(), started, c.remaining_seconds))
         });
         let (lecture, lecture_title, started, course_left) = resume.unwrap_or_default();
         page.set_next_lecture(lecture.into());
