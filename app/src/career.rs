@@ -130,6 +130,7 @@ impl TracksPage {
     }
 
     pub fn open(&self, ui: &AppWindow, id: &str) {
+        crate::history::visit(crate::history::Place::Track(id.to_string()));
         *self.id.borrow_mut() = Some(id.to_string());
         ui.global::<Nav>().set_page("track".into());
         self.refresh(ui);

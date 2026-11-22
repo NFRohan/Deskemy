@@ -306,6 +306,7 @@ impl CoursePage {
     /// Show a course with `section` expanded, or else the one holding its
     /// next lecture.
     fn show_at(&self, ui: &AppWindow, course_id: &str, section: Option<&str>) {
+        crate::history::visit(crate::history::Place::Course(course_id.to_string()));
         *self.id.borrow_mut() = Some(course_id.to_string());
         *self.pairing.borrow_mut() = None;
         let detail = queries::get_course_detail(&self.conn(), course_id).ok().flatten();

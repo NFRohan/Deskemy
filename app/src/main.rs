@@ -8,6 +8,7 @@ mod career;
 mod course_page;
 mod course_panel;
 mod dialogs;
+mod history;
 mod importing;
 mod instance;
 mod library;
@@ -400,8 +401,14 @@ fn main() -> Result<(), slint::PlatformError> {
     });
     let (weak, page, track_view, lists_db, cfg, p) =
         (ui.as_weak(), library.clone(), tracks.clone(), db.clone(), config.clone(), prefs.clone());
+    // The app opens on the library: the first place to go back to.
+    history::visit(history::Place::Page("library".into()));
     ui.on_page_shown(move |name| {
         if let Some(ui) = weak.upgrade() {
+            // A course or a track records itself, by which one it is.
+            if name != "course" && name != "track" {
+                history::visit(history::Place::Page(name.to_string()));
+            }
             show_list(&ui, &lists_db, &page, &name, &cfg);
             match name.as_str() {
                 "tracks" => track_view.show_list(&ui),
@@ -414,7 +421,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let importing = std::rc::Rc::new(importing::Importing::new(db.clone(), config.clone()));
     importing.start_watching(&ui, player.session().clone());
     wire_import(&ui, &importing);
-    wire_window_events(&ui, &importing);
+    wire_window_events(&ui, &importing, Back { db: db.clone(), course: course.clone(), tracks: tracks.clone() });
     let viewer = pdf::Viewer::new(db.clone());
     pdf::register(&viewer);
     wire_pdf(&ui, &viewer);
@@ -1040,7 +1047,53 @@ fn accepts_drop(ui: &AppWindow, importing: &importing::Importing) -> bool {
     !ui.get_playing() && !ui.get_page_dialog() && !ui.global::<Pdf>().get_open() && importing.ready(ui)
 }
 
-fn wire_window_events(ui: &AppWindow, importing: &std::rc::Rc<importing::Importing>) {
+/// What the mouse's back button needs on the pages: the places to go back to.
+struct Back {
+    db: session::Db,
+    course: std::rc::Rc<course_page::CoursePage>,
+    tracks: std::rc::Rc<career::TracksPage>,
+}
+
+impl Back {
+    /// On the library and its pages: close a course or track dialog, else go
+    /// back to the page before (as a browser's back), else to the library.
+    fn go(&self, ui: &AppWindow) {
+        if ui.get_page_dialog() {
+            if ui.global::<Course>().get_dialog() != "" {
+                ui.global::<Course>().set_dialog("".into());
+            } else if ui.global::<Tracks>().get_dialog() != "" {
+                ui.global::<Tracks>().set_dialog("".into());
+            }
+            return;
+        }
+        let exists = |place: &history::Place| {
+            let conn = self.db.lock().unwrap_or_else(|e| e.into_inner());
+            match place {
+                history::Place::Page(_) => true,
+                history::Place::Course(id) => matches!(db::queries::course_folder(&conn, id), Ok(Some(_))),
+                history::Place::Track(id) => matches!(db::queries::get_track(&conn, id), Ok(Some(_))),
+            }
+        };
+        let nav = ui.global::<Nav>();
+        match history::back(exists) {
+            Some(history::Place::Course(id)) => self.course.show(ui, &id),
+            Some(history::Place::Track(id)) => self.tracks.open(ui, &id),
+            Some(history::Place::Page(name)) => {
+                nav.set_page(name.as_str().into());
+                nav.set_crumbs(course_panel::model(vec![history::page_title(&name).into()]));
+                nav.set_crumb_targets(course_panel::model(vec!["".into()]));
+            }
+            None if nav.get_page() != "library" => {
+                nav.set_page("library".into());
+                nav.set_crumbs(course_panel::model(vec!["Library".into()]));
+                nav.set_crumb_targets(course_panel::model(vec!["".into()]));
+            }
+            None => {}
+        }
+    }
+}
+
+fn wire_window_events(ui: &AppWindow, importing: &std::rc::Rc<importing::Importing>, back: Back) {
     use slint::winit_030::winit::event::{ElementState, MouseButton, WindowEvent};
     use slint::winit_030::{EventResult, WinitWindowAccessor};
     let weak = ui.as_weak();
@@ -1065,6 +1118,13 @@ fn wire_window_events(ui: &AppWindow, importing: &std::rc::Rc<importing::Importi
                         "" => playback.invoke_back(),
                         _ => playback.set_open_menu("".into()),
                     }
+                }
+                EventResult::PreventDefault
+            }
+            // On the library and its pages: back to the page before.
+            WindowEvent::MouseInput { button: MouseButton::Back, state, .. } => {
+                if *state == ElementState::Released {
+                    back.go(&ui);
                 }
                 EventResult::PreventDefault
             }
