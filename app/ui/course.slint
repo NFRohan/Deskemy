@@ -410,13 +410,17 @@ component LectureRow inherits Rectangle {
             font-size: Theme.label-md;
             vertical-alignment: center;
         }
-        Image {
-            source: @image-url("icons/play-filled.svg");
-            width: 14px;
-            height: 14px;
-            y: (parent.height - self.height) / 2;
-            colorize: Theme.primary;
-            opacity: row-touch.has-hover && root.lecture.playable ? 1 : 0;
+        // As wide as a resource's pair button, so the durations line up
+        // with the resources' type tags.
+        Rectangle {
+            width: 26px;
+            Image {
+                source: @image-url("icons/play-filled.svg");
+                width: 14px;
+                height: 14px;
+                colorize: Theme.primary;
+                opacity: row-touch.has-hover && root.lecture.playable ? 1 : 0;
+            }
         }
     }
 }
