@@ -211,6 +211,7 @@ mod tests {
         let dir = tmp.path().join("thumbnails");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("kept.png"), b"12345").unwrap();
+        std::fs::write(dir.join("header.png"), b"1234").unwrap();
         std::fs::write(dir.join("stale.png"), b"123").unwrap();
 
         let conn = crate::db::open_in_memory().unwrap();
@@ -220,12 +221,15 @@ mod tests {
             [dir.join("kept.png").to_string_lossy().as_ref()],
         )
         .unwrap();
+        // A career track's header image is kept too.
+        let track = crate::db::queries::create_track(&conn, "T", None).unwrap();
+        crate::db::queries::set_track_header(&conn, &track, Some(&dir.join("header.png").to_string_lossy())).unwrap();
 
         let report = gc_thumbnails(&conn, &dir).unwrap();
         assert_eq!((report.removed, report.freed_bytes), (1, 3));
-        assert!(dir.join("kept.png").exists());
+        assert!(dir.join("kept.png").exists() && dir.join("header.png").exists());
         assert!(!dir.join("stale.png").exists());
-        assert_eq!(dir_bytes(&dir), 5);
+        assert_eq!(dir_bytes(&dir), 9);
         // A missing cache is simply clean.
         assert_eq!(gc_thumbnails(&conn, &tmp.path().join("none")).unwrap().removed, 0);
     }

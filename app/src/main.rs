@@ -178,8 +178,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let library = library::LibraryPage::new(db.clone());
     library.reload(&ui);
     let thumbs = paths::data_dir().map(|d| d.join(deskemy_core::courses::THUMBNAILS_DIR));
-    let course = course_page::CoursePage::new(db.clone(), config.clone(), thumbs);
-    let tracks = career::TracksPage::new(db.clone(), library.clone());
+    let course = course_page::CoursePage::new(db.clone(), config.clone(), thumbs.clone());
+    let tracks = career::TracksPage::new(db.clone(), library.clone(), thumbs);
 
     if let Mode::Snapshot { path, player, page } = mode {
         let window = offscreen.expect("snapshot platform installed");
@@ -675,6 +675,8 @@ fn wire_tracks(ui: &AppWindow, page: &std::rc::Rc<career::TracksPage>) {
         p.delete(&ui);
         ui.invoke_refresh_library()
     });
+    action!(on_pick_header, |p, ui| p.pick_header(&ui));
+    action!(on_clear_header, |p, ui| p.clear_header(&ui));
     action!(on_add_course, |p, ui, id| {
         p.add(&ui, &id);
         ui.invoke_refresh_library()

@@ -318,7 +318,9 @@ pub fn all_thumbnail_paths(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT thumbnail_path FROM courses WHERE thumbnail_path IS NOT NULL
          UNION
-         SELECT resume_thumbnail_path FROM courses WHERE resume_thumbnail_path IS NOT NULL",
+         SELECT resume_thumbnail_path FROM courses WHERE resume_thumbnail_path IS NOT NULL
+         UNION
+         SELECT header_path FROM tracks WHERE header_path IS NOT NULL",
     )?;
     let rows = stmt
         .query_map([], |r| r.get::<_, String>(0))?
@@ -1631,18 +1633,19 @@ pub fn list_tracks(conn: &Connection) -> Result<Vec<TrackSummary>> {
 pub fn get_track(conn: &Connection, id: &str) -> Result<Option<TrackDetail>> {
     let base = conn
         .query_row(
-            "SELECT id, name, description FROM tracks WHERE id = ?1",
+            "SELECT id, name, description, header_path FROM tracks WHERE id = ?1",
             params![id],
             |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
                 ))
             },
         )
         .optional()?;
-    let Some((tid, name, description)) = base else {
+    let Some((tid, name, description, header_path)) = base else {
         return Ok(None);
     };
 
@@ -1668,6 +1671,7 @@ pub fn get_track(conn: &Connection, id: &str) -> Result<Option<TrackDetail>> {
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(Some(TrackDetail {
+        header_path,
         id: tid,
         name,
         description,
@@ -1686,6 +1690,12 @@ pub fn create_track(conn: &Connection, name: &str, description: Option<&str>) ->
         params![id, name, description, position, now()],
     )?;
     Ok(id)
+}
+
+/// Set (Some: a file in the thumbnail cache) or clear a track's header image.
+pub fn set_track_header(conn: &Connection, id: &str, path: Option<&str>) -> Result<()> {
+    conn.execute("UPDATE tracks SET header_path = ?2 WHERE id = ?1", params![id, path])?;
+    Ok(())
 }
 
 /// A track was used (opened): it goes to the top of the list.

@@ -285,7 +285,8 @@ fn migrate(conn: &Connection) -> Result<()> {
         // created), the latest first; until then, by when they were made.
         tx.execute_batch(
             "ALTER TABLE tracks ADD COLUMN last_used_at INTEGER;
-             UPDATE tracks SET last_used_at = created_at;",
+             UPDATE tracks SET last_used_at = created_at;
+             ALTER TABLE tracks ADD COLUMN header_path TEXT;",
         )?;
         // What's entered by hand about a course: its page on the web. Kept
         // through a re-import (queries::KEPT_ON_REIMPORT).

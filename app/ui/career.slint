@@ -46,6 +46,10 @@ export global Tracks {
     in property <string> id;
     in property <string> name;
     in property <string> description;
+    /// Its header image, if one was picked.
+    in property <image> header;
+    in property <bool> has-header;
+    in-out property <string> header-error;
     in property <int> percent;
     /// "40% · 12 / 30 lectures".
     in property <string> summary;
@@ -68,6 +72,9 @@ export global Tracks {
     callback create(string, string);
     callback save(string, string);
     callback delete-track();
+    /// Pick a header image for the open track, or remove it.
+    callback pick-header();
+    callback clear-header();
     callback filter(string);
     callback add-course(string);
     callback remove-course(string);
@@ -447,6 +454,36 @@ export component TrackPage inherits Flickable {
             vertical-alignment: center;
         }
 
+        // Its header image: Change / Remove on hover.
+        if Tracks.found && Tracks.has-header: Rectangle {
+            height: 180px;
+            border-radius: 12px;
+            clip: true;
+            background: Theme.surface-container-high;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: Tracks.header;
+                image-fit: cover;
+            }
+            header-touch := TouchArea { }
+            if header-touch.has-hover: HorizontalLayout {
+                x: parent.width - self.preferred-width - 12px;
+                y: 12px;
+                width: self.preferred-width;
+                height: 32px;
+                spacing: 8px;
+                DialogButton {
+                    text: "Change";
+                    clicked => { Tracks.pick-header(); }
+                }
+                DialogButton {
+                    text: "Remove";
+                    clicked => { Tracks.clear-header(); }
+                }
+            }
+        }
+
         // Header: name, description, edit / delete, overall progress.
         if Tracks.found: VerticalLayout {
             spacing: 12px;
@@ -478,6 +515,12 @@ export component TrackPage inherits Flickable {
                 HorizontalLayout {
                     spacing: 4px;
                     alignment: start;
+                    if !Tracks.has-header: IconAction {
+                        label: "Add a header image";
+                        icon: @image-url("icons/image-plus.svg");
+                        tint: self.hovered ? Theme.on-surface : Theme.on-surface-variant;
+                        clicked => { Tracks.pick-header(); }
+                    }
                     IconAction {
                         label: "Edit track";
                         icon: @image-url("icons/pencil.svg");
@@ -496,6 +539,12 @@ export component TrackPage inherits Flickable {
                         clicked => { Tracks.dialog = "delete"; }
                     }
                 }
+            }
+            if Tracks.header-error != "": Text {
+                text: Tracks.header-error;
+                color: Theme.error;
+                font-size: Theme.body-sm;
+                wrap: word-wrap;
             }
             HorizontalLayout {
                 spacing: 12px;

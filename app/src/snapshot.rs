@@ -218,6 +218,14 @@ pub fn sample_tracks(ui: &crate::AppWindow, page: &crate::career::TracksPage, wh
     let Some(first) = slint::Model::row_data(&tracks.get_tracks(), 0) else { return };
     page.open(ui, &first.id);
     let dialog = which.strip_prefix("track-").unwrap_or_default();
+    // "track-header:<image file>": with that header image (UI only).
+    if let Some(file) = dialog.strip_prefix("header:") {
+        if let Ok(image) = slint::Image::load_from_path(std::path::Path::new(file)) {
+            tracks.set_header(image);
+            tracks.set_has_header(true);
+        }
+        return;
+    }
     if dialog == "add" {
         page.filter(ui, "");
     }

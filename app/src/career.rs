@@ -70,14 +70,63 @@ fn optional(text: &str) -> Option<&str> {
 pub struct TracksPage {
     db: Db,
     library: Rc<LibraryPage>,
+    /// Where header images are stored (the thumbnail cache), if anywhere.
+    thumbs_dir: Option<std::path::PathBuf>,
     id: RefCell<Option<String>>,
     /// The open track's courses, in order (what Move up / down rewrites).
     order: RefCell<Vec<String>>,
 }
 
 impl TracksPage {
-    pub fn new(db: Db, library: Rc<LibraryPage>) -> Rc<Self> {
-        Rc::new(TracksPage { db, library, id: RefCell::new(None), order: RefCell::new(Vec::new()) })
+    pub fn new(db: Db, library: Rc<LibraryPage>, thumbs_dir: Option<std::path::PathBuf>) -> Rc<Self> {
+        Rc::new(TracksPage { db, library, thumbs_dir, id: RefCell::new(None), order: RefCell::new(Vec::new()) })
+    }
+
+    /// Pick a header image for the open track: copied into the thumbnail
+    /// cache, as course covers are.
+    pub fn pick_header(&self, ui: &AppWindow) {
+        let Some(id) = self.id.borrow().clone() else { return };
+        let file = match crate::dialogs::pick("track header", || {
+            rfd::FileDialog::new()
+                .set_title("Choose a header image")
+                .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif", "bmp"])
+                .set_parent(&ui.window().window_handle())
+                .pick_file()
+        }) {
+            crate::dialogs::Picked::Chosen(file) => file,
+            crate::dialogs::Picked::Cancelled => return,
+            crate::dialogs::Picked::Unavailable(why) => {
+                ui.global::<Tracks>().set_header_error(why.into());
+                return;
+            }
+        };
+        let stored = (|| -> Result<(), String> {
+            let dir = self.thumbs_dir.as_ref().ok_or("no data directory to store the image in")?;
+            let bytes = std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+            let ext = file.extension().and_then(|e| e.to_str());
+            let path = deskemy_core::thumbnails::store(dir, &bytes, ext).map_err(|e| e.to_string())?;
+            queries::set_track_header(&self.conn(), &id, Some(&path.to_string_lossy())).map_err(|e| e.to_string())
+        })();
+        let page = ui.global::<Tracks>();
+        match stored {
+            Ok(()) => page.set_header_error("".into()),
+            Err(e) => {
+                tracing::warn!(error = %e, "track header");
+                page.set_header_error(e.into());
+            }
+        }
+        self.refresh(ui);
+    }
+
+    /// No header image for the open track (the file goes with the next
+    /// thumbnail clean-up).
+    pub fn clear_header(&self, ui: &AppWindow) {
+        let Some(id) = self.id.borrow().clone() else { return };
+        if let Err(e) = queries::set_track_header(&self.conn(), &id, None) {
+            tracing::warn!(error = %e, "clear track header");
+        }
+        ui.global::<Tracks>().set_header_error("".into());
+        self.refresh(ui);
     }
 
     fn conn(&self) -> std::sync::MutexGuard<'_, deskemy_core::db::Connection> {
@@ -162,6 +211,8 @@ impl TracksPage {
         page.set_id(t.id.clone().into());
         page.set_name(t.name.clone().into());
         page.set_description(t.description.clone().unwrap_or_default().into());
+        page.set_header(self.library.image(t.header_path.as_deref()));
+        page.set_has_header(t.header_path.is_some());
         page.set_percent(percent);
         page.set_summary(format!("{percent}% · {done} / {total} lectures").into());
         page.set_count_label(count(t.courses.len() as i64, "course").to_uppercase().into());

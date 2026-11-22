@@ -251,6 +251,8 @@ pub struct TrackDetail {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    /// Its header image (a file in the thumbnail cache), if one was picked.
+    pub header_path: Option<String>,
     pub courses: Vec<TrackCourse>,
 }
 
