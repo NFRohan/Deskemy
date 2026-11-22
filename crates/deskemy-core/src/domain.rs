@@ -230,6 +230,8 @@ pub struct TrackSummary {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    /// Its header image (a file in the thumbnail cache), if one was picked.
+    pub header_path: Option<String>,
     pub course_count: i64,
     pub total_lectures: i64,
     pub completed_lectures: i64,

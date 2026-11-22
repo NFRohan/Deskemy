@@ -139,10 +139,14 @@ impl TracksPage {
             tracing::warn!(error = %e, "list tracks");
             Vec::new()
         });
-        ui.global::<Tracks>().set_tracks(model(
+        let page = ui.global::<Tracks>();
+        page.set_any_header(tracks.iter().any(|t| t.header_path.is_some()));
+        page.set_tracks(model(
             tracks
                 .into_iter()
                 .map(|t| TrackCard {
+                    header: self.library.image(t.header_path.as_deref()),
+                    has_header: t.header_path.is_some(),
                     id: t.id.into(),
                     name: t.name.into(),
                     description: t.description.unwrap_or_default().into(),

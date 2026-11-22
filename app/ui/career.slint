@@ -12,6 +12,9 @@ export struct TrackCard {
     /// "3 courses · 12 / 40 lectures".
     meta: string,
     percent: int,
+    /// Its header image, if one was picked.
+    header: image,
+    has-header: bool,
 }
 
 export struct TrackCourseRow {
@@ -40,6 +43,8 @@ export struct PickRow {
 
 export global Tracks {
     in property <[TrackCard]> tracks;
+    /// Some track has a header image: the cards all make room for one.
+    in property <bool> any-header;
 
     // The open track.
     in property <bool> found: true;
@@ -138,11 +143,12 @@ component Thumb inherits Rectangle {
 
 component TrackCardView inherits Rectangle {
     in property <TrackCard> track;
+    /// Room for a header image across the top (a plain strip without one).
+    in property <bool> banner;
     callback clicked;
 
     border-radius: 12px;
-    border-width: 1px;
-    border-color: Theme.outline-variant;
+    clip: true;
     background: touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
     accessible-role: button;
     accessible-label: root.track.name;
@@ -154,44 +160,69 @@ component TrackCardView inherits Rectangle {
     }
 
     VerticalLayout {
-        padding: 16px;
-        spacing: 4px;
-        HorizontalLayout {
-            spacing: 12px;
-            Text {
-                text: root.track.name;
-                color: Theme.on-surface;
-                font-size: Theme.headline-sm;
-                font-weight: 600;
-                overflow: elide;
-                horizontal-stretch: 1;
+        if root.banner: Rectangle {
+            height: 110px;
+            background: Theme.surface-container-high;
+            if root.track.has-header: Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.track.header;
+                image-fit: cover;
             }
+            if !root.track.has-header: Image {
+                source: @image-url("icons/route.svg");
+                width: 28px;
+                height: 28px;
+                colorize: Theme.outline-variant;
+            }
+        }
+        VerticalLayout {
+            padding: 16px;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 12px;
+                Text {
+                    text: root.track.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.headline-sm;
+                    font-weight: 600;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.track.percent + "%";
+                    color: Theme.on-surface-variant;
+                    font-size: Theme.label-md;
+                }
+            }
+            // Two lines at most; the card keeps one height for the grid.
             Text {
-                text: root.track.percent + "%";
+                text: root.track.description;
                 color: Theme.on-surface-variant;
-                font-size: Theme.label-md;
+                font-size: Theme.body-sm;
+                wrap: word-wrap;
+                overflow: elide;
+                height: 36px;
+                vertical-alignment: top;
+            }
+            Rectangle { vertical-stretch: 1; }
+            Text {
+                text: root.track.meta;
+                color: Theme.on-surface-variant;
+                font-size: Theme.label-sm;
+            }
+            Bar {
+                height: 6px;
+                value: root.track.percent;
             }
         }
-        // Two lines at most; the card keeps one height for the grid.
-        Text {
-            text: root.track.description;
-            color: Theme.on-surface-variant;
-            font-size: Theme.body-sm;
-            wrap: word-wrap;
-            overflow: elide;
-            height: 36px;
-            vertical-alignment: top;
-        }
-        Rectangle { vertical-stretch: 1; }
-        Text {
-            text: root.track.meta;
-            color: Theme.on-surface-variant;
-            font-size: Theme.label-sm;
-        }
-        Bar {
-            height: 6px;
-            value: root.track.percent;
-        }
+    }
+
+    // The border over the image, not under it.
+    Rectangle {
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: Theme.outline-variant;
     }
 }
 
@@ -215,7 +246,7 @@ export component TracksPage inherits Flickable {
     property <int> columns: root.page-width >= 640px ? 2 : 1;
     property <length> gap: 12px;
     property <length> card-width: (root.page-width - (root.columns - 1) * root.gap) / root.columns;
-    property <length> card-height: 136px;
+    property <length> card-height: Tracks.any-header ? 246px : 136px;
 
     page := VerticalLayout {
         width: root.width;
@@ -258,6 +289,7 @@ export component TracksPage inherits Flickable {
                 y: floor(i / root.columns) * (root.card-height + root.gap);
                 width: root.card-width;
                 height: root.card-height;
+                banner: Tracks.any-header;
                 track: track;
                 clicked => { Tracks.open(track.id); }
             }

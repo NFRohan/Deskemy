@@ -1607,7 +1607,8 @@ pub fn list_tracks(conn: &Connection) -> Result<Vec<TrackSummary>> {
                 COALESCE(SUM(
                     (SELECT COUNT(*) FROM lectures l JOIN progress p ON p.lecture_id = l.id
                       WHERE l.course_id = c.id AND p.completed = 1)
-                ), 0) AS completed_lectures
+                ), 0) AS completed_lectures,
+                t.header_path
            FROM tracks t
            LEFT JOIN track_courses tc ON tc.track_id = t.id
            LEFT JOIN courses c ON c.id = tc.course_id
@@ -1623,6 +1624,7 @@ pub fn list_tracks(conn: &Connection) -> Result<Vec<TrackSummary>> {
                 course_count: r.get(3)?,
                 total_lectures: r.get(4)?,
                 completed_lectures: r.get(5)?,
+                header_path: r.get(6)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
