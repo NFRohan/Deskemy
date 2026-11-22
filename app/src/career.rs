@@ -2,7 +2,7 @@
 //! routes/tracks and routes/tracks/[id].
 
 use crate::course_panel::model;
-use crate::library::{pct, LibraryPage};
+use crate::library::{format_duration, pct, LibraryPage};
 use crate::session::Db;
 use crate::{AppWindow, Nav, PickRow, TrackCard, TrackCourseRow, Tracks};
 use deskemy_core::db::queries;
@@ -58,6 +58,31 @@ pub fn pickable<'a>(library: &'a [CourseSummary], in_track: &HashSet<&str>, quer
 /// "1 course", "3 courses".
 pub fn count(n: i64, word: &str) -> String {
     format!("{n} {word}{}", if n == 1 { "" } else { "s" })
+}
+
+/// "245 lectures · 21h 30m": how many, and how long when known.
+pub fn course_meta(c: &TrackCourse) -> String {
+    let mut text = count(c.lecture_count, "lecture");
+    if c.total_seconds > 0.0 {
+        text += &format!(" · {}", format_duration(Some(c.total_seconds)));
+    }
+    text
+}
+
+/// "~18h 40m left", or "" when nothing's left or the durations are unknown.
+pub fn time_left(seconds: f64) -> String {
+    if seconds < 1.0 { String::new() } else { format!("~{} left", format_duration(Some(seconds))) }
+}
+
+/// Where a track stands: "Not started", "In progress" or "Completed".
+pub fn track_state(courses: &[TrackCourse]) -> &'static str {
+    if !courses.is_empty() && courses.iter().all(is_done) {
+        "Completed"
+    } else if courses.iter().any(|c| c.completed_lectures > 0) {
+        "In progress"
+    } else {
+        "Not started"
+    }
 }
 
 /// A blank description is no description.
@@ -220,6 +245,39 @@ impl TracksPage {
         page.set_percent(percent);
         page.set_summary(format!("{percent}% · {done} / {total} lectures").into());
         page.set_count_label(count(t.courses.len() as i64, "course").to_uppercase().into());
+        let seconds: f64 = t.courses.iter().map(|c| c.total_seconds).sum();
+        let left: f64 = t.courses.iter().map(|c| c.remaining_seconds).sum();
+        let mut meta = format!("{} · {}", count(t.courses.len() as i64, "course"), count(total, "lecture"));
+        if seconds > 0.0 {
+            meta += &format!(" · {}", format_duration(Some(seconds)));
+        }
+        page.set_meta(meta.into());
+        page.set_state(track_state(&t.courses).into());
+        page.set_lectures_done(done as i32);
+        page.set_lectures_total(total as i32);
+        page.set_courses_done(t.courses.iter().filter(|c| is_done(c)).count() as i32);
+        // "—" when no durations are known; "0m" once nothing's left.
+        let left_label = if left >= 1.0 {
+            format_duration(Some(left))
+        } else if seconds > 0.0 {
+            "0m".into()
+        } else {
+            "—".into()
+        };
+        page.set_time_left(left_label.into());
+        // The course to work on next, and the lecture it resumes at.
+        page.set_next_index(next.map_or(-1, |i| i as i32));
+        let resume = next.and_then(|i| {
+            let c = &t.courses[i];
+            let detail = queries::get_course_detail(&self.conn(), &c.id).ok().flatten()?;
+            let lecture = crate::course_page::next_lecture(&detail)?;
+            Some((lecture.id.clone(), lecture.title.clone(), c.completed_lectures > 0, c.remaining_seconds))
+        });
+        let (lecture, lecture_title, started, course_left) = resume.unwrap_or_default();
+        page.set_next_lecture(lecture.into());
+        page.set_next_lecture_title(lecture_title.into());
+        page.set_next_label(if started { "Continue" } else { "Start course" }.into());
+        page.set_next_left(time_left(course_left).into());
         page.set_courses(model(
             t.courses
                 .iter()
@@ -234,6 +292,8 @@ impl TracksPage {
                     percent: pct(c.completed_lectures, c.lecture_count),
                     status: status(c).into(),
                     next: next == Some(i),
+                    number: i as i32 + 1,
+                    meta: course_meta(c).into(),
                 })
                 .collect(),
         ));
@@ -336,7 +396,27 @@ mod tests {
             thumbnail_path: None,
             lecture_count: total,
             completed_lectures: done,
+            total_seconds: 0.0,
+            remaining_seconds: 0.0,
         }
+    }
+
+    #[test]
+    fn a_track_is_not_started_in_progress_or_completed() {
+        assert_eq!(track_state(&[]), "Not started");
+        assert_eq!(track_state(&[course("a", 0, 5), course("b", 0, 5)]), "Not started");
+        assert_eq!(track_state(&[course("a", 5, 5), course("b", 0, 5)]), "In progress");
+        assert_eq!(track_state(&[course("a", 5, 5), course("b", 5, 5)]), "Completed");
+    }
+
+    #[test]
+    fn course_meta_and_time_left_leave_out_unknown_durations() {
+        let mut c = course("a", 1, 245);
+        assert_eq!(course_meta(&c), "245 lectures");
+        c.total_seconds = 77_400.0;
+        assert_eq!(course_meta(&c), "245 lectures · 21h 30m");
+        assert_eq!(time_left(0.0), "");
+        assert_eq!(time_left(67_200.0), "~18h 40m left");
     }
 
     #[test]

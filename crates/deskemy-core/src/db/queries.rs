@@ -1654,7 +1654,12 @@ pub fn get_track(conn: &Connection, id: &str) -> Result<Option<TrackDetail>> {
     let mut stmt = conn.prepare(
         "SELECT c.id, c.title, c.thumbnail_path, c.lecture_count,
                 (SELECT COUNT(*) FROM lectures l JOIN progress p ON p.lecture_id = l.id
-                  WHERE l.course_id = c.id AND p.completed = 1) AS completed_lectures
+                  WHERE l.course_id = c.id AND p.completed = 1) AS completed_lectures,
+                (SELECT COALESCE(SUM(l.duration), 0) FROM lectures l
+                  WHERE l.course_id = c.id) AS total_seconds,
+                (SELECT COALESCE(SUM(l.duration), 0) FROM lectures l
+                   LEFT JOIN progress p ON p.lecture_id = l.id
+                  WHERE l.course_id = c.id AND COALESCE(p.completed, 0) = 0) AS remaining_seconds
            FROM track_courses tc
            JOIN courses c ON c.id = tc.course_id
           WHERE tc.track_id = ?1
@@ -1668,6 +1673,8 @@ pub fn get_track(conn: &Connection, id: &str) -> Result<Option<TrackDetail>> {
                 thumbnail_path: r.get(2)?,
                 lecture_count: r.get(3)?,
                 completed_lectures: r.get(4)?,
+                total_seconds: r.get(5)?,
+                remaining_seconds: r.get(6)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;

@@ -245,6 +245,9 @@ pub struct TrackCourse {
     pub thumbnail_path: Option<String>,
     pub lecture_count: i64,
     pub completed_lectures: i64,
+    /// Its lectures' known durations, in seconds: all, and those not done.
+    pub total_seconds: f64,
+    pub remaining_seconds: f64,
 }
 
 /// A track plus its ordered courses, for the track detail page.

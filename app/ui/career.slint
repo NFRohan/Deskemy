@@ -2,7 +2,7 @@
 // routes/tracks and routes/tracks/[id].
 
 import { Theme } from "theme.slint";
-import { DialogButton, Field, IconAction } from "course.slint";
+import { Course, DialogButton, Field, IconAction, MenuItem } from "course.slint";
 import { Library } from "library.slint";
 
 export struct TrackCard {
@@ -29,6 +29,10 @@ export struct TrackCourseRow {
     status: string,
     /// The first unfinished course — the one to work on next.
     next: bool,
+    /// Its place in the track, from 1.
+    number: int,
+    /// "245 lectures · 21h 30m".
+    meta: string,
 }
 
 /// A library course offered by "Add courses".
@@ -61,6 +65,23 @@ export global Tracks {
     /// "3 COURSES".
     in property <string> count-label;
     in property <[TrackCourseRow]> courses;
+    /// "3 courses · 705 lectures · 27h 11m".
+    in property <string> meta;
+    /// "Not started", "In progress" or "Completed".
+    in property <string> state;
+    in property <int> lectures-done;
+    in property <int> lectures-total;
+    in property <int> courses-done;
+    /// "18h 40m", or "—" when unknown or none.
+    in property <string> time-left;
+    /// The course to work on next (an index into courses), or -1.
+    in property <int> next-index: -1;
+    /// The lecture it resumes at (id, title), "Continue" or "Start course",
+    /// and "~3h 10m left" in it.
+    in property <string> next-lecture;
+    in property <string> next-lecture-title;
+    in property <string> next-label;
+    in property <string> next-left;
 
     // "Add courses".
     in property <[PickRow]> pickable;
@@ -297,169 +318,538 @@ export component TracksPage inherits Flickable {
     }
 }
 
-component StepButton inherits Rectangle {
-    in property <image> icon;
-    in property <string> label;
-    in property <bool> active;
-    callback clicked;
-
-    width: 22px;
+/// A small rounded label naming a state: "Up next", "In progress"…
+component StatePill inherits Rectangle {
+    in property <string> text;
+    in property <color> tint;
+    /// Filled with the tint (for "Up next"), not tinted.
+    in property <bool> solid;
     height: 20px;
-    border-radius: 4px;
-    background: root.active && touch.has-hover ? Theme.surface-container-highest : transparent;
-    opacity: root.active ? 1 : 0.3;
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-enabled: root.active;
-    accessible-action-default => { root.clicked(); }
-    Image {
-        source: root.icon;
-        width: 16px;
-        height: 16px;
-        colorize: root.active && touch.has-hover ? Theme.on-surface : Theme.on-surface-variant;
-    }
-    touch := TouchArea {
-        enabled: root.active;
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+    width: pill-text.preferred-width + 16px;
+    border-radius: 10px;
+    background: root.solid ? root.tint : root.tint.transparentize(0.85);
+    pill-text := Text {
+        text: root.text;
+        color: root.solid ? Theme.on-primary-container : root.tint;
+        font-size: Theme.label-sm;
+        font-weight: 600;
     }
 }
 
-component TrackCourseView inherits Rectangle {
+/// A small capitalised heading: "NEXT UP".
+component Eyebrow inherits Text {
+    color: Theme.on-surface-variant;
+    font-size: Theme.label-sm;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+}
+
+/// ⋮ on a milestone: move it, or take it out of the track.
+component MilestoneMenu inherits Rectangle {
+    in property <string> course-id;
+    in property <int> index;
+    in property <bool> last;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.surface-container-highest : transparent;
+    accessible-role: button;
+    accessible-label: "More";
+    accessible-action-default => { popup.show(); }
+    Image {
+        source: @image-url("icons/ellipsis-vertical.svg");
+        width: 18px;
+        height: 18px;
+        colorize: Theme.on-surface-variant;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: root.width - self.width;
+        y: root.height + 4px;
+        width: 200px;
+        Rectangle {
+            background: Theme.surface-container;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.outline-variant;
+            VerticalLayout {
+                padding: 4px;
+                if root.index > 0: MenuItem {
+                    icon: @image-url("icons/chevron-up.svg");
+                    text: "Move earlier";
+                    clicked => { Tracks.move(root.index, -1); }
+                }
+                if !root.last: MenuItem {
+                    icon: @image-url("icons/chevron-down.svg");
+                    text: "Move later";
+                    clicked => { Tracks.move(root.index, 1); }
+                }
+                MenuItem {
+                    icon: @image-url("icons/x.svg");
+                    text: "Remove from track";
+                    danger: true;
+                    clicked => { Tracks.remove-course(root.course-id); }
+                }
+            }
+        }
+    }
+}
+
+/// A course on the roadmap: its step on the line down the left (a tick once
+/// done, its number until then), and its card.
+component Milestone inherits HorizontalLayout {
     in property <TrackCourseRow> course;
     in property <int> index;
     in property <bool> last;
+    /// The space down to the next milestone, which the line spans.
+    in property <length> gap: 12px;
+    property <bool> done: root.course.status == "done";
 
-    height: 64px;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: root.course.next ? Theme.primary.transparentize(0.5) : Theme.outline-variant;
-    background: root.course.next ? Theme.primary-container.transparentize(0.9) : Theme.surface-container-low;
+    height: 112px;
+    spacing: 16px;
 
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        spacing: 12px;
-
-        VerticalLayout {
-            alignment: center;
-            StepButton {
-                label: "Move up";
-                icon: @image-url("icons/chevron-up.svg");
-                active: root.index > 0;
-                clicked => { Tracks.move(root.index, -1); }
-            }
-            StepButton {
-                label: "Move down";
-                icon: @image-url("icons/chevron-down.svg");
-                active: !root.last;
-                clicked => { Tracks.move(root.index, 1); }
-            }
+    // The rail: the line on to the next step, then this step over it.
+    Rectangle {
+        width: 32px;
+        if !root.last: Rectangle {
+            x: 15px;
+            y: parent.height / 2;
+            width: 2px;
+            height: parent.height + root.gap;
+            background: root.done ? Theme.secondary-container : Theme.outline-variant;
         }
-
-        // The course's status, named on hover (drawn over the rest of the row).
-        status := Rectangle {
-            property <string> status-name: root.course.status == "done" ? "Completed"
-                : root.course.status == "started" ? "In progress" : "Not started";
-            width: 20px;
-            height: 20px;
-            y: (parent.height - self.height) / 2;
-            z: 10;
-            Image {
-                source: root.course.status == "done" ? @image-url("icons/circle-check.svg")
-                    : root.course.status == "started" ? @image-url("icons/circle-dot.svg")
-                    : @image-url("icons/circle.svg");
-                width: 20px;
-                height: 20px;
-                colorize: root.course.status == "done" ? Theme.secondary-container
-                    : root.course.status == "started" ? Theme.primary : Theme.outline;
-                accessible-role: image;
-                accessible-label: status.status-name;
-            }
-            status-hover := TouchArea { }
-            if status-hover.has-hover: Rectangle {
-                x: parent.width + 8px;
-                y: (parent.height - self.height) / 2;
-                width: tip-text.preferred-width + 20px;
-                height: 28px;
-                border-radius: 6px;
-                border-width: 1px;
-                border-color: Theme.outline-variant;
-                background: Theme.surface-container-highest;
-                drop-shadow-blur: 8px;
-                drop-shadow-color: #00000059;
-                tip-text := Text {
-                    horizontal-alignment: center;
-                    text: status.status-name;
-                    color: Theme.on-surface;
-                    font-size: Theme.label-md;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
-            }
-        }
-
-        // The course itself links to its page.
         Rectangle {
-            horizontal-stretch: 1;
-            accessible-role: button;
-            accessible-label: root.course.title;
-            link := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { Library.show-course(root.course.id); }
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.done ? Theme.secondary-container : Theme.background;
+            border-width: root.done ? 0 : 2px;
+            border-color: root.course.next ? Theme.primary-container : Theme.outline-variant;
+            if root.done: Image {
+                source: @image-url("icons/check.svg");
+                width: 16px;
+                height: 16px;
+                colorize: #ffffff;
             }
-            HorizontalLayout {
-                spacing: 12px;
-                Thumb {
-                    width: 64px;
-                    height: 40px;
-                    y: (parent.height - self.height) / 2;
-                    source: root.course.thumbnail;
-                    has-image: root.course.has-thumbnail;
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: 6px;
-                    Text {
-                        text: root.course.title;
-                        color: link.has-hover ? Theme.primary : Theme.on-surface;
-                        font-size: Theme.body-md;
-                        overflow: elide;
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        alignment: start;
-                        Bar {
-                            width: 96px;
-                            height: 4px;
-                            y: (parent.height - self.height) / 2;
-                            value: root.course.percent;
-                        }
-                        Text {
-                            text: root.course.done + "/" + root.course.total;
-                            color: Theme.on-surface-variant;
-                            font-size: Theme.label-sm;
-                            vertical-alignment: center;
-                        }
-                        if root.course.next: Text {
-                            text: "Up next";
-                            color: Theme.primary;
-                            font-size: Theme.label-sm;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
+            if !root.done: Text {
+                text: root.course.number;
+                color: root.course.next ? Theme.primary : Theme.on-surface-variant;
+                font-size: Theme.label-md;
+                font-weight: 700;
             }
         }
+    }
 
-        IconAction {
+    Rectangle {
+        horizontal-stretch: 1;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: root.course.next ? Theme.primary-container.transparentize(0.4) : Theme.outline-variant;
+        background: root.course.next ? Theme.primary-container.transparentize(0.92)
+            : touch.has-hover ? Theme.surface-container : Theme.surface-container-low;
+        accessible-role: button;
+        accessible-label: root.course.title;
+        accessible-action-default => { Library.show-course(root.course.id); }
+        // The card opens the course's page.
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Library.show-course(root.course.id); }
+        }
+        HorizontalLayout {
+            padding: 14px;
+            padding-right: 8px;
+            spacing: 16px;
+            Thumb {
+                width: 150px;
+                height: 84px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 6px;
+                source: root.course.thumbnail;
+                has-image: root.course.has-thumbnail;
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 6px;
+                HorizontalLayout {
+                    alignment: start;
+                    StatePill {
+                        text: root.course.next ? "Up next" : root.done ? "Completed"
+                            : root.course.status == "started" ? "In progress" : "Not started";
+                        tint: root.course.next ? Theme.primary-container : root.done ? Theme.secondary-container
+                            : root.course.status == "started" ? Theme.primary : Theme.on-surface-variant;
+                        solid: root.course.next;
+                    }
+                }
+                Text {
+                    text: root.course.title;
+                    color: touch.has-hover ? Theme.primary : Theme.on-surface;
+                    font-size: Theme.headline-sm;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.course.meta;
+                    color: Theme.on-surface-variant;
+                    font-size: Theme.label-md;
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Bar {
+                        horizontal-stretch: 1;
+                        height: 6px;
+                        y: (parent.height - self.height) / 2;
+                        value: root.course.percent;
+                    }
+                    Text {
+                        text: root.course.done + " / " + root.course.total;
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.label-md;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            MilestoneMenu {
+                y: (parent.height - self.height) / 2;
+                course-id: root.course.id;
+                index: root.index;
+                last: root.last;
+            }
+        }
+    }
+}
+
+/// The courses in order, as steps down a line.
+component Roadmap inherits VerticalLayout {
+    spacing: 16px;
+    alignment: start;
+    HorizontalLayout {
+        Text {
+            text: "Learning roadmap";
+            color: Theme.on-surface;
+            font-size: Theme.headline-sm;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        DialogButton {
+            text: "Add courses";
+            icon: @image-url("icons/plus.svg");
+            has-icon: true;
+            clicked => {
+                Tracks.pick-query = "";
+                Tracks.filter("");
+                Tracks.dialog = "add";
+            }
+        }
+    }
+    if Tracks.courses.length == 0: Rectangle {
+        height: 140px;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Theme.outline-variant;
+        Text {
+            text: "No courses yet. Add the courses you mean to take, in the order you'll take them: each one is a step on the way.";
+            color: Theme.on-surface-variant;
+            font-size: Theme.body-sm;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+            width: min(parent.width - 48px, 420px);
+        }
+    }
+    VerticalLayout {
+        spacing: 12px;
+        for course[i] in Tracks.courses: Milestone {
+            course: course;
+            index: i;
+            last: i == Tracks.courses.length - 1;
+        }
+    }
+}
+
+/// The way into the next course: Continue / Start course.
+component UpNextButton inherits Rectangle {
+    in property <TrackCourseRow> course;
+    height: 44px;
+    border-radius: 8px;
+    background: go-touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
+    drop-shadow-blur: 14px;
+    drop-shadow-offset-y: 2px;
+    drop-shadow-color: Theme.primary-container.transparentize(0.65);
+    accessible-role: button;
+    accessible-label: Tracks.next-label;
+    accessible-action-default => { self.go(); }
+    function go() {
+        if Tracks.next-lecture != "" {
+            Course.play(Tracks.next-lecture);
+        } else {
+            Library.show-course(root.course.id);
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 10px;
+        Image {
+            source: @image-url("icons/play-filled.svg");
+            width: 16px;
+            height: 16px;
             y: (parent.height - self.height) / 2;
-            label: "Remove from track";
-            icon: @image-url("icons/x.svg");
-            tint: self.hovered ? Theme.error : Theme.on-surface-variant;
-            clicked => { Tracks.remove-course(root.course.id); }
+            colorize: Theme.on-primary-container;
+        }
+        Text {
+            text: Tracks.next-label;
+            color: Theme.on-primary-container;
+            font-size: Theme.body-md;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    go-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.go(); }
+    }
+}
+
+/// The next course's title (to its page) and the lecture it resumes at.
+component UpNextDetails inherits VerticalLayout {
+    in property <TrackCourseRow> course;
+    spacing: 6px;
+    Text {
+        text: root.course.title;
+        color: title-touch.has-hover ? Theme.primary : Theme.on-surface;
+        font-size: Theme.headline-sm;
+        font-weight: 600;
+        wrap: word-wrap;
+        title-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Library.show-course(root.course.id); }
+        }
+    }
+    if Tracks.next-lecture-title != "": Text {
+        text: (root.course.done > 0 ? "Resume at “" : "Begins with “") + Tracks.next-lecture-title + "”";
+        color: Theme.on-surface-variant;
+        font-size: Theme.body-sm;
+        wrap: word-wrap;
+    }
+}
+
+/// The course to work on next, and a button straight into it.
+component UpNextCard inherits Rectangle {
+    /// Side by side (a narrow window, the card full width), not stacked.
+    in property <bool> compact;
+    property <TrackCourseRow> course: Tracks.courses[Tracks.next-index];
+
+    height: body.preferred-height;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.primary-container.transparentize(0.5);
+    background: Theme.surface-container-low;
+
+    body := VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        Eyebrow { text: "NEXT UP · COURSE " + root.course.number + " OF " + Tracks.courses.length; }
+        if !root.compact: Thumb {
+            height: 150px;
+            border-radius: 8px;
+            source: root.course.thumbnail;
+            has-image: root.course.has-thumbnail;
+        }
+        if !root.compact: UpNextDetails { course: root.course; }
+        if root.compact: HorizontalLayout {
+            spacing: 16px;
+            Thumb {
+                width: 160px;
+                height: 90px;
+                border-radius: 8px;
+                source: root.course.thumbnail;
+                has-image: root.course.has-thumbnail;
+            }
+            UpNextDetails {
+                horizontal-stretch: 1;
+                course: root.course;
+            }
+        }
+        UpNextButton { course: root.course; }
+        if Tracks.next-left != "": Text {
+            text: Tracks.next-left + " in this course";
+            color: Theme.on-surface-variant;
+            font-size: Theme.label-md;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+/// In place of "Next up" once every course is done.
+component CompleteCard inherits Rectangle {
+    height: body.preferred-height;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.secondary-container.transparentize(0.5);
+    background: Theme.secondary-container.transparentize(0.92);
+    body := VerticalLayout {
+        padding: 20px;
+        spacing: 8px;
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("icons/trophy.svg");
+                width: 36px;
+                height: 36px;
+                colorize: Theme.secondary-container;
+            }
+        }
+        Text {
+            text: "Track complete";
+            color: Theme.on-surface;
+            font-size: Theme.headline-sm;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "Every course on this roadmap is done. Add another to keep going.";
+            color: Theme.on-surface-variant;
+            font-size: Theme.body-sm;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+/// One figure of the progress card: "643" over "Lectures left".
+component Stat inherits VerticalLayout {
+    in property <string> value;
+    in property <string> label;
+    horizontal-stretch: 1;
+    spacing: 2px;
+    Text {
+        text: root.value;
+        color: Theme.on-surface;
+        font-size: Theme.headline-md;
+        font-weight: 700;
+    }
+    Text {
+        text: root.label;
+        color: Theme.on-surface-variant;
+        font-size: Theme.label-sm;
+    }
+}
+
+/// How far along the track is: a percentage, a bar, and three figures.
+component ProgressCard inherits Rectangle {
+    height: body.preferred-height;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+    background: Theme.surface-container-low;
+    body := VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        HorizontalLayout {
+            Text {
+                text: "Your progress";
+                color: Theme.on-surface;
+                font-size: Theme.body-md;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            StatePill {
+                text: Tracks.state;
+                tint: Tracks.state == "Completed" ? Theme.secondary-container
+                    : Tracks.state == "In progress" ? Theme.primary : Theme.on-surface-variant;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: Tracks.percent + "%";
+                color: Tracks.percent >= 100 ? Theme.secondary-container : Theme.primary;
+                font-size: 30px;
+                font-weight: 700;
+            }
+            Text {
+                text: Tracks.lectures-done + " of " + Tracks.lectures-total + " lectures";
+                color: Theme.on-surface-variant;
+                font-size: Theme.label-md;
+                vertical-alignment: bottom;
+                horizontal-alignment: right;
+                horizontal-stretch: 1;
+            }
+        }
+        Bar {
+            height: 8px;
+            value: Tracks.percent;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            padding-top: 4px;
+            Stat {
+                value: Tracks.courses-done + "/" + Tracks.courses.length;
+                label: "Courses done";
+            }
+            Stat {
+                value: Tracks.lectures-total - Tracks.lectures-done;
+                label: "Lectures left";
+            }
+            Stat {
+                value: Tracks.time-left;
+                label: "Time left";
+            }
+        }
+    }
+}
+
+/// ⋮ on the track: its header image, and deleting it.
+component TrackMenu inherits Rectangle {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.surface-container-highest : transparent;
+    accessible-role: button;
+    accessible-label: "More";
+    accessible-action-default => { popup.show(); }
+    Image {
+        source: @image-url("icons/ellipsis-vertical.svg");
+        width: 20px;
+        height: 20px;
+        colorize: Theme.on-surface-variant;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: root.width - self.width;
+        y: root.height + 4px;
+        width: 210px;
+        Rectangle {
+            background: Theme.surface-container;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.outline-variant;
+            VerticalLayout {
+                padding: 4px;
+                MenuItem {
+                    icon: @image-url("icons/image-plus.svg");
+                    text: Tracks.has-header ? "Change header image…" : "Add a header image…";
+                    clicked => { Tracks.pick-header(); }
+                }
+                if Tracks.has-header: MenuItem {
+                    icon: @image-url("icons/x.svg");
+                    text: "Remove header image";
+                    clicked => { Tracks.clear-header(); }
+                }
+                MenuItem {
+                    icon: @image-url("icons/trash-2.svg");
+                    text: "Delete track";
+                    danger: true;
+                    clicked => { Tracks.dialog = "delete"; }
+                }
+            }
         }
     }
 }
@@ -467,7 +857,9 @@ component TrackCourseView inherits Rectangle {
 export component TrackPage inherits Flickable {
     content-width: self.width;
     content-height: page.preferred-height;
-    property <length> page-width: min(self.width - 48px, 896px);
+    property <length> page-width: min(self.width - 48px, 1120px);
+    /// Room for the roadmap and a side column beside it.
+    property <bool> wide: root.page-width >= 860px;
 
     page := VerticalLayout {
         width: root.width;
@@ -486,155 +878,135 @@ export component TrackPage inherits Flickable {
             vertical-alignment: center;
         }
 
-        // Its header image: Change / Remove on hover.
-        if Tracks.found && Tracks.has-header: Rectangle {
-            height: 180px;
+        // The track: its banner (its header image, or artwork of its own),
+        // name, what's in it, and what it's for.
+        if Tracks.found: Rectangle {
+            height: identity.preferred-height;
             border-radius: 12px;
             clip: true;
-            background: Theme.surface-container-high;
-            Image {
-                width: parent.width;
-                height: parent.height;
-                source: Tracks.header;
-                image-fit: cover;
-            }
-            header-touch := TouchArea { }
-            if header-touch.has-hover: HorizontalLayout {
-                x: parent.width - self.preferred-width - 12px;
-                y: 12px;
-                width: self.preferred-width;
-                height: 32px;
-                spacing: 8px;
-                DialogButton {
-                    text: "Change";
-                    clicked => { Tracks.pick-header(); }
-                }
-                DialogButton {
-                    text: "Remove";
-                    clicked => { Tracks.clear-header(); }
-                }
-            }
-        }
+            background: Theme.surface-container-low;
 
-        // Header: name, description, edit / delete, overall progress.
-        if Tracks.found: VerticalLayout {
-            spacing: 12px;
-            HorizontalLayout {
-                spacing: 16px;
+            identity := VerticalLayout {
+                Rectangle {
+                    height: 140px;
+                    if Tracks.has-header: Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: Tracks.header;
+                        image-fit: cover;
+                    }
+                    if !Tracks.has-header: Rectangle {
+                        background: @linear-gradient(110deg, #2a1650 0%, Theme.primary-container 62%, Theme.accent-blue 100%);
+                        Image {
+                            x: parent.width - self.width - 40px;
+                            source: @image-url("icons/route.svg");
+                            width: 104px;
+                            height: 104px;
+                            colorize: #ffffff;
+                            opacity: 0.22;
+                        }
+                    }
+                }
                 VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 4px;
-                    // max-width: wrapped text is measured at its one-line width.
+                    padding: 20px;
+                    padding-top: 16px;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Text {
+                            text: Tracks.name;
+                            color: Theme.on-surface;
+                            font-size: Theme.display-sm;
+                            font-weight: 700;
+                            wrap: word-wrap;
+                            // A long unbroken name breaks anywhere instead of
+                            // widening the card.
+                            min-width: 0px;
+                            horizontal-stretch: 1;
+                        }
+                        HorizontalLayout {
+                            alignment: start;
+                            spacing: 2px;
+                            IconAction {
+                                label: "Edit track";
+                                icon: @image-url("icons/pencil.svg");
+                                tint: self.hovered ? Theme.on-surface : Theme.on-surface-variant;
+                                clicked => {
+                                    Tracks.draft-name = Tracks.name;
+                                    Tracks.draft-description = Tracks.description;
+                                    Tracks.error = "";
+                                    Tracks.dialog = "edit";
+                                }
+                            }
+                            TrackMenu { }
+                        }
+                    }
                     Text {
-                        text: Tracks.name;
-                        color: Theme.on-surface;
-                        font-size: Theme.headline-md;
-                        font-weight: 600;
-                        wrap: word-wrap;
-                        // A long unbroken name (underscores, no spaces) breaks anywhere
-                        // instead of widening the layout past its card.
-                        min-width: 0px;
-                        max-width: root.page-width - 96px;
+                        text: Tracks.meta;
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.label-md;
                     }
                     if Tracks.description != "": Text {
                         text: Tracks.description;
-                        color: Theme.on-surface-variant;
-                        font-size: Theme.body-sm;
+                        color: Theme.on-surface;
+                        font-size: Theme.body-md;
                         wrap: word-wrap;
-                        max-width: root.page-width - 96px;
                     }
-                }
-                HorizontalLayout {
-                    spacing: 4px;
-                    alignment: start;
-                    if !Tracks.has-header: IconAction {
-                        label: "Add a header image";
-                        icon: @image-url("icons/image-plus.svg");
-                        tint: self.hovered ? Theme.on-surface : Theme.on-surface-variant;
-                        clicked => { Tracks.pick-header(); }
-                    }
-                    IconAction {
-                        label: "Edit track";
-                        icon: @image-url("icons/pencil.svg");
-                        tint: self.hovered ? Theme.on-surface : Theme.on-surface-variant;
-                        clicked => {
-                            Tracks.draft-name = Tracks.name;
-                            Tracks.draft-description = Tracks.description;
-                            Tracks.error = "";
-                            Tracks.dialog = "edit";
+                    if Tracks.description == "": Text {
+                        text: "+ Add what this track is for";
+                        color: add-touch.has-hover ? Theme.primary : Theme.on-surface-variant;
+                        font-size: Theme.body-sm;
+                        add-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                Tracks.draft-name = Tracks.name;
+                                Tracks.draft-description = Tracks.description;
+                                Tracks.error = "";
+                                Tracks.dialog = "edit";
+                            }
                         }
                     }
-                    IconAction {
-                        label: "Delete track";
-                        icon: @image-url("icons/trash-2.svg");
-                        tint: self.hovered ? Theme.error : Theme.on-surface-variant;
-                        clicked => { Tracks.dialog = "delete"; }
+                    if Tracks.header-error != "": Text {
+                        text: Tracks.header-error;
+                        color: Theme.error;
+                        font-size: Theme.body-sm;
+                        wrap: word-wrap;
                     }
                 }
             }
-            if Tracks.header-error != "": Text {
-                text: Tracks.header-error;
-                color: Theme.error;
-                font-size: Theme.body-sm;
-                wrap: word-wrap;
-            }
-            HorizontalLayout {
-                spacing: 12px;
-                Bar {
-                    horizontal-stretch: 1;
-                    height: 8px;
-                    y: (parent.height - self.height) / 2;
-                    value: Tracks.percent;
-                }
-                Text {
-                    text: Tracks.summary;
-                    color: Theme.on-surface-variant;
-                    font-size: Theme.label-md;
-                    vertical-alignment: center;
-                }
+            // The border over the banner, not under it.
+            Rectangle {
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.outline-variant;
             }
         }
 
-        if Tracks.found: HorizontalLayout {
-            Text {
-                text: Tracks.count-label;
-                color: Theme.on-surface-variant;
-                font-size: Theme.label-md;
-                font-weight: 600;
-                letter-spacing: 0.5px;
-                vertical-alignment: center;
+        // Wide: the roadmap, and beside it what's next and how far along.
+        if Tracks.found && root.wide: HorizontalLayout {
+            spacing: 24px;
+            Roadmap {
                 horizontal-stretch: 1;
             }
-            DialogButton {
-                text: "Add courses";
-                icon: @image-url("icons/plus.svg");
-                has-icon: true;
-                clicked => {
-                    Tracks.pick-query = "";
-                    Tracks.filter("");
-                    Tracks.dialog = "add";
-                }
+            VerticalLayout {
+                width: 300px;
+                alignment: start;
+                spacing: 16px;
+                if Tracks.next-index >= 0: UpNextCard { }
+                if Tracks.next-index < 0 && Tracks.courses.length > 0: CompleteCard { }
+                ProgressCard { }
             }
         }
 
-        if Tracks.found && Tracks.courses.length == 0: Text {
-            text: "No courses in this track yet. Add courses to build the learning path — order matters.";
-            color: Theme.on-surface-variant;
-            font-size: Theme.body-sm;
-            horizontal-alignment: center;
-            wrap: word-wrap;
-            max-width: root.page-width;
-            height: 96px;
-            vertical-alignment: center;
-        }
-
-        if Tracks.found && Tracks.courses.length > 0: VerticalLayout {
-            spacing: 8px;
-            for course[i] in Tracks.courses: TrackCourseView {
-                course: course;
-                index: i;
-                last: i == Tracks.courses.length - 1;
+        // Narrow: the same, one under another.
+        if Tracks.found && !root.wide: VerticalLayout {
+            spacing: 16px;
+            if Tracks.next-index >= 0: UpNextCard {
+                compact: true;
             }
+            if Tracks.next-index < 0 && Tracks.courses.length > 0: CompleteCard { }
+            ProgressCard { }
+            Roadmap { }
         }
     }
 }
