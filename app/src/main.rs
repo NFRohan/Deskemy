@@ -703,6 +703,7 @@ fn wire_course(
         }};
     }
     action!(on_toggle_favorite, |p, ui| p.toggle_favorite(&ui));
+    action!(on_open_folder, |p, _ui| p.open_folder());
     action!(on_toggle_complete, |p, ui, id| p.toggle_complete(&ui, &id));
     action!(on_add_tag, |p, ui, tag| p.add_tag(&ui, &tag));
     action!(on_remove_tag, |p, ui, tag| p.remove_tag(&ui, &tag));

@@ -416,6 +416,16 @@ impl CoursePage {
         self.refresh(ui);
     }
 
+    /// The course's folder, in the file manager.
+    pub fn open_folder(&self) {
+        let Some(id) = self.id() else { return };
+        match queries::course_folder(&self.conn(), &id) {
+            Ok(Some(folder)) => crate::open_resource(&folder),
+            Ok(None) => {}
+            Err(e) => tracing::warn!(error = %e, "course folder"),
+        }
+    }
+
     pub fn toggle_favorite(&self, ui: &AppWindow) {
         let Some(id) = self.id() else { return };
         let favorite = !ui.global::<Course>().get_favorite();
