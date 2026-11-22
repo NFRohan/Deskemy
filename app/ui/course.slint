@@ -515,6 +515,9 @@ export component CoursePage inherits Flickable {
     content-y <=> Course.scroll-y;
     content-width: self.width;
     content-height: page.preferred-height;
+    // The wheel scrolls; a mouse drag selects (the title) rather than panning
+    // the page, as in Slint's own ScrollView.
+    mouse-drag-pan-enabled: false;
 
     property <length> page-width: min(self.width - 48px, 1024px);
 
@@ -713,6 +716,8 @@ export component CoursePage inherits Flickable {
                             text: Course.title;
                             read-only: true;
                             single-line: false;
+                            // No blinking caret: it isn't edited.
+                            text-cursor-width: 0px;
                             color: Theme.on-surface;
                             selection-background-color: Theme.primary-container;
                             selection-foreground-color: Theme.on-primary-container;
