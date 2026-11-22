@@ -132,6 +132,7 @@ fn reimport_preserves_user_data() {
     db::queries::set_pref_speed(&conn, &cid1, 1.5).unwrap();
     let pick = db::queries::SubtitlePick { id: 2, lang: "en", title: None };
     db::queries::set_pref_subtitle(&conn, &cid1, Some(pick)).unwrap();
+    db::queries::set_course_homepage(&conn, &cid1, Some("https://example.com/course")).unwrap();
 
     // Re-import the same folder (as a rescan does): new lecture ids, but the
     // course keeps its id and user data must survive.
@@ -172,6 +173,8 @@ fn reimport_preserves_user_data() {
     assert_eq!(prefs.speed, Some(1.5));
     assert_eq!(prefs.subtitle_lang.as_deref(), Some("en"));
     assert!(prefs.subtitles_on);
+    // And its website, entered by hand.
+    assert_eq!(db::queries::course_homepage(&conn, &cid2).unwrap().as_deref(), Some("https://example.com/course"));
 }
 
 #[test]

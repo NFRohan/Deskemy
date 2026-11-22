@@ -112,6 +112,13 @@ export global Course {
     in property <[string]> tag-suggestions;
     /// The tag field's text changed.
     callback type-tag(string);
+    /// The course's page on the web ("" for none), and as shown (no scheme).
+    in property <string> homepage;
+    in property <string> homepage-label;
+    /// Set the course's page from what was typed ("" clears it): false when
+    /// it isn't a web address.
+    callback set-homepage(string) -> bool;
+    callback open-homepage();
 }
 
 export component IconAction inherits Rectangle {
@@ -153,6 +160,68 @@ component ProgressBar inherits Rectangle {
         width: parent.width * max(0, min(100, root.value)) / 100;
         border-radius: 2px;
         background: root.complete ? Theme.secondary-container : Theme.accent-blue;
+    }
+}
+
+/// The course's page on the web: click to open it in the browser, x to
+/// remove it.
+component HomepageLink inherits Rectangle {
+    height: 22px;
+    width: row.preferred-width;
+    row := HorizontalLayout {
+        spacing: 6px;
+        Image {
+            source: @image-url("icons/link.svg");
+            width: 14px;
+            height: 14px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.accent-blue;
+        }
+        Rectangle {
+            width: min(label.preferred-width, 260px);
+            accessible-role: button;
+            accessible-label: "Open " + Course.homepage;
+            accessible-action-default => { Course.open-homepage(); }
+            label := Text {
+                width: parent.width;
+                text: Course.homepage-label;
+                color: Theme.accent-blue;
+                font-size: Theme.label-sm;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Rectangle {
+                y: parent.height - 4px;
+                height: 1px;
+                visible: open-touch.has-hover;
+                background: Theme.accent-blue;
+            }
+            open-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Course.open-homepage(); }
+            }
+        }
+        Rectangle {
+            width: 16px;
+            height: 16px;
+            y: 3px;
+            border-radius: 8px;
+            background: remove-touch.has-hover ? Theme.surface-container-highest : transparent;
+            accessible-role: button;
+            accessible-label: "Remove the course website";
+            Image {
+                source: @image-url("icons/x.svg");
+                width: 12px;
+                height: 12px;
+                colorize: Theme.on-surface-variant;
+            }
+            remove-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if Course.set-homepage("") {}
+                }
+            }
+        }
     }
 }
 
@@ -730,6 +799,39 @@ export component CoursePage inherits Flickable {
                                 Course.type-tag("");
                             }
                         }
+                        // The course's page on the web (where it was bought):
+                        // a field to enter it, then a link to it.
+                        if Course.homepage == "": Rectangle {
+                            width: 180px;
+                            height: 22px;
+                            homepage-input := TextInput {
+                                width: parent.width;
+                                height: parent.height;
+                                single-line: true;
+                                vertical-alignment: center;
+                                color: Theme.on-surface;
+                                font-size: Theme.label-sm;
+                                accepted => {
+                                    if Course.set-homepage(self.text) {
+                                        self.text = "";
+                                    }
+                                }
+                            }
+                            if homepage-input.text == "": Text {
+                                x: 0;
+                                height: parent.height;
+                                text: "+ course website";
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-sm;
+                                vertical-alignment: center;
+                            }
+                            Rectangle {
+                                y: parent.height - 1px;
+                                height: 1px;
+                                background: homepage-input.has-focus ? Theme.accent-blue : Theme.outline-variant;
+                            }
+                        }
+                        if Course.homepage != "": HomepageLink { }
                     }
 
                     Rectangle { vertical-stretch: 1; }

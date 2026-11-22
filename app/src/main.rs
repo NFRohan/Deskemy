@@ -301,7 +301,7 @@ fn main() -> Result<(), slint::PlatformError> {
         // "course-pair[:<name>]" pairs the resource named so (the first one);
         // "course-scrolled", as it's found back from a video, scrolled down;
         // "course-section:<title>" opened at that section, as from search;
-        // "course-tags", with tags offered while one is typed.
+        // "course-tags", with tags offered while one is typed, and a website.
         if let Some(page) = page.as_deref().filter(|p| p.starts_with("course")) {
             snapshot::sample_course(&ui, &db, &course);
             let dialog = page.strip_prefix("course-").unwrap_or_default();
@@ -323,6 +323,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 let page = ui.global::<Course>();
                 page.set_tags(course_panel::model(vec!["AWS".into()]));
                 page.set_tag_suggestions(course_panel::model(vec!["DevOps".into(), "dev tools".into()]));
+                // And its page on the web.
+                page.set_homepage("https://www.udemy.com/course/deskemy-qa/".into());
+                page.set_homepage_label("udemy.com/course/deskemy-qa".into());
             } else {
                 ui.global::<Course>().set_dialog(dialog.into());
             }
@@ -726,6 +729,9 @@ fn wire_course(
     action!(on_toggle_favorite, |p, ui| p.toggle_favorite(&ui));
     action!(on_open_folder, |p, _ui| p.open_folder());
     action!(on_type_tag, |p, ui, typed| p.type_tag(&ui, &typed));
+    action!(on_open_homepage, |p, _ui| p.open_homepage());
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_set_homepage(move |typed| weak.upgrade().is_some_and(|ui| p.set_homepage(&ui, &typed)));
     action!(on_toggle_complete, |p, ui, id| p.toggle_complete(&ui, &id));
     action!(on_add_tag, |p, ui, tag| p.add_tag(&ui, &tag));
     action!(on_remove_tag, |p, ui, tag| p.remove_tag(&ui, &tag));

@@ -188,6 +188,27 @@ pub fn tag_suggestions(typed: &str, all: &[String], mine: &[String]) -> Vec<Stri
     starts.into_iter().chain(contains).take(5).cloned().collect()
 }
 
+/// A course's page on the web, from what was typed: a web address, given
+/// https:// when it has no scheme. None when it isn't one (only http and
+/// https open, never a file or a program).
+pub fn homepage(typed: &str) -> Option<String> {
+    let typed = typed.trim();
+    let url = if typed.contains("://") { typed.to_string() } else { format!("https://{typed}") };
+    let (scheme, rest) = url.split_once("://")?;
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    // A host name (a.b), maybe with a port: not a drive or a path.
+    let (name, port) = host.split_once(':').unwrap_or((host, "0"));
+    let named = name.contains('.') && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    let web = matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https");
+    (web && named && port.parse::<u16>().is_ok() && !typed.contains(char::is_whitespace)).then_some(url)
+}
+
+/// A homepage as shown: without its scheme, "www." or a trailing slash.
+pub fn homepage_label(url: &str) -> String {
+    let bare = url.split_once("://").map_or(url, |(_, rest)| rest);
+    bare.strip_prefix("www.").unwrap_or(bare).trim_end_matches('/').to_string()
+}
+
 /// A tag as typed, or as the library already spells it.
 pub fn spelled_as_used(typed: &str, all: &[String]) -> String {
     let typed = typed.trim();
@@ -340,11 +361,12 @@ impl CoursePage {
             page.set_found(false);
             return;
         };
-        let (attachments, tags) = {
+        let (attachments, tags, site) = {
             let conn = self.conn();
             (
                 queries::list_course_attachments(&conn, &c.id).unwrap_or_default(),
                 queries::tags_for_course(&conn, &c.id).unwrap_or_default(),
+                queries::course_homepage(&conn, &c.id).ok().flatten().unwrap_or_default(),
             )
         };
         let lectures: Vec<&Lecture> = c.sections.iter().flat_map(|s| s.lectures.iter()).collect();
@@ -358,6 +380,8 @@ impl CoursePage {
         page.set_favorite(c.is_favorite);
         page.set_missing(c.scan_status == "Missing" || c.scan_status == "Error");
         page.set_tags(model(tags.into_iter().map(Into::into).collect()));
+        page.set_homepage_label(homepage_label(&site).into());
+        page.set_homepage(site.into());
         page.set_done(done as i32);
         page.set_total(lectures.len() as i32);
         page.set_percent(pct(done, lectures.len() as i64));
@@ -470,6 +494,36 @@ impl CoursePage {
         }
         drop(conn);
         self.refresh(ui);
+    }
+
+    /// Set the course's page on the web from what was typed ("" clears it).
+    /// False when it isn't a web address: the field keeps the text.
+    pub fn set_homepage(&self, ui: &AppWindow, typed: &str) -> bool {
+        let Some(id) = self.id() else { return false };
+        let url = match typed.trim() {
+            "" => None,
+            typed => match homepage(typed) {
+                Some(url) => Some(url),
+                None => return false,
+            },
+        };
+        if let Err(e) = queries::set_course_homepage(&self.conn(), &id, url.as_deref()) {
+            tracing::warn!(error = %e, "set homepage");
+            return false;
+        }
+        self.refresh(ui);
+        true
+    }
+
+    /// The course's page on the web, in the browser.
+    pub fn open_homepage(&self) {
+        let Some(id) = self.id() else { return };
+        let url = queries::course_homepage(&self.conn(), &id).ok().flatten();
+        if let Some(url) = url.as_deref().and_then(homepage) {
+            if let Err(e) = open::that_detached(&url) {
+                tracing::warn!(error = %e, %url, "open homepage");
+            }
+        }
     }
 
     /// The tag field changed: offer the library's tags that match.
@@ -722,6 +776,17 @@ mod tests {
         // Typed in another case, a tag in use keeps its spelling.
         assert_eq!(spelled_as_used(" devops ", &all), "DevOps");
         assert_eq!(spelled_as_used("Terraform", &all), "Terraform");
+    }
+
+    #[test]
+    fn a_homepage_is_a_web_address() {
+        assert_eq!(homepage("udemy.com/course/docker").as_deref(), Some("https://udemy.com/course/docker"));
+        assert_eq!(homepage(" https://www.udemy.com/x ").as_deref(), Some("https://www.udemy.com/x"));
+        assert_eq!(homepage("http://example.org").as_deref(), Some("http://example.org"));
+        for no in ["", "docker", "file:///C:/x.exe", r"C:\x.exe", "javascript:alert(1)", "ftp://a.b", "two words.com"] {
+            assert_eq!(homepage(no), None, "{no}");
+        }
+        assert_eq!(homepage_label("https://www.udemy.com/course/docker/"), "udemy.com/course/docker");
     }
 
     fn lecture(id: &str, completed: bool, playable: bool, duration: Option<f64>) -> Lecture {

@@ -145,9 +145,9 @@ pub fn delete_course(conn: &Connection, id: &str) -> Result<()> {
 
 /// What hangs off a course itself and outlives a re-import, which deletes the
 /// course and inserts it again under the same id: the career tracks it's in
-/// (GH #14) and its playback preferences. Per-lecture data is remapped by the
-/// importer instead (lecture ids change).
-const KEPT_ON_REIMPORT: &[&str] = &["track_courses", "course_prefs"];
+/// (GH #14), its playback preferences and what's entered about it by hand.
+/// Per-lecture data is remapped by the importer instead (lecture ids change).
+const KEPT_ON_REIMPORT: &[&str] = &["track_courses", "course_prefs", "course_info"];
 
 /// Set a course's kept rows aside, ahead of `delete_course` in a re-import
 /// (in its transaction); `restore_kept_rows` puts them back.
@@ -231,6 +231,24 @@ pub fn tags_for_course(conn: &Connection, course_id: &str) -> Result<Vec<String>
         .query_map(params![course_id], |r| r.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// A course's page on the web, if one was entered.
+pub fn course_homepage(conn: &Connection, course_id: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row("SELECT homepage FROM course_info WHERE course_id = ?1", params![course_id], |r| r.get(0))
+        .optional()?
+        .flatten())
+}
+
+/// Set (Some) or clear (None) a course's page on the web.
+pub fn set_course_homepage(conn: &Connection, course_id: &str, url: Option<&str>) -> Result<()> {
+    conn.execute(
+        "INSERT INTO course_info (course_id, homepage) VALUES (?1, ?2)
+         ON CONFLICT (course_id) DO UPDATE SET homepage = excluded.homepage",
+        params![course_id, url],
+    )?;
+    Ok(())
 }
 
 /// Every tag in the library, the most used first.

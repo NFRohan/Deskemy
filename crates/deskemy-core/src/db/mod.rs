@@ -287,6 +287,14 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE tracks ADD COLUMN last_used_at INTEGER;
              UPDATE tracks SET last_used_at = created_at;",
         )?;
+        // What's entered by hand about a course: its page on the web. Kept
+        // through a re-import (queries::KEPT_ON_REIMPORT).
+        tx.execute_batch(
+            "CREATE TABLE course_info (
+                 course_id TEXT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
+                 homepage  TEXT
+             );",
+        )?;
     }
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     tx.commit()?;
