@@ -1592,7 +1592,7 @@ pub fn list_tracks(conn: &Connection) -> Result<Vec<TrackSummary>> {
            LEFT JOIN track_courses tc ON tc.track_id = t.id
            LEFT JOIN courses c ON c.id = tc.course_id
           GROUP BY t.id
-          ORDER BY t.position, t.created_at",
+          ORDER BY t.last_used_at DESC, t.created_at DESC",
     )?;
     let rows = stmt
         .query_map([], |r| {
@@ -1663,11 +1663,17 @@ pub fn create_track(conn: &Connection, name: &str, description: Option<&str>) ->
     let position: i64 =
         conn.query_row("SELECT COALESCE(MAX(position), -1) + 1 FROM tracks", [], |r| r.get(0))?;
     conn.execute(
-        "INSERT INTO tracks (id, name, description, position, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO tracks (id, name, description, position, created_at, last_used_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
         params![id, name, description, position, now()],
     )?;
     Ok(id)
+}
+
+/// A track was used (opened): it goes to the top of the list.
+pub fn touch_track(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("UPDATE tracks SET last_used_at = ?2 WHERE id = ?1", params![id, now()])?;
+    Ok(())
 }
 
 /// Rename / re-describe a track.

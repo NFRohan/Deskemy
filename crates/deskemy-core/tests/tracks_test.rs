@@ -66,3 +66,26 @@ fn track_lifecycle_and_completion() {
     let members: i64 = conn.query_row("SELECT COUNT(*) FROM track_courses", [], |r| r.get(0)).unwrap();
     assert_eq!(members, 0);
 }
+
+#[test]
+fn tracks_are_listed_by_when_they_were_last_used() {
+    let conn = db::open_in_memory().unwrap();
+    let names = |conn: &db::Connection| -> Vec<String> {
+        queries::list_tracks(conn).unwrap().into_iter().map(|t| t.name).collect()
+    };
+    let at = |id: &str, t: i64| {
+        conn.execute("UPDATE tracks SET created_at = ?2, last_used_at = ?2 WHERE id = ?1", (id, t)).unwrap();
+    };
+    let backend = queries::create_track(&conn, "Backend", None).unwrap();
+    let devops = queries::create_track(&conn, "DevOps", None).unwrap();
+    let data = queries::create_track(&conn, "Data", None).unwrap();
+    at(&backend, 100);
+    at(&devops, 200);
+    at(&data, 300);
+    // The newest at the top, not the bottom.
+    assert_eq!(names(&conn), ["Data", "DevOps", "Backend"]);
+
+    // Opening one brings it up.
+    queries::touch_track(&conn, &backend).unwrap();
+    assert_eq!(names(&conn), ["Backend", "Data", "DevOps"]);
+}

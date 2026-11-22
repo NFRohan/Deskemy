@@ -131,6 +131,10 @@ impl TracksPage {
 
     pub fn open(&self, ui: &AppWindow, id: &str) {
         crate::history::visit(crate::history::Place::Track(id.to_string()));
+        // Used: to the top of the list.
+        if let Err(e) = queries::touch_track(&self.conn(), id) {
+            tracing::warn!(error = %e, "touch track");
+        }
         *self.id.borrow_mut() = Some(id.to_string());
         ui.global::<Nav>().set_page("track".into());
         self.refresh(ui);

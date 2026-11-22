@@ -12,7 +12,7 @@ pub use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current schema version. Bump + add a migration arm when the schema changes.
-pub const SCHEMA_VERSION: i64 = 10;
+pub const SCHEMA_VERSION: i64 = 11;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE library_roots (
@@ -278,6 +278,14 @@ fn migrate(conn: &Connection) -> Result<()> {
         tx.execute_batch(
             "ALTER TABLE course_prefs ADD COLUMN subtitle_lang TEXT;
              ALTER TABLE course_prefs ADD COLUMN subtitle_title TEXT;",
+        )?;
+    }
+    if version < 11 {
+        // Career tracks listed by when they were last used (opened, or
+        // created), the latest first; until then, by when they were made.
+        tx.execute_batch(
+            "ALTER TABLE tracks ADD COLUMN last_used_at INTEGER;
+             UPDATE tracks SET last_used_at = created_at;",
         )?;
     }
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
