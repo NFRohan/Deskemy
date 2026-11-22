@@ -203,10 +203,22 @@ pub fn homepage(typed: &str) -> Option<String> {
     (web && named && port.parse::<u16>().is_ok() && !typed.contains(char::is_whitespace)).then_some(url)
 }
 
-/// A homepage as shown: without its scheme, "www." or a trailing slash.
+/// A homepage as shown: the site's name (its host, without "www.").
 pub fn homepage_label(url: &str) -> String {
     let bare = url.split_once("://").map_or(url, |(_, rest)| rest);
-    bare.strip_prefix("www.").unwrap_or(bare).trim_end_matches('/').to_string()
+    let host = bare.split(['/', '?', '#']).next().unwrap_or_default();
+    host.strip_prefix("www.").unwrap_or(host).to_string()
+}
+
+/// "4 lectures · 45m": how many, and how long when known.
+pub fn section_summary(s: &Section) -> String {
+    let n = s.lectures.len();
+    let mut text = format!("{n} {}", if n == 1 { "lecture" } else { "lectures" });
+    let known: Vec<f64> = s.lectures.iter().filter_map(|l| l.duration).collect();
+    if !known.is_empty() {
+        text += &format!(" · {}", format_duration(Some(known.iter().sum())));
+    }
+    text
 }
 
 /// A tag as typed, or as the library already spells it.
@@ -387,6 +399,7 @@ impl CoursePage {
         page.set_percent(pct(done, lectures.len() as i64));
         page.set_duration(c.total_duration.map(|d| format!("{} total", format_duration(Some(d)))).unwrap_or_default().into());
         page.set_next(next.clone().unwrap_or_default().into());
+        page.set_next_title(next_lecture(&c).map(|l| l.title.clone()).unwrap_or_default().into());
         page.set_next_label(if done > 0 { "Resume Lecture" } else { "Start Course" }.into());
         page.set_resources_summary(resources_summary(&attachments).into());
         let inline = settings::lock(&self.config).resources_inline;
@@ -403,10 +416,21 @@ impl CoursePage {
         page.set_sections(model(
             c.sections
                 .iter()
-                .map(|s| CurriculumSection {
+                .enumerate()
+                .map(|(i, s)| CurriculumSection {
                     id: s.id.clone().into(),
                     title: s.title.clone().into(),
                     meta: section_meta(s).into(),
+                    number: i as i32 + 1,
+                    done: s.lectures.iter().filter(|l| l.completed).count() as i32,
+                    count: s.lectures.len() as i32,
+                    summary: section_summary(s).into(),
+                    ring: crate::stats_page::arc(
+                        pct(s.lectures.iter().filter(|l| l.completed).count() as i64, s.lectures.len() as i64),
+                        20.0,
+                        17.0,
+                    )
+                    .into(),
                     expanded: expanded.contains(&s.id),
                     loose: items(by_section.get(s.id.as_str())),
                     lectures: model(
@@ -786,7 +810,8 @@ mod tests {
         for no in ["", "docker", "file:///C:/x.exe", r"C:\x.exe", "javascript:alert(1)", "ftp://a.b", "two words.com"] {
             assert_eq!(homepage(no), None, "{no}");
         }
-        assert_eq!(homepage_label("https://www.udemy.com/course/docker/"), "udemy.com/course/docker");
+        assert_eq!(homepage_label("https://www.udemy.com/course/docker/"), "udemy.com");
+        assert_eq!(homepage_label("https://learn.example.org:8080?x=1"), "learn.example.org:8080");
     }
 
     fn lecture(id: &str, completed: bool, playable: bool, duration: Option<f64>) -> Lecture {
@@ -891,6 +916,19 @@ mod tests {
         assert_eq!(section_meta(&s), "1/3 · 1h 5m");
         let unknown = Section { lectures: vec![lecture("x", false, true, None)], ..s };
         assert_eq!(section_meta(&unknown), "0/1");
+    }
+
+    #[test]
+    fn section_summary_counts_lectures_and_sums_known_durations() {
+        let s = Section {
+            id: "s".into(),
+            title: "s".into(),
+            position: 0,
+            lectures: vec![lecture("a", true, true, Some(1800.0)), lecture("b", false, true, Some(2100.0))],
+        };
+        assert_eq!(section_summary(&s), "2 lectures · 1h 5m");
+        let one = Section { lectures: vec![lecture("x", false, true, None)], ..s };
+        assert_eq!(section_summary(&one), "1 lecture");
     }
 
     #[test]

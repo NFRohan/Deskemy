@@ -115,20 +115,24 @@ pub fn total_watch(stats: &LibraryStats) -> f64 {
 /// The goal ring's arc as path commands in an 80×80 box (radius 34, from
 /// twelve o'clock, clockwise); "" at 0%.
 pub fn ring(percent: i32) -> String {
-    const C: f64 = 40.0;
-    const R: f64 = 34.0;
+    arc(percent, 40.0, 34.0)
+}
+
+/// A progress ring's arc as path commands, centred at (`c`, `c`) with radius
+/// `r`, from twelve o'clock, clockwise; "" at 0%.
+pub fn arc(percent: i32, c: f64, r: f64) -> String {
     let percent = percent.clamp(0, 100);
     if percent == 0 {
         return String::new();
     }
     if percent == 100 {
         // An arc can't end where it starts: draw the circle as two halves.
-        return format!("M {C} {} A {R} {R} 0 1 1 {C} {} A {R} {R} 0 1 1 {C} {}", C - R, C + R, C - R);
+        return format!("M {c} {} A {r} {r} 0 1 1 {c} {} A {r} {r} 0 1 1 {c} {}", c - r, c + r, c - r);
     }
     let angle = percent as f64 / 100.0 * std::f64::consts::TAU;
-    let (x, y) = (C + R * angle.sin(), C - R * angle.cos());
+    let (x, y) = (c + r * angle.sin(), c - r * angle.cos());
     let large = if percent > 50 { 1 } else { 0 };
-    format!("M {C} {} A {R} {R} 0 {large} 1 {x:.2} {y:.2}", C - R)
+    format!("M {c} {} A {r} {r} 0 {large} 1 {x:.2} {y:.2}", c - r)
 }
 
 fn days(n: i64) -> &'static str {

@@ -22,6 +22,15 @@ export struct CurriculumSection {
     title: string,
     /// "3/12 · 1h 5m".
     meta: string,
+    /// Its place in the course, from 1.
+    number: int,
+    /// Lectures done, and in all.
+    done: int,
+    count: int,
+    /// "4 lectures · 45m".
+    summary: string,
+    /// Its progress ring's arc (path commands, 40×40), or "".
+    ring: string,
     expanded: bool,
     lectures: [CurriculumLecture],
     /// The section's resources that belong to no one lecture, after them.
@@ -63,6 +72,8 @@ export global Course {
     in property <string> duration;
     in property <string> next;
     in property <string> next-label;
+    /// The title of the lecture it opens.
+    in property <string> next-title;
     in property <[CurriculumSection]> sections;
     in property <[ResourceGroup]> resources;
     /// "2 / 5 resources done", or "".
@@ -151,52 +162,52 @@ export component IconAction inherits Rectangle {
 component ProgressBar inherits Rectangle {
     in property <int> value;
     in property <bool> complete;
-    height: 4px;
-    border-radius: 2px;
+    in property <length> thickness: 4px;
+    height: root.thickness;
+    border-radius: root.thickness / 2;
     background: Theme.border;
     clip: true;
     Rectangle {
         x: 0;
         width: parent.width * max(0, min(100, root.value)) / 100;
-        border-radius: 2px;
+        border-radius: root.thickness / 2;
         background: root.complete ? Theme.secondary-container : Theme.accent-blue;
     }
 }
 
-/// The course's page on the web: click to open it in the browser, x to
-/// remove it.
+/// Where the course is from: its site's name, quietly. Click to open the
+/// course's page in the browser; x (on hover) removes it.
 component HomepageLink inherits Rectangle {
-    /// The most the address may take before it's shortened with "…".
-    in property <length> room: 260px;
-    height: 22px;
+    height: 20px;
     width: row.preferred-width;
+    hover := TouchArea { }
     row := HorizontalLayout {
         spacing: 6px;
         Image {
             source: @image-url("icons/link.svg");
-            width: 14px;
-            height: 14px;
+            width: 13px;
+            height: 13px;
             y: (parent.height - self.height) / 2;
-            colorize: Theme.accent-blue;
+            colorize: open-touch.has-hover ? Theme.on-surface : Theme.on-surface-variant;
         }
         Rectangle {
-            width: min(label.preferred-width, root.room);
+            width: min(label.preferred-width, 320px);
             accessible-role: button;
             accessible-label: "Open " + Course.homepage;
             accessible-action-default => { Course.open-homepage(); }
             label := Text {
                 width: parent.width;
                 text: Course.homepage-label;
-                color: Theme.accent-blue;
-                font-size: Theme.label-sm;
+                color: open-touch.has-hover ? Theme.on-surface : Theme.on-surface-variant;
+                font-size: Theme.label-md;
                 vertical-alignment: center;
                 overflow: elide;
             }
             Rectangle {
-                y: parent.height - 4px;
+                y: parent.height - 3px;
                 height: 1px;
                 visible: open-touch.has-hover;
-                background: Theme.accent-blue;
+                background: Theme.on-surface;
             }
             open-touch := TouchArea {
                 mouse-cursor: pointer;
@@ -206,8 +217,9 @@ component HomepageLink inherits Rectangle {
         Rectangle {
             width: 16px;
             height: 16px;
-            y: 3px;
+            y: 2px;
             border-radius: 8px;
+            opacity: hover.has-hover || remove-touch.has-hover || open-touch.has-hover ? 1 : 0;
             background: remove-touch.has-hover ? Theme.surface-container-highest : transparent;
             accessible-role: button;
             accessible-label: "Remove the course website";
@@ -295,11 +307,37 @@ component TagChip inherits Rectangle {
     }
 }
 
+/// Done or not: a filled tick, or an empty circle. Click to change it.
+component DoneTick inherits Rectangle {
+    in property <bool> done;
+    in property <length> size: 20px;
+    callback toggled;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.done ? Theme.secondary-container : transparent;
+    border-width: root.done ? 0 : 1.5px;
+    border-color: touch.has-hover ? Theme.secondary-container : Theme.outline;
+    accessible-role: button;
+    accessible-label: root.done ? "Mark as not done" : "Mark as done";
+    accessible-action-default => { root.toggled(); }
+    if root.done: Image {
+        source: @image-url("icons/check.svg");
+        width: root.size * 0.6;
+        height: root.size * 0.6;
+        colorize: #ffffff;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(); }
+    }
+}
+
 component LectureRow inherits Rectangle {
     in property <CurriculumLecture> lecture;
 
-    height: 38px;
-    background: root.lecture.next ? Theme.primary-container.transparentize(0.85) : row-touch.has-hover ? Theme.surface-container : transparent;
+    height: 48px;
+    background: root.lecture.next ? Theme.primary-container.transparentize(0.88) : row-touch.has-hover ? Theme.surface-container : transparent;
 
     // The row itself opens the lecture; the tick is its own button above it.
     row-touch := TouchArea {
@@ -307,65 +345,47 @@ component LectureRow inherits Rectangle {
         mouse-cursor: pointer;
         clicked => { Course.play(root.lecture.id); }
     }
+    // The lecture Resume opens: marked down its edge.
+    if root.lecture.next: Rectangle {
+        x: 0;
+        width: 3px;
+        background: Theme.primary-container;
+    }
 
     HorizontalLayout {
         padding-left: 16px;
         padding-right: 16px;
-        spacing: 12px;
+        spacing: 14px;
 
+        // Under the section's ring.
         Rectangle {
-            width: 18px;
-            accessible-role: button;
-            accessible-label: root.lecture.completed ? "Mark as not done" : "Mark as done";
-            Image {
-                source: root.lecture.completed ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
-                width: 18px;
-                height: 18px;
-                colorize: root.lecture.completed || tick.has-hover ? Theme.secondary-container : Theme.outline;
-            }
-            tick := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { Course.toggle-complete(root.lecture.id); }
+            width: 40px;
+            DoneTick {
+                done: root.lecture.completed;
+                toggled => { Course.toggle-complete(root.lecture.id); }
             }
         }
-        Image {
-            source: @image-url("icons/play-filled.svg");
-            width: 14px;
-            height: 14px;
-            y: (parent.height - self.height) / 2;
-            colorize: Theme.primary;
-            opacity: row-touch.has-hover && root.lecture.playable ? 1 : 0;
-        }
-        Rectangle {
+        Text {
+            text: root.lecture.title;
+            color: root.lecture.completed && !row-touch.has-hover ? Theme.on-surface-variant : Theme.on-surface;
+            font-size: 15px;
+            font-weight: root.lecture.next ? 600 : 400;
+            vertical-alignment: center;
             horizontal-stretch: 1;
-            title := Text {
-                width: parent.width;
-                text: root.lecture.title;
-                color: root.lecture.completed ? Theme.on-surface-variant : Theme.on-surface;
-                font-size: Theme.body-md;
-                vertical-alignment: center;
-                overflow: elide;
-                opacity: root.lecture.playable ? 1 : 0.6;
-            }
-            // Done lectures are struck through (Text has no strikethrough).
-            if root.lecture.completed: Rectangle {
-                x: 0;
-                y: parent.height / 2;
-                width: min(title.preferred-width, parent.width);
-                height: 1px;
-                background: Theme.on-surface-variant;
-            }
+            overflow: elide;
+            opacity: root.lecture.playable ? 1 : 0.6;
         }
         if root.lecture.next: Rectangle {
-            width: next-text.preferred-width + 12px;
-            height: 20px;
-            y: 9px;
-            border-radius: 4px;
-            background: Theme.primary-container.transparentize(0.8);
+            width: next-text.preferred-width + 14px;
+            height: 22px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 11px;
+            background: Theme.primary-container;
             next-text := Text {
-                text: "Next up";
-                color: Theme.primary;
+                text: "Up next";
+                color: Theme.on-primary-container;
                 font-size: Theme.label-sm;
+                font-weight: 600;
             }
         }
         if !root.lecture.playable: HorizontalLayout {
@@ -387,8 +407,16 @@ component LectureRow inherits Rectangle {
         Text {
             text: root.lecture.duration;
             color: Theme.on-surface-variant;
-            font-size: Theme.label-sm;
+            font-size: Theme.label-md;
             vertical-alignment: center;
+        }
+        Image {
+            source: @image-url("icons/play-filled.svg");
+            width: 14px;
+            height: 14px;
+            y: (parent.height - self.height) / 2;
+            colorize: Theme.primary;
+            opacity: row-touch.has-hover && root.lecture.playable ? 1 : 0;
         }
     }
 }
@@ -405,24 +433,6 @@ component ResourceIcon inherits Image {
     width: 16px;
     height: 16px;
     colorize: Theme.on-surface-variant;
-}
-
-/// A done tick, as a lecture's.
-component ResourceTick inherits Rectangle {
-    in property <ResourceItem> item;
-    width: 18px;
-    accessible-role: button;
-    accessible-label: root.item.done ? "Mark as not done" : "Mark as done";
-    Image {
-        source: root.item.done ? @image-url("icons/circle-check.svg") : @image-url("icons/circle.svg");
-        width: 18px;
-        height: 18px;
-        colorize: root.item.done || tick.has-hover ? Theme.secondary-container : Theme.outline;
-    }
-    tick := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { Course.toggle-resource(root.item.id, !root.item.done); }
-    }
 }
 
 /// Pair a resource with a lecture: shown while its row is hovered (and
@@ -451,10 +461,11 @@ component PairButton inherits Rectangle {
     }
 }
 
-/// A resource inside the curriculum, under its lecture: opens on click.
+/// A resource inside the curriculum, under its lecture: opens on click. A
+/// file badge and smaller type set it apart from the lectures.
 component CurriculumResource inherits Rectangle {
     in property <ResourceItem> item;
-    height: 34px;
+    height: 40px;
     background: touch.has-hover || pair.hovered ? Theme.surface-container : transparent;
     touch := TouchArea {
         mouse-cursor: pointer;
@@ -463,33 +474,237 @@ component CurriculumResource inherits Rectangle {
     HorizontalLayout {
         padding-left: 16px;
         padding-right: 16px;
-        spacing: 12px;
-        ResourceTick { item: root.item; }
-        // Under the lecture's play column, then indented a step.
-        Rectangle { width: 14px; }
-        ResourceIcon {
-            kind: root.item.kind;
-            y: (parent.height - self.height) / 2;
+        spacing: 14px;
+        // Its tick under the lectures' ticks, smaller.
+        Rectangle {
+            width: 40px;
+            DoneTick {
+                size: 16px;
+                done: root.item.done;
+                toggled => { Course.toggle-resource(root.item.id, !root.item.done); }
+            }
         }
-        Text {
-            text: root.item.name;
-            color: root.item.done ? Theme.on-surface-variant : Theme.on-surface;
-            font-size: Theme.body-sm;
-            vertical-alignment: center;
+        HorizontalLayout {
             horizontal-stretch: 1;
-            overflow: elide;
+            spacing: 10px;
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 6px;
+                background: Theme.surface-container-highest;
+                ResourceIcon {
+                    kind: root.item.kind;
+                    width: 14px;
+                    height: 14px;
+                }
+            }
+            Text {
+                text: root.item.name;
+                color: root.item.done ? Theme.on-surface-variant : Theme.on-surface;
+                font-size: Theme.body-sm;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
         }
-        Text {
-            text: root.item.kind == "" ? "" : root.item.kind.to-uppercase();
-            color: Theme.on-surface-variant;
-            font-size: Theme.label-sm;
-            vertical-alignment: center;
+        if root.item.kind != "": Rectangle {
+            width: kind-text.preferred-width + 10px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: Theme.outline-variant;
+            kind-text := Text {
+                text: root.item.kind.to-uppercase();
+                color: Theme.on-surface-variant;
+                font-size: 10px;
+                font-weight: 600;
+            }
         }
         pair := PairButton {
             item: root.item;
             row-hover: touch.has-hover;
             y: (parent.height - self.height) / 2;
         }
+    }
+}
+
+/// A section's progress: a ring with "2/4" in it, or a tick once it's done.
+component SectionRing inherits Rectangle {
+    in property <int> done;
+    in property <int> count;
+    /// The arc (path commands in 40×40), or "" for none yet.
+    in property <string> arc;
+    property <bool> finished: root.count > 0 && root.done >= root.count;
+    width: 40px;
+    height: 40px;
+    // The track, then the arc over it (radius 17, 3px wide).
+    Rectangle {
+        x: 1.5px;
+        y: 1.5px;
+        width: 37px;
+        height: 37px;
+        border-radius: 18.5px;
+        border-width: 3px;
+        border-color: Theme.surface-container-highest;
+    }
+    if root.arc != "": Path {
+        width: 40px;
+        height: 40px;
+        viewbox-width: 40;
+        viewbox-height: 40;
+        commands: root.arc;
+        stroke: root.finished ? Theme.secondary-container : Theme.primary-container;
+        stroke-width: 3px;
+        stroke-line-cap: round;
+    }
+    if root.finished: Image {
+        source: @image-url("icons/check.svg");
+        width: 18px;
+        height: 18px;
+        colorize: Theme.secondary-container;
+    }
+    if !root.finished: Text {
+        text: root.done + "/" + root.count;
+        color: Theme.on-surface;
+        font-size: root.count >= 100 ? 9px : Theme.label-sm;
+        font-weight: 600;
+    }
+}
+
+/// A row of a small menu.
+component MenuItem inherits Rectangle {
+    in property <image> icon;
+    in property <string> text;
+    in property <bool> danger;
+    callback clicked;
+    height: 34px;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.surface-container-highest : transparent;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        Image {
+            source: root.icon;
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: root.danger ? Theme.error : Theme.on-surface-variant;
+        }
+        Text {
+            text: root.text;
+            color: root.danger ? Theme.error : Theme.on-surface;
+            font-size: Theme.body-sm;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// The course's less used actions, behind ⋮.
+component MoreMenu inherits Rectangle {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.surface-container-highest : transparent;
+    accessible-role: button;
+    accessible-label: "More";
+    accessible-action-default => { popup.show(); }
+    Image {
+        source: @image-url("icons/ellipsis-vertical.svg");
+        width: 20px;
+        height: 20px;
+        colorize: Theme.on-surface-variant;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: root.width - self.width;
+        y: root.height + 4px;
+        width: 200px;
+        Rectangle {
+            background: Theme.surface-container;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.outline-variant;
+            VerticalLayout {
+                padding: 4px;
+                MenuItem {
+                    icon: @image-url("icons/image-plus.svg");
+                    text: "Change cover…";
+                    clicked => {
+                        Course.cover-error = "";
+                        Course.dialog = "cover";
+                    }
+                }
+                MenuItem {
+                    icon: @image-url("icons/trash-2.svg");
+                    text: "Remove from library";
+                    danger: true;
+                    clicked => {
+                        Course.delete-error = "";
+                        Course.dialog = "delete";
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The page's main action: Resume / Start, with the lecture it opens under it.
+component ResumeButton inherits VerticalLayout {
+    width: 220px;
+    spacing: 6px;
+    alignment: center;
+    Rectangle {
+        height: 46px;
+        border-radius: 8px;
+        background: touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
+        drop-shadow-blur: 14px;
+        drop-shadow-offset-y: 2px;
+        drop-shadow-color: Theme.primary-container.transparentize(0.65);
+        accessible-role: button;
+        accessible-label: Course.next-label;
+        accessible-action-default => { Course.play(Course.next); }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 10px;
+            Image {
+                source: @image-url("icons/play-filled.svg");
+                width: 18px;
+                height: 18px;
+                y: (parent.height - self.height) / 2;
+                colorize: Theme.on-primary-container;
+            }
+            Text {
+                text: Course.next-label;
+                color: Theme.on-primary-container;
+                font-size: Theme.headline-sm;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Course.play(Course.next); }
+        }
+    }
+    if Course.next-title != "": Text {
+        text: "Up next: " + Course.next-title;
+        color: Theme.on-surface-variant;
+        font-size: Theme.label-sm;
+        horizontal-alignment: center;
+        overflow: elide;
     }
 }
 
@@ -638,7 +853,8 @@ export component CoursePage inherits Flickable {
             }
         }
 
-        // Header: cover, title, actions, tags, progress, resume.
+        // Header: the course (cover, title, tags, where it's from) and what to
+        // do with it (folder, favourite, more); then progress, and Resume.
         if Course.found: Rectangle {
             height: header.preferred-height;
             border-radius: 12px;
@@ -646,17 +862,17 @@ export component CoursePage inherits Flickable {
             border-color: Theme.outline-variant;
             background: Theme.surface-container-low;
 
-            header := HorizontalLayout {
-                padding: 16px;
-                spacing: 24px;
+            header := VerticalLayout {
+                padding: 20px;
+                spacing: 18px;
 
-                // The cover, and under it the course's main action.
-                VerticalLayout {
-                    alignment: start;
-                    spacing: 12px;
+                HorizontalLayout {
+                    spacing: 20px;
+
                     Rectangle {
-                        width: 256px;
-                        height: 144px;
+                        // Smaller in a narrow window, to leave the title room.
+                        width: root.page-width < 720px ? 160px : 224px;
+                        height: self.width * 9 / 16;
                         border-radius: 8px;
                         border-width: 1px;
                         border-color: Theme.outline-variant;
@@ -720,45 +936,11 @@ export component CoursePage inherits Flickable {
                             }
                         }
                     }
-                    if Course.next != "": Rectangle {
-                        height: 36px;
-                        border-radius: 4px;
-                        background: resume-touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
-                        accessible-role: button;
-                        accessible-label: Course.next-label;
-                        resume-row := HorizontalLayout {
-                            alignment: center;
-                            padding-left: 16px;
-                            padding-right: 16px;
-                            spacing: 8px;
-                            Image {
-                                source: @image-url("icons/play-filled.svg");
-                                width: 16px;
-                                height: 16px;
-                                y: (parent.height - self.height) / 2;
-                                colorize: Theme.on-primary-container;
-                            }
-                            Text {
-                                text: Course.next-label;
-                                color: Theme.on-primary-container;
-                                font-size: Theme.label-md;
-                                font-weight: 600;
-                                vertical-alignment: center;
-                            }
-                        }
-                        resume-touch := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { Course.play(Course.next); }
-                        }
-                    }
-                }
 
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 12px;
-
-                    HorizontalLayout {
-                        spacing: 16px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: start;
+                        spacing: 10px;
                         // Selectable, to copy (read-only: it isn't edited here).
                         TextInput {
                             text: Course.title;
@@ -779,172 +961,192 @@ export component CoursePage inherits Flickable {
                             accessible-role: text;
                             accessible-label: Course.title;
                         }
-                        // Not for a course whose folder is gone (it offers
-                        // to locate it instead).
-                        if !Course.missing: IconAction {
-                            label: "Open the course's folder";
-                            icon: @image-url("icons/folder-open.svg");
-                            clicked => { Course.open-folder(); }
-                        }
-                        IconAction {
-                            label: Course.favorite ? "Unfavorite" : "Favorite";
-                            icon: Course.favorite ? @image-url("icons/star-filled.svg") : @image-url("icons/star.svg");
-                            tint: Course.favorite ? Theme.primary : Theme.on-surface-variant;
-                            clicked => { Course.toggle-favorite(); }
-                        }
-                        IconAction {
-                            label: "Remove from library";
-                            icon: @image-url("icons/trash-2.svg");
-                            tint: self.hovered ? Theme.error : Theme.on-surface-variant;
-                            clicked => {
-                                Course.delete-error = "";
-                                Course.dialog = "delete";
-                            }
-                        }
-                    }
-
-                    // Tags, and a field to add one.
-                    FlexboxLayout {
-                        spacing: 6px;
-                        for tag in Course.tags: TagChip {
-                            text: tag;
-                            remove => { Course.remove-tag(tag); }
-                        }
-                        Rectangle {
-                            width: 96px;
-                            height: 22px;
-                            new-tag := TextInput {
-                                width: parent.width;
-                                height: parent.height;
-                                single-line: true;
-                                vertical-alignment: center;
-                                color: Theme.on-surface;
-                                font-size: Theme.label-sm;
-                                edited => { Course.type-tag(self.text); }
-                                accepted => {
-                                    if self.text != "" {
-                                        Course.add-tag(self.text);
-                                        self.text = "";
-                                        Course.type-tag("");
-                                    }
-                                }
-                                // Esc, or a click elsewhere on the page, leaves it.
-                                key-pressed(event) => {
-                                    if event.text == Key.Escape {
-                                        self.text = "";
-                                        Course.type-tag("");
-                                        self.clear-focus();
-                                        return accept;
-                                    }
-                                    reject
-                                }
-                                property <int> clicked-away: root.clicked-away;
-                                changed clicked-away => { self.clear-focus(); }
-                            }
-                            if new-tag.text == "": Text {
-                                x: 0;
-                                height: parent.height;
-                                text: "+ tag";
-                                color: Theme.on-surface-variant;
-                                font-size: Theme.label-sm;
-                                vertical-alignment: center;
+                        // Tags, and a field to add one.
+                        FlexboxLayout {
+                            spacing: 6px;
+                            for tag in Course.tags: TagChip {
+                                text: tag;
+                                remove => { Course.remove-tag(tag); }
                             }
                             Rectangle {
-                                y: parent.height - 1px;
-                                height: 1px;
-                                background: new-tag.has-focus ? Theme.accent-blue : Theme.outline-variant;
+                                width: 96px;
+                                height: 22px;
+                                new-tag := TextInput {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    single-line: true;
+                                    vertical-alignment: center;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.label-sm;
+                                    edited => { Course.type-tag(self.text); }
+                                    accepted => {
+                                        if self.text != "" {
+                                            Course.add-tag(self.text);
+                                            self.text = "";
+                                            Course.type-tag("");
+                                        }
+                                    }
+                                    // Esc, or a click elsewhere on the page, leaves it.
+                                    key-pressed(event) => {
+                                        if event.text == Key.Escape {
+                                            self.text = "";
+                                            Course.type-tag("");
+                                            self.clear-focus();
+                                            return accept;
+                                        }
+                                        reject
+                                    }
+                                    property <int> clicked-away: root.clicked-away;
+                                    changed clicked-away => { self.clear-focus(); }
+                                }
+                                if new-tag.text == "": Text {
+                                    x: 0;
+                                    height: parent.height;
+                                    text: "+ tag";
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    y: parent.height - 1px;
+                                    height: 1px;
+                                    background: new-tag.has-focus ? Theme.accent-blue : Theme.outline-variant;
+                                }
+                            }
+                            // Tags in use elsewhere that match: click to add one.
+                            for tag in Course.tag-suggestions: SuggestedTag {
+                                text: tag;
+                                clicked => {
+                                    Course.add-tag(tag);
+                                    new-tag.text = "";
+                                    Course.type-tag("");
+                                }
                             }
                         }
-                        // Tags in use elsewhere that match: click to add one.
-                        for tag in Course.tag-suggestions: SuggestedTag {
-                            text: tag;
-                            clicked => {
-                                Course.add-tag(tag);
-                                new-tag.text = "";
-                                Course.type-tag("");
+
+                        // The course's page on the web (where it was bought):
+                        // a field to enter it, then a link to it. Its own row.
+                        HorizontalLayout {
+                            alignment: start;
+                            if Course.homepage == "": Rectangle {
+                                width: 200px;
+                                height: 22px;
+                                homepage-input := TextInput {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    single-line: true;
+                                    vertical-alignment: center;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.label-sm;
+                                    accepted => {
+                                        if Course.set-homepage(self.text) {
+                                            self.text = "";
+                                        }
+                                    }
+                                    // Esc, or a click elsewhere on the page, leaves it.
+                                    key-pressed(event) => {
+                                        if event.text == Key.Escape {
+                                            self.text = "";
+                                            self.clear-focus();
+                                            return accept;
+                                        }
+                                        reject
+                                    }
+                                    property <int> clicked-away: root.clicked-away;
+                                    changed clicked-away => { self.clear-focus(); }
+                                }
+                                if homepage-input.text == "": Text {
+                                    x: 0;
+                                    height: parent.height;
+                                    text: "+ course website";
+                                    color: Theme.on-surface-variant;
+                                    font-size: Theme.label-sm;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    y: parent.height - 1px;
+                                    height: 1px;
+                                    background: homepage-input.has-focus ? Theme.accent-blue : Theme.outline-variant;
+                                }
+                            }
+                            if Course.homepage != "": HomepageLink {
                             }
                         }
+
                     }
 
-                    // The course's page on the web (where it was bought):
-                    // a field to enter it, then a link to it. Its own row.
-                    HorizontalLayout {
+                    VerticalLayout {
                         alignment: start;
-                        if Course.homepage == "": Rectangle {
-                            width: 180px;
-                            height: 22px;
-                            homepage-input := TextInput {
-                                width: parent.width;
-                                height: parent.height;
-                                single-line: true;
-                                vertical-alignment: center;
+                        HorizontalLayout {
+                            spacing: 2px;
+                            // Not for a course whose folder is gone (it offers
+                            // to locate it instead).
+                            if !Course.missing: IconAction {
+                                label: "Open the course's folder";
+                                icon: @image-url("icons/folder-open.svg");
+                                clicked => { Course.open-folder(); }
+                            }
+                            IconAction {
+                                label: Course.favorite ? "Unfavorite" : "Favorite";
+                                icon: Course.favorite ? @image-url("icons/star-filled.svg") : @image-url("icons/star.svg");
+                                tint: Course.favorite ? Theme.primary : Theme.on-surface-variant;
+                                clicked => { Course.toggle-favorite(); }
+                            }
+                            MoreMenu { }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.outline-variant;
+                }
+
+                // Progress, and the way back in.
+                HorizontalLayout {
+                    spacing: 32px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 8px;
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Text {
+                                text: Course.done + " / " + Course.total + " lectures completed";
                                 color: Theme.on-surface;
-                                font-size: Theme.label-sm;
-                                accepted => {
-                                    if Course.set-homepage(self.text) {
-                                        self.text = "";
-                                    }
-                                }
-                                // Esc, or a click elsewhere on the page, leaves it.
-                                key-pressed(event) => {
-                                    if event.text == Key.Escape {
-                                        self.text = "";
-                                        self.clear-focus();
-                                        return accept;
-                                    }
-                                    reject
-                                }
-                                property <int> clicked-away: root.clicked-away;
-                                changed clicked-away => { self.clear-focus(); }
+                                font-size: Theme.body-md;
+                                font-weight: 600;
+                                horizontal-stretch: 1;
+                                wrap: word-wrap;
                             }
-                            if homepage-input.text == "": Text {
-                                x: 0;
-                                height: parent.height;
-                                text: "+ course website";
+                            Text {
+                                text: Course.percent + "%";
+                                color: Course.percent >= 100 ? Theme.secondary-container : Theme.on-surface;
+                                font-size: Theme.body-md;
+                                font-weight: 600;
+                            }
+                        }
+                        ProgressBar {
+                            value: Course.percent;
+                            complete: Course.percent >= 100;
+                            thickness: 8px;
+                        }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Text {
+                                text: Course.resources-summary;
                                 color: Theme.on-surface-variant;
-                                font-size: Theme.label-sm;
-                                vertical-alignment: center;
+                                font-size: Theme.label-md;
+                                horizontal-stretch: 1;
                             }
-                            Rectangle {
-                                y: parent.height - 1px;
-                                height: 1px;
-                                background: homepage-input.has-focus ? Theme.accent-blue : Theme.outline-variant;
+                            Text {
+                                text: Course.duration;
+                                color: Theme.on-surface-variant;
+                                font-size: Theme.label-md;
                             }
                         }
-                        if Course.homepage != "": HomepageLink {
-                            // The header's right column (the page, less the
-                            // cover and padding), less the link icon and the
-                            // remove button.
-                            room: max(0px, root.page-width - 314px - 48px);
-                        }
                     }
-
-                    Rectangle { vertical-stretch: 1; }
-
-                    HorizontalLayout {
-                        spacing: 12px;
-                        // Wraps when the header is narrow (the minimum window
-                        // width) instead of running into the duration.
-                        Text {
-                            text: Course.done + " / " + Course.total + " lectures completed"
-                                + (Course.resources-summary == "" ? "" : "  ·  " + Course.resources-summary);
-                            color: Theme.on-surface;
-                            font-size: Theme.label-md;
-                            font-weight: 600;
-                            wrap: word-wrap;
-                            horizontal-stretch: 1;
-                        }
-                        Text {
-                            text: Course.duration;
-                            color: Theme.on-surface-variant;
-                            font-size: Theme.label-sm;
-                            vertical-alignment: top;
-                        }
-                    }
-                    ProgressBar {
-                        value: Course.percent;
-                        complete: Course.percent >= 100;
-                    }
+                    if Course.next != "": ResumeButton { }
                 }
             }
         }
@@ -957,10 +1159,10 @@ export component CoursePage inherits Flickable {
                 text: "Course Curriculum";
             }
             VerticalLayout {
-                spacing: 8px;
+                spacing: 12px;
                 for section in Course.sections: card := Rectangle {
                     height: body.preferred-height;
-                    border-radius: 8px;
+                    border-radius: 10px;
                     border-width: 1px;
                     border-color: Theme.outline-variant;
                     background: Theme.surface-container-low;
@@ -983,7 +1185,7 @@ export component CoursePage inherits Flickable {
 
                     body := VerticalLayout {
                         Rectangle {
-                            height: 48px;
+                            height: 76px;
                             background: head-touch.has-hover ? Theme.surface-container : transparent;
                             head-touch := TouchArea {
                                 mouse-cursor: pointer;
@@ -992,36 +1194,53 @@ export component CoursePage inherits Flickable {
                             HorizontalLayout {
                                 padding-left: 16px;
                                 padding-right: 16px;
-                                spacing: 8px;
+                                spacing: 14px;
+                                SectionRing {
+                                    done: section.done;
+                                    count: section.count;
+                                    arc: section.ring;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    spacing: 3px;
+                                    Text {
+                                        text: "SECTION " + section.number;
+                                        color: Theme.on-surface-variant;
+                                        font-size: Theme.label-sm;
+                                        font-weight: 600;
+                                        letter-spacing: 0.5px;
+                                    }
+                                    Text {
+                                        text: section.title;
+                                        color: Theme.on-surface;
+                                        font-size: Theme.headline-sm;
+                                        font-weight: 600;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: section.summary;
+                                        color: Theme.on-surface-variant;
+                                        font-size: Theme.label-md;
+                                    }
+                                }
                                 Image {
-                                    source: section.expanded ? @image-url("icons/chevron-down.svg") : @image-url("icons/chevron-right.svg");
+                                    source: section.expanded ? @image-url("icons/chevron-up.svg") : @image-url("icons/chevron-down.svg");
                                     width: 18px;
                                     height: 18px;
                                     y: (parent.height - self.height) / 2;
                                     colorize: Theme.on-surface-variant;
                                 }
-                                Text {
-                                    text: section.title;
-                                    color: Theme.on-surface;
-                                    font-size: Theme.headline-sm;
-                                    font-weight: 600;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
-                                }
-                                Text {
-                                    text: section.meta;
-                                    color: Theme.on-surface-variant;
-                                    font-size: Theme.label-sm;
-                                    vertical-alignment: center;
-                                }
                             }
                         }
                         if section.expanded: VerticalLayout {
+                            padding-bottom: 6px;
                             Rectangle {
                                 height: 1px;
                                 background: Theme.outline-variant;
                             }
+                            Rectangle { height: 6px; }
                             for lecture in section.lectures: VerticalLayout {
                                 LectureRow {
                                     lecture: lecture;
@@ -1079,10 +1298,23 @@ export component CoursePage inherits Flickable {
                                 padding-left: 16px;
                                 padding-right: 16px;
                                 spacing: 12px;
-                                ResourceTick { item: item; }
-                                ResourceIcon {
-                                    kind: item.kind;
+                                DoneTick {
+                                    size: 16px;
                                     y: (parent.height - self.height) / 2;
+                                    done: item.done;
+                                    toggled => { Course.toggle-resource(item.id, !item.done); }
+                                }
+                                Rectangle {
+                                    width: 24px;
+                                    height: 24px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 6px;
+                                    background: Theme.surface-container-highest;
+                                    ResourceIcon {
+                                        kind: item.kind;
+                                        width: 14px;
+                                        height: 14px;
+                                    }
                                 }
                                 Text {
                                     text: item.name;
