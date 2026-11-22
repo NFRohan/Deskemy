@@ -46,10 +46,12 @@ impl History {
     }
 
     /// Where back goes: the latest earlier place that's still there
-    /// (`exists`), dropping those that aren't. None: nowhere to go back to.
+    /// (`exists`) and isn't where it is now, dropping the rest (a deleted
+    /// course between two visits to the library leaves the library twice).
+    /// None: nowhere to go back to.
     pub fn back(&mut self, exists: impl Fn(&Place) -> bool) -> Option<Place> {
         while let Some(place) = self.earlier.pop() {
-            if exists(&place) {
+            if self.here.as_ref() != Some(&place) && exists(&place) {
                 self.returning = true;
                 return Some(place);
             }
@@ -131,5 +133,21 @@ mod tests {
             n += 1;
         }
         assert_eq!(n, KEEP);
+    }
+
+    #[test]
+    fn back_skips_where_it_already_is() {
+        // Search, the library, course B, then B deleted: back to the library.
+        let mut h = History::default();
+        h.visit(Place::Page("search".into()));
+        h.visit(Place::Page("library".into()));
+        h.visit(Place::Course("b".into()));
+        h.visit(Place::Page("library".into()));
+        let back = h.back(|p| p != &Place::Course("b".into()));
+        assert_eq!(back, Some(Place::Page("search".into())));
+        h.visit(Place::Page("search".into()));
+        // And the next visit is recorded as one.
+        h.visit(Place::Course("c".into()));
+        assert_eq!(h.back(|_| true), Some(Place::Page("search".into())));
     }
 }
