@@ -522,6 +522,16 @@ export component CoursePage inherits Flickable {
     mouse-drag-pan-enabled: false;
 
     property <length> page-width: min(self.width - 48px, 1024px);
+    // Counts clicks on the page's empty space: a text field leaves focus
+    // when it changes.
+    property <int> clicked-away;
+
+    // Behind the page: a click that nothing else takes.
+    TouchArea {
+        width: root.width;
+        height: max(root.height, root.content-height);
+        clicked => { root.clicked-away += 1; }
+    }
 
     page := VerticalLayout {
         width: root.width;
@@ -818,6 +828,18 @@ export component CoursePage inherits Flickable {
                                         Course.type-tag("");
                                     }
                                 }
+                                // Esc, or a click elsewhere on the page, leaves it.
+                                key-pressed(event) => {
+                                    if event.text == Key.Escape {
+                                        self.text = "";
+                                        Course.type-tag("");
+                                        self.clear-focus();
+                                        return accept;
+                                    }
+                                    reject
+                                }
+                                property <int> clicked-away: root.clicked-away;
+                                changed clicked-away => { self.clear-focus(); }
                             }
                             if new-tag.text == "": Text {
                                 x: 0;
@@ -863,6 +885,17 @@ export component CoursePage inherits Flickable {
                                         self.text = "";
                                     }
                                 }
+                                // Esc, or a click elsewhere on the page, leaves it.
+                                key-pressed(event) => {
+                                    if event.text == Key.Escape {
+                                        self.text = "";
+                                        self.clear-focus();
+                                        return accept;
+                                    }
+                                    reject
+                                }
+                                property <int> clicked-away: root.clicked-away;
+                                changed clicked-away => { self.clear-focus(); }
                             }
                             if homepage-input.text == "": Text {
                                 x: 0;
