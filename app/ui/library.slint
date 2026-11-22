@@ -61,9 +61,13 @@ export global Library {
     in-out property <string> status: "all";
     in-out property <string> tag;
     in-out property <string> track;
+    /// Finished courses left out (but under "Finished"). Saved.
+    in-out property <bool> hide-finished;
 
     /// A filter changed: recompute the grid.
     callback apply();
+    /// "Hide finished" toggled: saved, and the grid recomputed.
+    callback set-hide-finished(bool);
     /// Resume a course straight into the player (Continue Watching).
     callback open-course(string, string);
     /// Show a course's page (the grid's cards).
@@ -643,6 +647,18 @@ export component LibraryPage inherits Flickable {
                         Library.status = option.value;
                         Library.apply();
                     }
+                }
+                // A setting more than a filter (it's kept): apart from them.
+                // Under "Finished" it would leave nothing, so it isn't offered.
+                if Library.status != "finished": Rectangle {
+                    width: 1px;
+                    height: 24px;
+                    background: Theme.outline-variant;
+                }
+                if Library.status != "finished": Pill {
+                    text: "Hide finished";
+                    selected: Library.hide-finished;
+                    clicked => { Library.set-hide-finished(!Library.hide-finished); }
                 }
             }
             if Library.tags.length > 0: FlexboxLayout {

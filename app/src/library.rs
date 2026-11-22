@@ -62,6 +62,8 @@ pub struct Filters {
     pub tag: Option<String>,
     /// Course ids in the selected career track, if one is selected.
     pub track: Option<HashSet<String>>,
+    /// Leave finished courses out, unless finished ones are asked for.
+    pub hide_finished: bool,
 }
 
 /// Rounded percentage, as the Tauri app's `pct`.
@@ -134,6 +136,7 @@ pub fn filter<'a>(courses: &'a [CourseSummary], f: &Filters, now: i64) -> Vec<&'
         .filter(|c| f.tag.as_ref().is_none_or(|t| c.tags.contains(t)))
         .filter(|c| f.track.as_ref().is_none_or(|ids| ids.contains(&c.id)))
         .filter(|c| matches_status(c, f.status, now))
+        .filter(|c| !(f.hide_finished && f.status != Status::Finished && finished(c)))
         .collect();
     let title = |c: &CourseSummary| c.title.to_lowercase();
     match f.sort {
@@ -211,6 +214,7 @@ impl LibraryPage {
             status: Status::parse(&lib.get_status()),
             tag: Some(lib.get_tag().to_string()).filter(|t| !t.is_empty()),
             track: (!track.is_empty()).then(|| self.track_courses(&track)),
+            hide_finished: lib.get_hide_finished(),
         };
         let now = chrono::Utc::now().timestamp();
         let courses = self.courses.borrow();
@@ -337,7 +341,7 @@ mod tests {
     }
 
     fn filters(status: Status, sort: Sort) -> Filters {
-        Filters { query: String::new(), sort, status, tag: None, track: None }
+        Filters { query: String::new(), sort, status, tag: None, track: None, hide_finished: false }
     }
 
     fn ids(list: Vec<&CourseSummary>) -> Vec<&str> {
@@ -369,6 +373,19 @@ mod tests {
         assert_eq!(by(Status::New), vec!["fresh"]);
         assert_eq!(by(Status::Recent), vec!["going"], "within 14 days");
         assert_eq!(by(Status::All).len(), 4);
+    }
+
+    #[test]
+    fn hiding_finished_courses_leaves_them_under_finished() {
+        let courses = vec![
+            course("done", 4, 4, Some(NOW - DAY)),
+            course("going", 1, 4, Some(NOW - DAY)),
+            course("fresh", 0, 4, None),
+        ];
+        let hidden = |s| ids(filter(&courses, &Filters { hide_finished: true, ..filters(s, Sort::Alpha) }, NOW));
+        assert_eq!(hidden(Status::All), vec!["fresh", "going"]);
+        assert_eq!(hidden(Status::Recent), vec!["going"]);
+        assert_eq!(hidden(Status::Finished), vec!["done"], "asked for: still shown");
     }
 
     #[test]

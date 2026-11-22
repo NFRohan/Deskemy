@@ -40,6 +40,8 @@ pub struct AppConfig {
     /// Leaving the mini player opens the full window on the monitor the mini
     /// player is on. Off: back where the window was before it went mini.
     pub mini_return_here: bool,
+    /// The library leaves finished courses out (but under "Finished").
+    pub hide_finished: bool,
     /// Last library root the user registered (convenience).
     pub last_root: Option<String>,
     /// Where the mini player last sat: [x, y, width, height] in physical
@@ -61,6 +63,7 @@ impl Default for AppConfig {
             pause_at_resources: false,
             resources_lead_secs: 0,
             mini_return_here: true,
+            hide_finished: false,
             last_root: None,
             mini_player: None,
         }

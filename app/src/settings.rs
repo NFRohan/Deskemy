@@ -75,6 +75,7 @@ pub fn apply(config: &mut AppConfig, key: &str, value: &str) -> bool {
             _ => return false,
         },
         "mini-return-here" => config.mini_return_here = on,
+        "hide-finished" => config.hide_finished = on,
         _ => return false,
     }
     true
@@ -361,6 +362,7 @@ impl SettingsPage {
         prefs.set_lead(c.resources_lead_secs.to_string().into());
         prefs.set_lead_label(lead_label(c.resources_lead_secs).into());
         prefs.set_mini_return_here(c.mini_return_here);
+        ui.global::<crate::Library>().set_hide_finished(c.hide_finished);
     }
 
     /// Change a setting, save it, and redraw.

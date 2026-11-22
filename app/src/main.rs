@@ -362,6 +362,14 @@ fn main() -> Result<(), slint::PlatformError> {
             ui.set_playing(true);
         }
     });
+    let (weak, page, p) = (ui.as_weak(), library.clone(), prefs.clone());
+    ui.global::<Library>().on_set_hide_finished(move |hide| {
+        if let Some(ui) = weak.upgrade() {
+            p.change(&ui, "hide-finished", if hide { "true" } else { "false" });
+            ui.global::<Library>().set_scroll_y(0.0);
+            page.apply(&ui);
+        }
+    });
     let (weak, page) = (ui.as_weak(), library.clone());
     ui.global::<Library>().on_apply(move || {
         if let Some(ui) = weak.upgrade() {
