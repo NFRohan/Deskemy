@@ -169,8 +169,6 @@ pub fn resource_groups<'a>(c: &CourseDetail, attachments: &'a [Attachment]) -> V
     groups
 }
 
-/// The lecture a resource is shown with: where the curriculum puts it with
-/// "keep videos and resources together", else its own (guessed or paired).
 /// Up to five of the library's tags (`all`, most used first) matching what's
 /// typed, leaving out the course's own: those starting with it first, then
 /// those containing it. Nothing typed, nothing offered.
@@ -210,6 +208,12 @@ pub fn homepage_label(url: &str) -> String {
     host.strip_prefix("www.").unwrap_or(host).to_string()
 }
 
+/// How much of a section's ring is drawn: rounded down, so it closes only
+/// once every lecture is done (199 of 200 is 99, not 100).
+pub fn ring_percent(done: usize, total: usize) -> i32 {
+    (done * 100).checked_div(total).unwrap_or(0) as i32
+}
+
 /// "4 lectures · 45m": how many, and how long when known.
 pub fn section_summary(s: &Section) -> String {
     let n = s.lectures.len();
@@ -227,6 +231,8 @@ pub fn spelled_as_used(typed: &str, all: &[String]) -> String {
     all.iter().find(|t| t.eq_ignore_ascii_case(typed)).cloned().unwrap_or_else(|| typed.to_string())
 }
 
+/// The lecture a resource is shown with: where the curriculum puts it with
+/// "keep videos and resources together", else its own (guessed or paired).
 pub fn shown_with<'a>(c: &'a CourseDetail, attachments: &[Attachment], id: &str, inline: bool) -> Option<&'a Lecture> {
     let lecture_id = if inline {
         let (by_lecture, _) = inline_resources(&c.sections, attachments);
@@ -426,7 +432,7 @@ impl CoursePage {
                     count: s.lectures.len() as i32,
                     summary: section_summary(s).into(),
                     ring: crate::stats_page::arc(
-                        pct(s.lectures.iter().filter(|l| l.completed).count() as i64, s.lectures.len() as i64),
+                        ring_percent(s.lectures.iter().filter(|l| l.completed).count(), s.lectures.len()),
                         24.0,
                         21.0,
                     )
@@ -916,6 +922,13 @@ mod tests {
         assert_eq!(section_meta(&s), "1/3 · 1h 5m");
         let unknown = Section { lectures: vec![lecture("x", false, true, None)], ..s };
         assert_eq!(section_meta(&unknown), "0/1");
+    }
+
+    #[test]
+    fn a_section_ring_closes_only_when_every_lecture_is_done() {
+        assert_eq!(ring_percent(199, 200), 99);
+        assert_eq!(ring_percent(200, 200), 100);
+        assert_eq!(ring_percent(0, 0), 0);
     }
 
     #[test]

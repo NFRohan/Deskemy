@@ -729,9 +729,17 @@ fn wire_course(
         }};
     }
     action!(on_toggle_favorite, |p, ui| p.toggle_favorite(&ui));
-    action!(on_open_folder, |p, _ui| p.open_folder());
-    action!(on_type_tag, |p, ui, typed| p.type_tag(&ui, &typed));
-    action!(on_open_homepage, |p, _ui| p.open_homepage());
+    // These change nothing in the library: no reload behind them.
+    let p = page.clone();
+    course.on_open_folder(move || p.open_folder());
+    let p = page.clone();
+    course.on_open_homepage(move || p.open_homepage());
+    let (p, weak) = (page.clone(), ui.as_weak());
+    course.on_type_tag(move |typed| {
+        if let Some(ui) = weak.upgrade() {
+            p.type_tag(&ui, &typed);
+        }
+    });
     let (p, weak) = (page.clone(), ui.as_weak());
     course.on_set_homepage(move |typed| weak.upgrade().is_some_and(|ui| p.set_homepage(&ui, &typed)));
     action!(on_toggle_complete, |p, ui, id| p.toggle_complete(&ui, &id));
