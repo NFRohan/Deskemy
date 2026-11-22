@@ -427,8 +427,8 @@ impl CoursePage {
                     summary: section_summary(s).into(),
                     ring: crate::stats_page::arc(
                         pct(s.lectures.iter().filter(|l| l.completed).count() as i64, s.lectures.len() as i64),
-                        20.0,
-                        17.0,
+                        24.0,
+                        21.0,
                     )
                     .into(),
                     expanded: expanded.contains(&s.id),

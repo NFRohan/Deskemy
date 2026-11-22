@@ -29,7 +29,7 @@ export struct CurriculumSection {
     count: int,
     /// "4 lectures · 45m".
     summary: string,
-    /// Its progress ring's arc (path commands, 40×40), or "".
+    /// Its progress ring's arc (path commands, 48×48), or "".
     ring: string,
     expanded: bool,
     lectures: [CurriculumLecture],
@@ -359,7 +359,7 @@ component LectureRow inherits Rectangle {
 
         // Under the section's ring.
         Rectangle {
-            width: 40px;
+            width: 48px;
             DoneTick {
                 done: root.lecture.completed;
                 toggled => { Course.toggle-complete(root.lecture.id); }
@@ -477,7 +477,7 @@ component CurriculumResource inherits Rectangle {
         spacing: 14px;
         // Its tick under the lectures' ticks, smaller.
         Rectangle {
-            width: 40px;
+            width: 48px;
             DoneTick {
                 size: 16px;
                 done: root.item.done;
@@ -534,26 +534,26 @@ component CurriculumResource inherits Rectangle {
 component SectionRing inherits Rectangle {
     in property <int> done;
     in property <int> count;
-    /// The arc (path commands in 40×40), or "" for none yet.
+    /// The arc (path commands in 48×48), or "" for none yet.
     in property <string> arc;
     property <bool> finished: root.count > 0 && root.done >= root.count;
-    width: 40px;
-    height: 40px;
-    // The track, then the arc over it (radius 17, 3px wide).
+    width: 48px;
+    height: 48px;
+    // The track, then the arc over it (radius 21, 3px wide).
     Rectangle {
         x: 1.5px;
         y: 1.5px;
-        width: 37px;
-        height: 37px;
-        border-radius: 18.5px;
+        width: 45px;
+        height: 45px;
+        border-radius: 22.5px;
         border-width: 3px;
         border-color: Theme.surface-container-highest;
     }
     if root.arc != "": Path {
-        width: 40px;
-        height: 40px;
-        viewbox-width: 40;
-        viewbox-height: 40;
+        width: 48px;
+        height: 48px;
+        viewbox-width: 48;
+        viewbox-height: 48;
         commands: root.arc;
         stroke: root.finished ? Theme.secondary-container : Theme.primary-container;
         stroke-width: 3px;
@@ -565,10 +565,12 @@ component SectionRing inherits Rectangle {
         height: 18px;
         colorize: Theme.secondary-container;
     }
+    // "3/4", "14/15"; a percentage from 100 lectures up, which "102/120"
+    // wouldn't fit.
     if !root.finished: Text {
-        text: root.done + "/" + root.count;
+        text: root.count >= 100 ? floor(root.done * 100 / root.count) + "%" : root.done + "/" + root.count;
         color: Theme.on-surface;
-        font-size: root.count >= 100 ? 9px : Theme.label-sm;
+        font-size: root.count >= 10 && root.count < 100 ? Theme.label-sm : Theme.label-md;
         font-weight: 600;
     }
 }
