@@ -166,6 +166,8 @@ component ProgressBar inherits Rectangle {
 /// The course's page on the web: click to open it in the browser, x to
 /// remove it.
 component HomepageLink inherits Rectangle {
+    /// The most the address may take before it's shortened with "…".
+    in property <length> room: 260px;
     height: 22px;
     width: row.preferred-width;
     row := HorizontalLayout {
@@ -178,7 +180,7 @@ component HomepageLink inherits Rectangle {
             colorize: Theme.accent-blue;
         }
         Rectangle {
-            width: min(label.preferred-width, 260px);
+            width: min(label.preferred-width, root.room);
             accessible-role: button;
             accessible-label: "Open " + Course.homepage;
             accessible-action-default => { Course.open-homepage(); }
@@ -638,69 +640,105 @@ export component CoursePage inherits Flickable {
                 padding: 16px;
                 spacing: 24px;
 
-                Rectangle {
-                    width: 256px;
-                    height: 144px;
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Theme.outline-variant;
-                    background: Theme.surface-container-highest;
-                    clip: true;
-                    accessible-role: button;
-                    accessible-label: "Edit thumbnail";
-                    if Course.has-thumbnail: Image {
-                        width: parent.width;
-                        height: parent.height;
-                        source: Course.thumbnail;
-                        image-fit: cover;
-                    }
-                    if !Course.has-thumbnail: VerticalLayout {
-                        alignment: center;
-                        spacing: 6px;
-                        // Centred by its own layout: a fixed-size child otherwise sits left.
-                        HorizontalLayout {
-                            alignment: center;
-                            Image {
-                                source: @image-url("icons/image-plus.svg");
-                                width: 32px;
-                                height: 32px;
-                                colorize: Theme.outline-variant;
-                            }
+                // The cover, and under it the course's main action.
+                VerticalLayout {
+                    alignment: start;
+                    spacing: 12px;
+                    Rectangle {
+                        width: 256px;
+                        height: 144px;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Theme.outline-variant;
+                        background: Theme.surface-container-highest;
+                        clip: true;
+                        accessible-role: button;
+                        accessible-label: "Edit thumbnail";
+                        if Course.has-thumbnail: Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: Course.thumbnail;
+                            image-fit: cover;
                         }
-                        Text {
-                            text: "No thumbnail";
-                            color: Theme.outline-variant;
-                            font-size: Theme.label-sm;
-                            horizontal-alignment: center;
-                        }
-                    }
-                    // Hover reveals the edit affordance.
-                    if cover-touch.has-hover: Rectangle {
-                        background: #00000073;
-                        HorizontalLayout {
+                        if !Course.has-thumbnail: VerticalLayout {
                             alignment: center;
                             spacing: 6px;
+                            // Centred by its own layout: a fixed-size child otherwise sits left.
+                            HorizontalLayout {
+                                alignment: center;
+                                Image {
+                                    source: @image-url("icons/image-plus.svg");
+                                    width: 32px;
+                                    height: 32px;
+                                    colorize: Theme.outline-variant;
+                                }
+                            }
+                            Text {
+                                text: "No thumbnail";
+                                color: Theme.outline-variant;
+                                font-size: Theme.label-sm;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        // Hover reveals the edit affordance.
+                        if cover-touch.has-hover: Rectangle {
+                            background: #00000073;
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 6px;
+                                Image {
+                                    source: @image-url("icons/pencil.svg");
+                                    width: 16px;
+                                    height: 16px;
+                                    y: (parent.height - self.height) / 2;
+                                    colorize: #e2e2e8;
+                                }
+                                Text {
+                                    text: "Edit";
+                                    color: #e2e2e8;
+                                    font-size: Theme.label-md;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        cover-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                Course.cover-error = "";
+                                Course.dialog = "cover";
+                            }
+                        }
+                    }
+                    if Course.next != "": Rectangle {
+                        height: 36px;
+                        border-radius: 4px;
+                        background: resume-touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
+                        accessible-role: button;
+                        accessible-label: Course.next-label;
+                        resume-row := HorizontalLayout {
+                            alignment: center;
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            spacing: 8px;
                             Image {
-                                source: @image-url("icons/pencil.svg");
+                                source: @image-url("icons/play-filled.svg");
                                 width: 16px;
                                 height: 16px;
                                 y: (parent.height - self.height) / 2;
-                                colorize: #e2e2e8;
+                                colorize: Theme.on-primary-container;
                             }
                             Text {
-                                text: "Edit";
-                                color: #e2e2e8;
+                                text: Course.next-label;
+                                color: Theme.on-primary-container;
                                 font-size: Theme.label-md;
                                 font-weight: 600;
                                 vertical-alignment: center;
                             }
                         }
-                    }
-                    cover-touch := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => {
-                            Course.cover-error = "";
-                            Course.dialog = "cover";
+                        resume-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Course.play(Course.next); }
                         }
                     }
                 }
@@ -804,8 +842,12 @@ export component CoursePage inherits Flickable {
                                 Course.type-tag("");
                             }
                         }
-                        // The course's page on the web (where it was bought):
-                        // a field to enter it, then a link to it.
+                    }
+
+                    // The course's page on the web (where it was bought):
+                    // a field to enter it, then a link to it. Its own row.
+                    HorizontalLayout {
+                        alignment: start;
                         if Course.homepage == "": Rectangle {
                             width: 180px;
                             height: 22px;
@@ -836,7 +878,12 @@ export component CoursePage inherits Flickable {
                                 background: homepage-input.has-focus ? Theme.accent-blue : Theme.outline-variant;
                             }
                         }
-                        if Course.homepage != "": HomepageLink { }
+                        if Course.homepage != "": HomepageLink {
+                            // The header's right column (the page, less the
+                            // cover and padding), less the link icon and the
+                            // remove button.
+                            room: max(0px, root.page-width - 314px - 48px);
+                        }
                     }
 
                     Rectangle { vertical-stretch: 1; }
@@ -864,40 +911,6 @@ export component CoursePage inherits Flickable {
                     ProgressBar {
                         value: Course.percent;
                         complete: Course.percent >= 100;
-                    }
-                    if Course.next != "": HorizontalLayout {
-                        alignment: start;
-                        Rectangle {
-                            height: 36px;
-                            width: resume-row.preferred-width;
-                            border-radius: 4px;
-                            background: resume-touch.has-hover ? Theme.inverse-primary : Theme.primary-container;
-                            accessible-role: button;
-                            accessible-label: Course.next-label;
-                            resume-row := HorizontalLayout {
-                                padding-left: 16px;
-                                padding-right: 16px;
-                                spacing: 8px;
-                                Image {
-                                    source: @image-url("icons/play-filled.svg");
-                                    width: 16px;
-                                    height: 16px;
-                                    y: (parent.height - self.height) / 2;
-                                    colorize: Theme.on-primary-container;
-                                }
-                                Text {
-                                    text: Course.next-label;
-                                    color: Theme.on-primary-container;
-                                    font-size: Theme.label-md;
-                                    font-weight: 600;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            resume-touch := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { Course.play(Course.next); }
-                            }
-                        }
                     }
                 }
             }
