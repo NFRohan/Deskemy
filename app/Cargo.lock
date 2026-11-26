@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "deskemy-app"
-version = "2.1.2"
+version = "2.1.3"
 dependencies = [
  "arboard",
  "base64 0.22.1",

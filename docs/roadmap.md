@@ -30,6 +30,11 @@ checklist live in [slint-port.md](slint-port.md).
   downloaders name them, wrapper folders, a folder per lecture, site
   adverts and tags, mangled names), and courses kept in their career
   tracks through a rescan (#14).
+- **2.1.3** (2026-11-26) — career tracks as roadmaps (steps, Next up with
+  Continue, progress and time left), a redesigned course page (header,
+  section rings, lecture rows), and most of #13: mouse back on every page,
+  open folder, selectable title, Hide finished, tag suggestions, tracks by
+  most recent use, a course website, track header images. Schema v11.
 
 ## Order of work
 
@@ -164,13 +169,12 @@ what's paired with the lecture.
   the first time the course plays. Schema v10. Reply on the issue when 2.1
   is out. (Audio tracks are still remembered by number: courses rarely have
   more than one.)
-- **#13 New feature ideas** — for later. Small: mouse back on every page
-  (today the player and PDF viewer only), an "open folder" button on the
-  course page, hide finished courses in the library, tag autocomplete,
-  tracks by most recently used, a selectable course title. Bigger: notes
-  on a course or track (plain text first: Slint has no markdown; overlaps
-  #5), a course homepage URL, a track header image. Not planned: LLM
-  summaries of subtitles (no cloud).
+- **#13 New feature ideas** — mostly done in 2.1.3: mouse back on every
+  page, an "open folder" button, Hide finished, tag suggestions, tracks by
+  most recent use, a selectable course title, a course website, a track
+  header image. Left: notes on a course or track (plain text first: Slint
+  has no markdown; overlaps #5). Not planned: LLM summaries of subtitles
+  (no cloud). Reply on the issue when 2.1.3 is out.
 - **#14 A course leaves its career tracks after a file in it is edited** —
   fixed for 2.1.2: a re-import (auto-rescan) deleted the course and put it
   back under a new id, and the delete took its track memberships and its

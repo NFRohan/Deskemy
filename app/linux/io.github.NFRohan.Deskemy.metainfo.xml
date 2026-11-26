@@ -58,6 +58,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="2.1.3" date="2026-11-26">
+      <url type="details">https://github.com/NFRohan/Deskemy/releases/tag/v2.1.3</url>
+      <description>
+        <p>Career tracks laid out as roadmaps with a button straight into the next course, a redesigned course page, track header images, course websites, tag suggestions, a mouse back button and a "Hide finished" library filter.</p>
+      </description>
+    </release>
     <release version="2.1.2" date="2026-11-17">
       <url type="details">https://github.com/NFRohan/Deskemy/releases/tag/v2.1.2</url>
       <description>
